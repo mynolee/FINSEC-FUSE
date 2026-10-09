@@ -15,7 +15,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_NETWORKS = {
     "postgres": {"data"}, "agent": {"kyc"},
-    "backend": {"web", "data", "kyc"}, "frontend": {"web"},
+    "backend": {"web", "data", "kyc"}, "frontend": {"web"}, "ingress": {"ingress", "web"},
 }
 BACKEND_USER = "${FUSE_RUNTIME_UID:?Run scripts/bootstrap-dev.sh}:${FUSE_RUNTIME_GID:?Run scripts/bootstrap-dev.sh}"
 
@@ -49,10 +49,10 @@ def load(name):
 def base_violations(config):
     failures = []
     networks = config.get("networks", {})
-    if set(networks) != {"web", "data", "kyc"}:
+    if set(networks) != {"web", "data", "kyc", "ingress"}:
         failures.append("network set")
-    for network in networks.values():
-        if network.get("internal") is not True or network.get("driver") != "bridge" or network.get("external"):
+    for name, network in networks.items():
+        if network.get("internal") is not (name != "ingress") or network.get("driver") != "bridge" or network.get("external"):
             failures.append("external routing")
     services = config.get("services", {})
     if set(services) != set(EXPECTED_NETWORKS):
@@ -69,12 +69,17 @@ def base_violations(config):
             failures.append("writable root")
         if not isinstance(service.get("pids_limit"), int) or not 1 <= service["pids_limit"] <= 512:
             failures.append("process limit")
-        expected_user = {"postgres": "postgres", "agent": "10001:10001", "backend": BACKEND_USER, "frontend": "101:101"}
+        expected_user = {"postgres": "postgres", "agent": "10001:10001", "backend": BACKEND_USER, "frontend": "101:101", "ingress": "101:101"}
         if service.get("user") != expected_user.get(name):
             failures.append("runtime identity")
-        expected_ports = {"backend": ["127.0.0.1:8080:8080"], "frontend": ["127.0.0.1:5173:8080"]}
+        expected_ports = {"ingress": ["127.0.0.1:8080:8080", "127.0.0.1:5173:8081"]}
         if service.get("ports", []) != expected_ports.get(name, []):
             failures.append("host exposure")
+    ingress = services.get("ingress", {})
+    if any(ingress.get(key) for key in ("environment", "env_file", "secrets", "volumes")):
+        failures.append("ingress credential or mount")
+    if ingress.get("build") != {"context": ".", "dockerfile": "ingress/Dockerfile"}:
+        failures.append("ingress immutable image configuration")
     return failures
 
 
@@ -93,7 +98,7 @@ class ComposeSecurityTests(unittest.TestCase):
         memberships = {name: set(svc["networks"]) for name, svc in self.base["services"].items()}
         for a, b in (("frontend", "backend"), ("backend", "postgres"), ("backend", "agent")):
             self.assertTrue(memberships[a] & memberships[b], (a, b))
-        for a, b in (("frontend", "postgres"), ("frontend", "agent"), ("agent", "postgres")):
+        for a, b in (("frontend", "postgres"), ("frontend", "agent"), ("agent", "postgres"), ("ingress", "postgres"), ("ingress", "agent")):
             self.assertFalse(memberships[a] & memberships[b], (a, b))
 
     def test_base_replay_cannot_inherit_live_settings(self):
@@ -193,6 +198,77 @@ class ComposeSecurityTests(unittest.TestCase):
     def test_duplicate_yaml_keys_are_not_silently_overwritten(self):
         with self.assertRaises(ValueError):
             load_text("services: {}\nservices: {}\n")
+
+    def test_only_ingress_gets_noninternal_default_network(self):
+        self.assertIs(False, self.base['networks']['ingress']['internal'])
+        for name in ('web', 'data', 'kyc'):
+            self.assertIs(True, self.base['networks'][name]['internal'])
+        for name in ('postgres', 'agent', 'backend', 'frontend'):
+            self.assertNotIn('ingress', self.base['services'][name]['networks'])
+            self.assertNotIn('ports', self.base['services'][name])
+        self.assertEqual(['ingress', 'web'], self.base['services']['ingress']['networks'])
+
+    def test_ingress_image_has_only_immutable_proxy_config(self):
+        image = (ROOT / 'ingress/Dockerfile').read_text()
+        self.assertIn('FROM nginxinc/nginx-unprivileged:1.28-alpine', image)
+        self.assertEqual(['COPY ingress/nginx.conf /etc/nginx/nginx.conf'], [line for line in image.splitlines() if line.startswith('COPY ')])
+        self.assertIn('USER 101:101', image)
+        self.assertIn('ENTRYPOINT ["nginx", "-g", "daemon off;"]', image)
+        self.assertIn('CMD []', image)
+        service = self.base['services']['ingress']
+        for name in ('environment', 'env_file', 'secrets', 'volumes'):
+            self.assertNotIn(name, service)
+
+    def test_ingress_fixed_destinations_and_forbidden_forward_proxy_forms(self):
+        config = (ROOT / 'ingress/nginx.conf').read_text()
+        self.assertEqual(['proxy_pass http://backend:8080;', 'proxy_pass http://frontend:8080;'],
+                         [line.strip() for line in config.splitlines() if 'proxy_pass ' in line])
+        self.assertEqual(2, config.count('if ($request_method = CONNECT) { return 405; }'))
+        self.assertEqual(2, config.count('if ($request ~* "^[A-Z]+ +https?://") { return 400; }'))
+        self.assertNotIn('resolver ', config)
+        self.assertNotIn('proxy_pass $', config)
+        self.assertNotIn('proxy_connect;', config)
+
+    def test_ingress_header_policy_is_inherited_without_location_override(self):
+        config = (ROOT / 'ingress/nginx.conf').read_text()
+        self.assertIn('proxy_set_header Authorization $http_authorization;', config)
+        self.assertIn('proxy_set_header Host $proxy_host;', config)
+        for name in ('Forwarded', 'X-Forwarded-For', 'X-Forwarded-Host', 'X-Forwarded-Proto',
+                     'X-Forwarded-Port', 'X-Forwarded-Prefix', 'X-Real-IP', 'Upgrade', 'Connection',
+                     'Proxy', 'Proxy-Authorization', 'Proxy-Connection', 'X-Original-URL', 'X-Rewrite-URL'):
+            self.assertIn('proxy_set_header ' + name + ' "";', config)
+        # Nginx inherits proxy_set_header only if the lower scope defines none.
+        for line in config.splitlines():
+            if 'proxy_set_header ' in line:
+                self.assertTrue(line.startswith('  proxy_set_header '))
+
+    def test_ingress_rejects_redirect_and_acceleration_features(self):
+        config = (ROOT / 'ingress/nginx.conf').read_text()
+        self.assertIn('proxy_ignore_headers X-Accel-Redirect;', config)
+        self.assertIn('proxy_hide_header X-Accel-Redirect;', config)
+        self.assertIn('proxy_hide_header Refresh;', config)
+        self.assertIn('proxy_redirect off;', config)
+        self.assertIn('proxy_intercept_errors on;', config)
+        self.assertEqual(2, config.count('error_page 301 302 303 307 308 = @redirect_denied;'))
+        self.assertEqual(2, config.count('location @redirect_denied { return 502; }'))
+        self.assertIn('access_log off;', config)
+        for name in ('client_body', 'proxy', 'fastcgi', 'uwsgi', 'scgi'):
+            self.assertIn(name + '_temp_path /tmp/', config)
+
+    def test_regression_detector_rejects_ingress_credentials_or_mounts(self):
+        for field, value in (('environment', {'SHOULD_NOT_EXIST': 'fixture-value'}),
+                             ('secrets', ['fuse_signing_key']), ('volumes', ['/var/run/docker.sock:/socket'])):
+            config = copy.deepcopy(self.base)
+            config['services']['ingress'][field] = value
+            with self.subTest(field=field):
+                self.assertIn('ingress credential or mount', base_violations(config))
+
+    def test_regression_detector_rejects_workload_ingress_network(self):
+        for name in ('postgres', 'agent', 'backend', 'frontend'):
+            config = copy.deepcopy(self.base)
+            config['services'][name]['networks'].append('ingress')
+            with self.subTest(service=name):
+                self.assertIn('network membership', base_violations(config))
 
     def test_regression_detector_rejects_external_network(self):
         config = copy.deepcopy(self.base)

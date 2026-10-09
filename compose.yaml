@@ -97,7 +97,6 @@ services:
       FUSE_EXPERIMENT_DB_USERNAME: fuse_experiment_owner
       FUSE_EXPERIMENT_DB_PASSWORD: ${FUSE_EXPERIMENT_DB_PASSWORD:?Run scripts/bootstrap-dev.sh}
       FUSE_EXPERIMENT_LIVE_ENABLED: "false"
-    ports: ["127.0.0.1:8080:8080"]
     secrets: [fuse_signing_key]
     depends_on:
       postgres: {condition: service_healthy}
@@ -112,8 +111,20 @@ services:
     networks: [web]
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
-    ports: ["127.0.0.1:5173:8080"]
     depends_on: [backend]
+  ingress:
+    <<: *runtime-hardening
+    build:
+      context: .
+      dockerfile: ingress/Dockerfile
+    user: "101:101"
+    pids_limit: 128
+    # The four workloads remain internal-only. This proxy alone can route out.
+    networks: [ingress, web]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    ports: ["127.0.0.1:8080:8080", "127.0.0.1:5173:8081"]
+    depends_on: [backend, frontend]
 secrets:
   fuse_signing_key:
     file: ./.secrets/signing.key
@@ -131,3 +142,8 @@ networks:
   kyc:
     driver: bridge
     internal: true
+  # Required for actual host-port publication on the CI Docker bridge driver.
+  # This is not an egress firewall; only the credential-free ingress joins it.
+  ingress:
+    driver: bridge
+    internal: false

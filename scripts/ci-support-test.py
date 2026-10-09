@@ -278,7 +278,7 @@ class ReadinessDiagnosticTest(unittest.TestCase):
     def test_bindings_observe_actual_mapping_not_requested_config(self):
         found = SimpleNamespace(returncode=0, stdout=b'a' * 64, stderr=b'')
         missing = self.process({'8080/tcp': None, 'PRIVATE_PAYLOAD_SENTINEL': 'ignored'})
-        present = self.process({'8080/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '5173'}]})
+        present = self.process({'8081/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '5173'}]})
         with patch.object(checks.subprocess, 'run', side_effect=[found, missing, found, present]) as invoked:
             observed = checks.published_bindings()
         self.assertFalse(observed['backend']['published'])
@@ -287,6 +287,8 @@ class ReadinessDiagnosticTest(unittest.TestCase):
         self.assertTrue(observed['frontend']['loopbackOnly'])
         self.assertTrue(observed['frontend']['expectedHostPort'])
         self.assertIn('{{json .NetworkSettings.Ports}}', invoked.call_args_list[1].args[0])
+        self.assertEqual(invoked.call_args_list[0].args[0][-1], 'ingress')
+        self.assertEqual(invoked.call_args_list[2].args[0][-1], 'ingress')
         self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
 
     def test_nonloopback_or_wrong_port_are_visible_without_raw_addresses(self):
