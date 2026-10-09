@@ -30,6 +30,17 @@ NETWORKS = {'ingress': {'ingress', 'web'}, 'frontend': {'web'},
 MAX_CAPTURE = 8 * 1024 * 1024  # Per stream; exceeding it fails rather than sampling.
 MAX_RESPONSE = 256 * 1024
 MAX_REQUEST = 4096
+# Frontend's default proxy_connect_timeout and ingress proxy_read_timeout are
+# 60s. Only the three stopped-upstream probes get 70s (210s total, no retries).
+# Nginx 1.28 maps connection errors to 502 and upstream timeouts to 504.
+# https://github.com/nginx/nginx/blob/release-1.28.0/src/http/ngx_http_upstream.c
+UPSTREAM_TIMEOUT = 70
+UPSTREAM_STATUSES = frozenset({502, 504})
+HTTP_TOKEN = rb"[!#$%&'*+.^_`|~0-9A-Za-z-]+"
+HTTP_QUOTED = rb'"(?:[\t\x20\x21\x23-\x5b\x5d-\x7e]|\\[\t\x20-\x7e])*"'
+CHUNK_LINE = re.compile(rb'([0-9a-fA-F]{1,8})(?:[ \t]*;[ \t]*' + HTTP_TOKEN
+                        + rb'(?:[ \t]*=[ \t]*(?:' + HTTP_TOKEN + rb'|' + HTTP_QUOTED
+                        + rb'))?)*[ \t]*')
 INSPECT = ('{"id":{{json .Id}},"image":{{json .Image}},'
            '"project":{{json (index .Config.Labels "com.docker.compose.project")}},'
            '"service":{{json (index .Config.Labels "com.docker.compose.service")}},'
@@ -46,7 +57,8 @@ PROBE_IDS = ('ui_success', 'api_success', 'ui_api_success',
 REASONS = frozenset({'CI_PROJECT_REQUIRED', 'CONFIGURATION_REJECTED', 'DOCKER_COMMAND_FAILED',
     'SERVICE_IDENTITY_REJECTED', 'SERVICE_STATE_CHANGED', 'LOG_DRIVER_REJECTED',
     'PRIVATE_STORAGE_REJECTED', 'CAPTURE_FAILED', 'CAPTURE_LIMIT_EXCEEDED',
-    'CAPTURE_INCOMPLETE', 'REQUEST_FAILED', 'UNEXPECTED_HTTP_STATUS', 'CANARY_DETECTED',
+    'CAPTURE_INCOMPLETE', 'REQUEST_FAILED', 'REQUEST_TIMEOUT', 'REQUEST_TRUNCATED',
+    'UNEXPECTED_HTTP_STATUS', 'CANARY_DETECTED',
     'SCANNER_CONTROL_FAILED', 'SHUTDOWN_NOT_VERIFIED', 'EXECUTION_FAILED'})
 
 
@@ -272,8 +284,78 @@ def scan(raw, markers, chunk_size=65536):
     return found, total
 
 
-def wire(port, method, path, headers=(), body=b'', malformed=False):
+def response_status(data, *, eof=False):
+    """Return the status only when a bounded, unambiguous response is complete."""
+    require(len(data) <= MAX_RESPONSE, 'REQUEST_FAILED')
+
+    def incomplete():
+        require(not eof, 'REQUEST_TRUNCATED')
+        return None
+
+    end = data.find(b'\r\n\r\n')
+    if end < 0:
+        return incomplete()
+    lines = bytes(data[:end]).split(b'\r\n')
+    status = re.fullmatch(rb'HTTP/1\.[01] ([2-5][0-9]{2}) [\x20-\x7e]*', lines[0])
+    require(status is not None, 'REQUEST_FAILED')
+    status = int(status.group(1))
+    headers = {}
+    for line in lines[1:]:
+        name, separator, value = line.partition(b':')
+        require(separator and re.fullmatch(rb"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name)
+                and all(byte == 9 or 32 <= byte <= 126 for byte in value), 'REQUEST_FAILED')
+        headers.setdefault(name.lower(), []).append(value.strip(b' \t'))
+    lengths = headers.get(b'content-length', [])
+    encodings = headers.get(b'transfer-encoding', [])
+    require(len(lengths) <= 1 and len(encodings) <= 1 and not (lengths and encodings), 'REQUEST_FAILED')
+    body = data[end + 4:]
+    if status in (204, 304):
+        require(not body and not encodings, 'REQUEST_FAILED')
+        return status
+    if lengths:
+        require(re.fullmatch(rb'[0-9]{1,9}', lengths[0]) is not None, 'REQUEST_FAILED')
+        length = int(lengths[0])
+        require(length <= MAX_RESPONSE and len(body) <= length, 'REQUEST_FAILED')
+        return status if len(body) == length else incomplete()
+    if encodings:
+        require(encodings[0].lower() == b'chunked', 'REQUEST_FAILED')
+        position = 0
+        decoded_bytes = 0
+        while True:
+            line_end = body.find(b'\r\n', position)
+            if line_end < 0:
+                return incomplete()
+            chunk = CHUNK_LINE.fullmatch(body[position:line_end])
+            require(chunk is not None, 'REQUEST_FAILED')
+            size = int(chunk.group(1), 16)
+            decoded_bytes += size
+            require(decoded_bytes <= MAX_RESPONSE, 'REQUEST_FAILED')
+            position = line_end + 2
+            if size == 0:
+                while True:
+                    trailer_end = body.find(b'\r\n', position)
+                    if trailer_end < 0:
+                        return incomplete()
+                    trailer = bytes(body[position:trailer_end])
+                    position = trailer_end + 2
+                    if not trailer:
+                        require(position == len(body), 'REQUEST_FAILED')
+                        return status
+                    name, colon, value = trailer.partition(b':')
+                    require(colon and re.fullmatch(rb"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name)
+                            and name.lower() not in {b'content-length', b'transfer-encoding'}
+                            and all(byte == 9 or 32 <= byte <= 126 for byte in value), 'REQUEST_FAILED')
+            if len(body) < position + size + 2:
+                return incomplete()
+            require(body[position + size:position + size + 2] == b'\r\n', 'REQUEST_FAILED')
+            position += size + 2
+    # HTTP/1.x also allows close-delimited responses. Only this case needs EOF.
+    return status if eof else None
+
+
+def wire(port, method, path, headers=(), body=b'', malformed=False, *, timeout=5):
     require(port in (8080, 5173) and method in ('GET', 'POST'), 'REQUEST_FAILED')
+    require(type(timeout) is int and timeout in (5, UPSTREAM_TIMEOUT), 'REQUEST_FAILED')
     version = 'HTTP/1.X' if malformed else 'HTTP/1.1'
     request = (method + ' ' + path + ' ' + version + '\r\nHost: 127.0.0.1\r\nConnection: close\r\n'
                + ''.join(name + ': ' + value + '\r\n' for name, value in headers)
@@ -281,24 +363,25 @@ def wire(port, method, path, headers=(), body=b'', malformed=False):
     require(len(request) <= MAX_REQUEST, 'REQUEST_FAILED')
     try:
         # Direct loopback socket: ignores proxies and never follows redirects.
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + timeout
         with socket.create_connection(('127.0.0.1', port), timeout=5) as connection:
             connection.sendall(request)
             result = bytearray()
             while True:
                 remaining = deadline - time.monotonic()
-                require(remaining > 0, 'REQUEST_FAILED')
+                require(remaining > 0, 'REQUEST_TIMEOUT')
                 connection.settimeout(remaining)
                 data = connection.recv(min(16384, MAX_RESPONSE + 1 - len(result)))
                 if not data:
-                    break
+                    return response_status(result, eof=True)
                 result.extend(data)
-                require(len(result) <= MAX_RESPONSE, 'REQUEST_FAILED')
-        status = re.match(rb'HTTP/1\.[01] ([1-5][0-9]{2}) ', result)
-        require(status is not None, 'REQUEST_FAILED')
-        return int(status.group(1))
+                status = response_status(result)
+                if status is not None:
+                    return status
     except CheckError:
         raise
+    except (TimeoutError, socket.timeout):
+        raise CheckError('REQUEST_TIMEOUT') from None
     except Exception:
         raise CheckError('REQUEST_FAILED') from None
 
@@ -368,13 +451,15 @@ def execute(summary):
                            'customerId': '', 'amountKrw': 0,
                            'payoutAccountId': '00000000-0000-4000-8000-000000000002'}).encode('ascii')
 
-        def probe(name, expected, port, method, path, headers=(), payload=b'', malformed=False):
+        def probe(name, expected, port, method, path, headers=(), payload=b'', malformed=False, *, timeout=5):
             for service, capture in captures.items():
                 if service not in stopped:
                     capture.alive()
-            status = wire(port, method, path, [*common, *headers], payload, malformed)
-            summary['probes'][name] = {'status': 'PASS' if status == expected else 'FAIL', 'httpStatus': status}
-            require(status == expected, 'UNEXPECTED_HTTP_STATUS')
+            summary['probes'][name] = {'status': 'FAIL', 'httpStatus': None}
+            status = wire(port, method, path, [*common, *headers], payload, malformed, timeout=timeout)
+            allowed = (expected,) if type(expected) is int else expected
+            summary['probes'][name] = {'status': 'PASS' if status in allowed else 'FAIL', 'httpStatus': status}
+            require(status in allowed, 'UNEXPECTED_HTTP_STATUS')
 
         probe('ui_success', 200, 5173, 'GET', '/?probe=' + values['query'])
         for port, prefix in ((8080, 'api'), (5173, 'ui_api')):
@@ -400,15 +485,18 @@ def execute(summary):
         stopped.add('backend')
         unchanged(containers, stopped)
         failure_path = '/api/v1/workflows?state=' + quote(crlf, safe='')
-        probe('ingress_backend_failure', 502, 8080, 'POST', failure_path,
-              [('Content-Type', 'application/json'), ('Authorization', 'Bearer ' + values['bearer'])], body)
-        probe('frontend_backend_failure', 502, 5173, 'POST', failure_path,
-              [('Content-Type', 'application/json'), ('Authorization', 'Bearer ' + values['bearer'])], body)
+        probe('ingress_backend_failure', UPSTREAM_STATUSES, 8080, 'POST', failure_path,
+              [('Content-Type', 'application/json'), ('Authorization', 'Bearer ' + values['bearer'])], body,
+              timeout=UPSTREAM_TIMEOUT)
+        probe('frontend_backend_failure', UPSTREAM_STATUSES, 5173, 'POST', failure_path,
+              [('Content-Type', 'application/json'), ('Authorization', 'Bearer ' + values['bearer'])], body,
+              timeout=UPSTREAM_TIMEOUT)
         stop_started['frontend'] = time.monotonic()
         command('stop', '--time', '10', containers['frontend']['id'])
         stopped.add('frontend')
         unchanged(containers, stopped)
-        probe('ingress_frontend_failure', 502, 5173, 'GET', '/?probe=' + quote(crlf, safe=''))
+        probe('ingress_frontend_failure', UPSTREAM_STATUSES, 5173, 'GET', '/?probe=' + quote(crlf, safe=''),
+              timeout=UPSTREAM_TIMEOUT)
         summary['upstreamFailuresExercised'] = True
     finally:
         # Stop only IDs whose ownership was verified before this terminal check.

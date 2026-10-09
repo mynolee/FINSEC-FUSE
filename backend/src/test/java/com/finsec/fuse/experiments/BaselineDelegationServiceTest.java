@@ -103,7 +103,7 @@ class BaselineDelegationServiceTest {
     private static String b64(byte[] bytes) { return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes); }
     private static final class ForbiddenDb extends Db {
         private boolean accessed;
-        private ForbiddenDb() { super(null); }
+        private ForbiddenDb() { super(new org.springframework.jdbc.core.JdbcTemplate()); }
         @Override public List<Map<String,Object>> query(String sql,Object... args) {
             accessed=true;throw new AssertionError("Untrusted envelope must not reach database reads");
         }

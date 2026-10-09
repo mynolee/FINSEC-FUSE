@@ -224,9 +224,106 @@ class WireTests(NoExternalCalls):
         with self.assertRaises(privacy.CheckError):
             privacy.wire(8080, 'GET', '/' + 'x' * 5000)
 
+    def test_complete_content_length_does_not_wait_for_delayed_close_or_reset(self):
+        response = b'HTTP/1.1 502 Bad Gateway\r\nContent-Length: 3\r\n\r\nbad'
+        for after in (TimeoutError(PRIVATE), ConnectionResetError(PRIVATE)):
+            connection = self.socket(response)
+            connection.recv.side_effect = [response, after]
+            with patch.object(privacy.socket, 'create_connection', return_value=connection):
+                self.assertEqual(privacy.wire(8080, 'POST', '/', body=b'{}', timeout=70), 502)
+            self.assertEqual(connection.recv.call_count, 1)
+
+    def test_content_length_response_split_at_every_boundary(self):
+        response = b'HTTP/1.1 502 Bad Gateway\r\nContent-Length: 3\r\n\r\nbad'
+        for offset in range(1, len(response)):
+            connection = self.socket(response)
+            connection.recv.side_effect = [response[:offset], response[offset:], TimeoutError(PRIVATE)]
+            with patch.object(privacy.socket, 'create_connection', return_value=connection):
+                self.assertEqual(privacy.wire(8080, 'GET', '/'), 502)
+            self.assertEqual(connection.recv.call_count, 2)
+
+    def test_complete_chunked_response_with_trailers_does_not_wait_for_eof(self):
+        response = (b'HTTP/1.1 502 Bad Gateway\r\nTransfer-Encoding: chunked\r\n\r\n'
+                    b'2;x=y\r\nba\r\n1\r\nd\r\n0\r\nX-Safe: yes\r\n\r\n')
+        for offset in range(1, len(response)):
+            connection = self.socket(response)
+            connection.recv.side_effect = [response[:offset], response[offset:], TimeoutError(PRIVATE)]
+            with patch.object(privacy.socket, 'create_connection', return_value=connection):
+                self.assertEqual(privacy.wire(8080, 'GET', '/'), 502)
+            self.assertEqual(connection.recv.call_count, 2)
+
+    def test_truncated_headers_body_and_chunked_frames_fail_closed(self):
+        responses = [b'HTTP/1.1 502 Bad Gateway\r\n',
+                     b'HTTP/1.1 502 Bad Gateway\r\nContent-Length: 4\r\n\r\nbad',
+                     b'HTTP/1.1 502 Bad Gateway\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nba',
+                     b'HTTP/1.1 502 Bad Gateway\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nbad\r\n',
+                     b'HTTP/1.1 502 Bad Gateway\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX-Safe: yes\r\n']
+        for response in responses:
+            connection = self.socket(response)
+            with patch.object(privacy.socket, 'create_connection', return_value=connection), \
+                    self.assertRaisesRegex(privacy.CheckError, '^REQUEST_TRUNCATED$'):
+                privacy.wire(8080, 'GET', '/')
+
+    def test_invalid_ambiguous_and_oversized_frames_fail_closed(self):
+        responses = [b'Content-Length: 1\r\nContent-Length: 1\r\n\r\nx',
+                     b'Content-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\nx',
+                     b'Content-Length: -1\r\n\r\n', b'Content-Length: 0\r\n\r\nx',
+                     b'Content-Length: 999999999\r\n\r\n', b'Transfer-Encoding: gzip\r\n\r\n',
+                     b'Invalid Header: x\r\n\r\n',
+                     b'Transfer-Encoding: chunked\r\n\r\nZ\r\n',
+                     b'Transfer-Encoding: chunked\r\n\r\nffffffff\r\n',
+                     b'Transfer-Encoding: chunked\r\n\r\n1\r\nx!!',
+                     b'Transfer-Encoding: chunked\r\n\r\n0\r\n\r\nextra',
+                     b'Transfer-Encoding: chunked\r\n\r\n0\r\nContent-Length: 0\r\n\r\n']
+        for response in responses:
+            with self.assertRaisesRegex(privacy.CheckError, '^REQUEST_FAILED$'):
+                privacy.response_status(b'HTTP/1.1 502 Bad Gateway\r\n' + response)
+        with patch.object(privacy, 'MAX_RESPONSE', 50), self.assertRaises(privacy.CheckError):
+            privacy.response_status(b'HTTP/1.1 502 Bad Gateway\r\nContent-Length: 30\r\n\r\n' + b'x' * 30)
+
+    def test_chunk_extensions_require_tokens_or_complete_quoted_strings(self):
+        prefix = b'HTTP/1.1 502 Bad Gateway\r\nTransfer-Encoding: chunked\r\n\r\n'
+        for extension in (b';', b';@@@', b';x="unterminated', b';x=', b';=value',
+                          b';x=a b', b';x="a"junk', b';x="bad\x01"', b';x="bad\\"'):
+            with self.subTest(extension=extension), self.assertRaisesRegex(privacy.CheckError, '^REQUEST_FAILED$'):
+                privacy.response_status(prefix + b'1' + extension + b'\r\nx\r\n0\r\n\r\n')
+        for extension in (b';x', b';x=y', b';x=""', b';x="a b"', b';x="a\\"b"',
+                          b';x=y;another="two"', b' ; x = "a b" ; y=z'):
+            self.assertEqual(privacy.response_status(prefix + b'1' + extension + b'\r\nx\r\n0\r\n\r\n'), 502)
+
+    def test_close_delimited_response_still_requires_actual_eof(self):
+        response = b'HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\nbad'
+        self.assertIsNone(privacy.response_status(response))
+        self.assertEqual(privacy.response_status(response, eof=True), 502)
+
+    def test_fake_clock_connect_timeout_boundary_and_finite_failure_budget(self):
+        response = b'HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n'
+        for budget, ready_at, expected in ((5, 5.2, 'REQUEST_TIMEOUT'), (70, 5.2, 502),
+                                           (70, 60.2, 502), (70, 69.9, 502),
+                                           (70, 70.2, 'REQUEST_TIMEOUT')):
+            clock = [0.0]
+            connection = self.socket(response)
+            def receive(size):
+                remaining = connection.settimeout.call_args.args[0]
+                if ready_at - clock[0] > remaining:
+                    clock[0] += remaining
+                    raise TimeoutError(PRIVATE)
+                clock[0] = ready_at
+                return response
+            connection.recv.side_effect = receive
+            with patch.object(privacy.socket, 'create_connection', return_value=connection), \
+                    patch.object(privacy.time, 'monotonic', side_effect=lambda: clock[0]):
+                if isinstance(expected, int):
+                    self.assertEqual(privacy.wire(8080, 'GET', '/', timeout=budget), expected)
+                else:
+                    with self.assertRaisesRegex(privacy.CheckError, '^' + expected + '$'):
+                        privacy.wire(8080, 'GET', '/', timeout=budget)
+        with self.assertRaises(privacy.CheckError):
+            privacy.wire(8080, 'GET', '/', timeout=60)
+
 
 class OrchestrationTests(NoExternalCalls):
-    def invoke(self, *, fail_probe=None, bad_status=None, leak_service=None,
+    def invoke(self, *, fail_probe=None, bad_status=None, bad_at=0, leak_service=None,
                capture_error=None, missing_capture=None, stop_error=False, exception=None):
         items = containers()
         captures = []
@@ -254,11 +351,12 @@ class OrchestrationTests(NoExternalCalls):
         def wire(*args, **kwargs):
             index = len(calls)
             calls.append(args)
+            self.assertEqual(kwargs['timeout'], privacy.UPSTREAM_TIMEOUT if index >= 11 else 5)
             if exception:
                 raise RuntimeError(exception)
             if index == fail_probe:
                 raise privacy.CheckError('REQUEST_FAILED')
-            return bad_status if index == 0 and bad_status else statuses[index]
+            return bad_status if index == bad_at and bad_status else statuses[index]
         def command(*args, **kwargs):
             if args[0] == 'stop' and stop_error:
                 raise privacy.CheckError('DOCKER_COMMAND_FAILED')
@@ -334,6 +432,41 @@ class OrchestrationTests(NoExternalCalls):
             self.assertIsNotNone(error)
             self.assertNotEqual(summary['status'], 'PASS')
             self.assertNotIn(PRIVATE, json.dumps(summary))
+
+    def test_all_upstream_probes_require_only_502_or_504_without_retry(self):
+        names = ('ingress_backend_failure', 'frontend_backend_failure', 'ingress_frontend_failure')
+        for index, name in enumerate(names, 11):
+            for wrong in (200, 400, 500, 503, 505):
+                summary, error, calls, _ = self.invoke(bad_status=wrong, bad_at=index)
+                self.assertIsNotNone(error)
+                self.assertEqual(len(calls), index + 1)
+                self.assertEqual(summary['probes'][name], {'status': 'FAIL', 'httpStatus': wrong})
+                self.assertFalse(summary['upstreamFailuresExercised'])
+
+    def test_each_verified_stopped_upstream_accepts_and_preserves_502_or_504(self):
+        names = ('ingress_backend_failure', 'frontend_backend_failure', 'ingress_frontend_failure')
+        self.assertEqual(privacy.UPSTREAM_STATUSES, {502, 504})
+        self.assertEqual(privacy.UPSTREAM_TIMEOUT, 70)
+        self.assertEqual(3 * privacy.UPSTREAM_TIMEOUT, 210)
+        for index, name in enumerate(names, 11):
+            for status in (502, 504):
+                summary, error, calls, _ = self.invoke(bad_status=status, bad_at=index)
+                self.assertIsNone(error)
+                self.assertEqual(summary['status'], 'PASS')
+                self.assertEqual(len(calls), 14)
+                self.assertEqual(summary['probes'][name], {'status': 'PASS', 'httpStatus': status})
+        for index in range(11):
+            summary, error, _, _ = self.invoke(bad_status=504, bad_at=index)
+            self.assertIsNotNone(error)
+            self.assertNotEqual(summary['status'], 'PASS')
+
+    def test_attempted_transport_failure_is_fail_and_later_probes_not_run(self):
+        summary, error, calls, _ = self.invoke(fail_probe=11)
+        self.assertIsNotNone(error)
+        self.assertEqual(len(calls), 12)
+        self.assertEqual(summary['probes']['ingress_backend_failure'], {'status': 'FAIL', 'httpStatus': None})
+        self.assertEqual(summary['probes']['frontend_backend_failure']['status'], 'NOT_RUN')
+        self.assertEqual(summary['probes']['ingress_frontend_failure']['status'], 'NOT_RUN')
 
 
 class ReportingTests(NoExternalCalls):

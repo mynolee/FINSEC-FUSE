@@ -127,7 +127,7 @@ class PolicyObservationTest {
     private static final class ReadOnlyDb extends Db {
         private final Function<String, List<Map<String, Object>>> read;
         private ReadOnlyDb(Function<String, List<Map<String, Object>>> read) {
-            super(null);
+            super(new org.springframework.jdbc.core.JdbcTemplate());
             this.read = read;
         }
         @Override public List<Map<String, Object>> query(String sql, Object... args) { return read.apply(sql); }
