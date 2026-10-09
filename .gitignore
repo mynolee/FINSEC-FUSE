@@ -42,3 +42,12 @@ private-prompts/
 # Gradle generated local state and outputs
 .gradle/
 **/build/
+
+# Private prompt bodies, evaluations and personal skill bundles
+[Pp][Rr][Oo][Mm][Pp][Tt][Ss]/
+[Ss][Kk][Ii][Ll][Ll][Ss]/
+.private/
+.ai/
+*.prompt
+*.prompt.txt
+*.prompt.md
