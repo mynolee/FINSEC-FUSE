@@ -91,6 +91,10 @@ class PaymentCommitAcknowledgementIT extends PaymentFixture {
         assertTrue(uncertain.containsKey("state"));
         assertNull(uncertain.get("state"));
         assertEquals(List.of("DEPENDENCY_UNAVAILABLE"), uncertain.get("reasonCodes"));
+        assertEquals("The operation outcome cannot be confirmed. After recovery, check using the same action ID and unchanged request",
+            uncertain.get("message"), "Unknown commit outcomes must preserve safe, identical-action recovery guidance");
+        assertFalse(failed.getResponse().getContentAsString().contains(LOST_ACK),
+            "The public 503 response must not expose the injected JDBC exception text");
         assertEquals(false, uncertain.get("replayed"));
         assertFalse(uncertain.containsKey("paymentId"), "503 must not claim payment success or failure");
 
