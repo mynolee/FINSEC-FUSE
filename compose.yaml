@@ -1,0 +1,133 @@
+name: finsec-fuse
+x-runtime-hardening: &runtime-hardening
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+services:
+  postgres:
+    <<: *runtime-hardening
+    image: postgres:16.15
+    user: postgres
+    pids_limit: 256
+    networks: [data]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    environment:
+      POSTGRES_DB: fuse
+      POSTGRES_USER: fuse_owner
+      POSTGRES_PASSWORD: ${FUSE_DB_OWNER_PASSWORD:?Run scripts/bootstrap-dev.sh}
+      FUSE_DB_PASSWORD: ${FUSE_DB_PASSWORD:?Run scripts/bootstrap-dev.sh}
+      FUSE_EXPERIMENT_DB_PASSWORD: ${FUSE_EXPERIMENT_DB_PASSWORD:?Run scripts/bootstrap-dev.sh}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sh:/docker-entrypoint-initdb.d/10-fuse.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U fuse_owner -d fuse"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  agent:
+    <<: *runtime-hardening
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    user: "10001:10001"
+    pids_limit: 128
+    networks: [kyc]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    environment:
+      FUSE_SERVICE_TOKEN: ${FUSE_SERVICE_TOKEN:?Run scripts/bootstrap-dev.sh}
+      # LIVE needs both an explicit overlay and externally enforced egress policy.
+      FUSE_KYC_MODE: replay
+      FUSE_LLM_MODEL: ""
+      FUSE_LLM_API_KEY: ""
+      PYTHONDONTWRITEBYTECODE: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  backend:
+    <<: *runtime-hardening
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # Local Compose bind secrets keep host ownership; the key stays mode 0600.
+    user: "${FUSE_RUNTIME_UID:?Run scripts/bootstrap-dev.sh}:${FUSE_RUNTIME_GID:?Run scripts/bootstrap-dev.sh}"
+    pids_limit: 512
+    networks: [web, data, kyc]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777
+    environment:
+      # Allowlist configuration instead of copying every .env entry into Java.
+      SPRING_PROFILES_ACTIVE: demo
+      FUSE_DEMO_SEED: ${FUSE_DEMO_SEED:-true}
+      FUSE_WORKER_ENABLED: ${FUSE_WORKER_ENABLED:-true}
+      FUSE_MIGRATE: ${FUSE_MIGRATE:-true}
+      FUSE_DB_URL: jdbc:postgresql://postgres:5432/fuse
+      FUSE_DB_USERNAME: fuse_runtime
+      FUSE_DB_PASSWORD: ${FUSE_DB_PASSWORD:?Run scripts/bootstrap-dev.sh}
+      FUSE_MIGRATION_USERNAME: fuse_owner
+      FUSE_MIGRATION_PASSWORD: ${FUSE_DB_OWNER_PASSWORD:?Run scripts/bootstrap-dev.sh}
+      FUSE_KYC_BASE_URL: http://agent:8001
+      FUSE_KYC_MODE: replay
+      FUSE_SERVICE_TOKEN: ${FUSE_SERVICE_TOKEN:?Run scripts/bootstrap-dev.sh}
+      FUSE_CUSTOMER_101_TOKEN: ${FUSE_CUSTOMER_101_TOKEN:?Run scripts/bootstrap-dev.sh}
+      FUSE_CUSTOMER_102_TOKEN: ${FUSE_CUSTOMER_102_TOKEN:?Run scripts/bootstrap-dev.sh}
+      FUSE_CUSTOMER_103_TOKEN: ${FUSE_CUSTOMER_103_TOKEN:?Run scripts/bootstrap-dev.sh}
+      FUSE_CUSTOMER_104_TOKEN: ${FUSE_CUSTOMER_104_TOKEN:?Run scripts/bootstrap-dev.sh}
+      FUSE_REVIEWER_TOKEN: ${FUSE_REVIEWER_TOKEN:?Run scripts/bootstrap-dev.sh}
+      FUSE_SECURITY_TOKEN: ${FUSE_SECURITY_TOKEN:?Run scripts/bootstrap-dev.sh}
+      FUSE_DEVELOPER_TOKEN: ${FUSE_DEVELOPER_TOKEN:?Run scripts/bootstrap-dev.sh}
+      FUSE_REVIEWER_CUSTOMERS: ${FUSE_REVIEWER_CUSTOMERS:-customer-101,customer-102,customer-103,customer-104}
+      FUSE_SECURITY_CUSTOMERS: ${FUSE_SECURITY_CUSTOMERS:-customer-101,customer-102,customer-103,customer-104}
+      FUSE_CORS_ALLOWED_ORIGINS: ${FUSE_CORS_ALLOWED_ORIGINS:-}
+      FUSE_POLICY_VERSION: ${FUSE_POLICY_VERSION:-FUSE-MVP-2}
+      FUSE_SIGNING_KEY_ID: ${FUSE_SIGNING_KEY_ID:-local-v1}
+      FUSE_SIGNING_KEY_PATH: /run/secrets/fuse_signing_key
+      FUSE_VERIFY_KEYS: ${FUSE_VERIFY_KEYS:-}
+      FUSE_EXPERIMENT_DB_URL: jdbc:postgresql://postgres:5432/fuse_experiments
+      FUSE_EXPERIMENT_DB_USERNAME: fuse_experiment_owner
+      FUSE_EXPERIMENT_DB_PASSWORD: ${FUSE_EXPERIMENT_DB_PASSWORD:?Run scripts/bootstrap-dev.sh}
+      FUSE_EXPERIMENT_LIVE_ENABLED: "false"
+    ports: ["127.0.0.1:8080:8080"]
+    secrets: [fuse_signing_key]
+    depends_on:
+      postgres: {condition: service_healthy}
+      agent: {condition: service_healthy}
+  frontend:
+    <<: *runtime-hardening
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    user: "101:101"
+    pids_limit: 256
+    networks: [web]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    ports: ["127.0.0.1:5173:8080"]
+    depends_on: [backend]
+secrets:
+  fuse_signing_key:
+    file: ./.secrets/signing.key
+volumes:
+  pgdata:
+networks:
+  # Service discovery is pairwise: the adapter and UI cannot join the DB bridge.
+  # Internal bridges deny default external routing; they are not hostname ACLs.
+  web:
+    driver: bridge
+    internal: true
+  data:
+    driver: bridge
+    internal: true
+  kyc:
+    driver: bridge
+    internal: true
