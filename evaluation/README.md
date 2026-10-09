@@ -173,6 +173,21 @@ the original receipt, whose trace contains `PAYMENT_COMMITTED`; the server does
 not invent an `IDEMPOTENT_REPLAY` reason. These corrections do not change the
 expected authorization or payment outcomes.
 
+Two existing fixture reason labels are audit outcomes: `PAYMENT_COMMITTED` and
+`LATE_RESULT_DISCARDED`. The exporter compares these against exact structured
+events in the workflow-scoped persisted `auditEvents` collection, while leaving
+`actualReasonCodes` unchanged. A committed payment requires a matching action in
+the single mock-payment ledger row and a successful PAYMENT run in the same
+generation, joined by the PAYMENT risk ledger's matching RESERVE/CONSUME action,
+run, reservation and points. The quarantine late-result case requires the discarded event's
+`WORKFLOW_CHANGED` reason, the exact verified KYC request/run/workflow binding,
+a matching input snapshot hash, a blocked KYC run, and no payment or result for that run. Missing or unrelated
+evidence fails the comparison. `expectedReasonEvidenceType` and
+`actualOutcomeEvents` expose the evidence category and correlated event IDs.
+All other expected reasons still require an exact decision reason code; state
+and forbidden-payment expectations remain mandatory. These typed comparisons
+do not modify the fixture plan, observed outcomes or calculated metrics.
+
 `A_DELEGATION_REUSE_03` exercises `USE_STALE_DELEGATION`, specifically the
 generation predicate. Its shared NEEDS_REVIEW candidate creates a real hold;
 `RecoveryService.resume` advances the workflow to generation 2. The original
