@@ -204,6 +204,9 @@ jobs:
         run: python scripts/ci-verify.py database
       - name: Execute all 60 paired replay cases and export reviewed safe evidence
         run: python scripts/ci-verify.py evidence
+      - name: Always capture fixed readiness and container-state diagnostics before teardown
+        if: always()
+        run: python scripts/ci-verify.py diagnostics
       - name: Always remove only this run's Compose containers and volumes
         if: always()
         run: python scripts/ci-run.py --label compose-cleanup -- docker compose --project-name "$COMPOSE_PROJECT_NAME" down --volumes --remove-orphans

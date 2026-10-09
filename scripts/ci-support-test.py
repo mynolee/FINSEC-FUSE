@@ -6,6 +6,11 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
+import contextlib
+import io
+from urllib.error import HTTPError
 
 
 def module(name):
@@ -150,6 +155,167 @@ class ArtifactTest(unittest.TestCase):
                     (root / 'metrics.json').symlink_to(root / 'case_results.json')
                 with self.assertRaises(ValueError):
                     checks.validate_bundle(root, ['{}'] if kind == 'secret' else [])
+
+
+class ReadinessDiagnosticTest(unittest.TestCase):
+    class Response:
+        def __init__(self, status, body):
+            self.status, self.body, self.limit = status, body, None
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self, limit):
+            self.limit = limit
+            return self.body[:limit]
+
+    def process(self, value, code=0):
+        return SimpleNamespace(returncode=code, stdout=json.dumps(value).encode(), stderr=b'PRIVATE_PAYLOAD_SENTINEL')
+
+    def agent(self):
+        return self.process({'ready': True, 'httpStatus': 200, 'result': 'READY'})
+
+    def test_backend_failure_does_not_hide_frontend_or_agent(self):
+        frontend = self.Response(200, b'<div id="root"></div>')
+        with patch.object(checks.subprocess, 'run', return_value=self.agent()), patch.object(checks.HTTP, 'open', side_effect=[HTTPError('private', 503, 'PRIVATE_PAYLOAD_SENTINEL', {}, None), frontend]):
+            observed = checks.readiness_probes()
+        self.assertTrue(observed['agent']['ready'])
+        self.assertTrue(observed['frontend']['ready'])
+        self.assertEqual(observed['backend']['httpStatus'], 503)
+        self.assertFalse(observed['backend']['ready'])
+        self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
+
+    def test_replay_required_cannot_be_overridden_by_ready_boolean(self):
+        agent = self.process({'ready': True, 'httpStatus': 200, 'result': 'REPLAY_REQUIRED'})
+        with patch.object(checks.subprocess, 'run', return_value=agent), patch.object(checks.HTTP, 'open', side_effect=OSError('PRIVATE_PAYLOAD_SENTINEL')):
+            observed = checks.readiness_probes()
+        self.assertFalse(observed['agent']['ready'])
+        self.assertEqual(observed['agent']['result'], 'REPLAY_REQUIRED')
+
+    def test_http_bodies_are_bounded_and_minified_root_is_supported(self):
+        backend = self.Response(200, b'{"status":"UP","details":"PRIVATE_PAYLOAD_SENTINEL"}')
+        frontend = self.Response(200, b'<div id=root></div>')
+        with patch.object(checks.subprocess, 'run', return_value=self.agent()), patch.object(checks.HTTP, 'open', side_effect=[backend, frontend]):
+            observed = checks.readiness_probes()
+        self.assertTrue(all(row['ready'] for row in observed.values()))
+        self.assertEqual(backend.limit, 4097)
+        self.assertEqual(frontend.limit, 65537)
+        self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
+
+    def test_only_actual_unambiguous_div_id_counts_as_root(self):
+        for body in (b'<div id="root"></div>', b"<div id='root'></div>", b'<DIV ID=root></DIV>'):
+            with self.subTest(valid=body):
+                self.assertTrue(checks.has_root_element(body))
+        for body in (b'<div data-id="root"></div>', b'<div aria-id="root"></div>',
+                     b'<div data-note=" id=root"></div>', b'<!-- <div id="root"> -->',
+                     b'<script>"<div id=\"root\">"</script>', b'<div id="other" id="root"></div>',
+                     b'<span id="root"></span>', b'<div id="root-other"></div>'):
+            with self.subTest(invalid=body):
+                self.assertFalse(checks.has_root_element(body))
+
+    def test_host_and_internal_probes_reject_non_id_root_markers(self):
+        for body in (b'<div data-id="root"></div>', b'<div aria-id="root"></div>', b'<div data-note=" id=root"></div>'):
+            with self.subTest(body=body):
+                backend = self.Response(200, b'{"status":"UP"}')
+                with patch.object(checks.subprocess, 'run', return_value=self.agent()), patch.object(checks.HTTP, 'open', side_effect=[backend, self.Response(200, body)]):
+                    observed = checks.readiness_probes()
+                self.assertFalse(observed['frontend']['ready'])
+                internal_backend = SimpleNamespace(returncode=0, stdout=b'HTTP/1.1 200 OK\r\n\r\n{"status":"UP"}', stderr=b'')
+                internal_frontend = SimpleNamespace(returncode=0, stdout=body, stderr=b'')
+                with patch.object(checks.subprocess, 'run', side_effect=[internal_backend, internal_frontend]):
+                    observed = checks.internal_http_probes()
+                self.assertFalse(observed['frontend']['ready'])
+
+    def test_oversized_or_unknown_responses_do_not_pass(self):
+        agent = self.process({'ready': True, 'httpStatus': '200 PRIVATE_PAYLOAD_SENTINEL', 'result': 'PRIVATE_PAYLOAD_SENTINEL'})
+        with patch.object(checks.subprocess, 'run', return_value=agent), patch.object(checks.HTTP, 'open', side_effect=[self.Response(200, b'x' * 4097), self.Response(200, b'<div id="root">' + b'x' * 65536)]):
+            observed = checks.readiness_probes()
+        self.assertFalse(any(row['ready'] for row in observed.values()))
+        self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
+
+    def test_container_fields_are_strictly_projected(self):
+        rows = [{'Service': 'backend', 'State': 'exited', 'Health': '', 'ExitCode': 1, 'Command': 'PRIVATE_PAYLOAD_SENTINEL'},
+                {'Service': 'agent', 'State': 'PRIVATE_PAYLOAD_SENTINEL', 'Health': 'PRIVATE_PAYLOAD_SENTINEL', 'ExitCode': True},
+                {'Service': 'PRIVATE_PAYLOAD_SENTINEL', 'State': 'running'}]
+        with patch.object(checks.subprocess, 'run', return_value=self.process(rows)):
+            observed = checks.compose_states()
+        self.assertEqual(observed['backend'], {'state': 'EXITED', 'health': 'NONE', 'exitCode': 1})
+        self.assertEqual(observed['agent'], {'state': 'UNKNOWN', 'health': 'UNKNOWN', 'exitCode': None})
+        self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
+
+    def test_startup_logs_only_emit_known_boolean_categories(self):
+        process = SimpleNamespace(returncode=0, stdout=b'APPLICATION FAILED TO START BeanCreationException PRIVATE_PAYLOAD_SENTINEL', stderr=b'PRIVATE_PAYLOAD_SENTINEL')
+        with patch.object(checks.subprocess, 'run', return_value=process):
+            observed = checks.backend_startup_categories()
+        self.assertTrue(observed['flags']['APPLICATION_START_FAILED'])
+        self.assertTrue(observed['flags']['BEAN_CREATION_FAILED'])
+        self.assertFalse(observed['flags']['OUT_OF_MEMORY'])
+        self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
+
+    def test_timeout_always_emits_safe_failure_artifact(self):
+        services = {name: {'ready': False, 'httpStatus': 503, 'result': 'HTTP_ERROR'} for name in ('agent', 'backend', 'frontend')}
+        with patch.object(checks, 'readiness_probes', return_value=services), patch.object(checks, 'compose_states', return_value={}), patch.object(checks, 'backend_startup_categories', return_value={}), patch.object(checks, 'emit') as emitted, contextlib.redirect_stdout(io.StringIO()), self.assertRaises(TimeoutError):
+            checks.ready(timeout=0)
+        self.assertEqual(emitted.call_args.args[0], 'compose-readiness.json')
+        self.assertEqual(emitted.call_args.args[1]['status'], 'TIMEOUT')
+        self.assertEqual(set(emitted.call_args.args[1]['services']), {'agent', 'backend', 'frontend'})
+
+    def test_success_requires_all_services_and_emits_pass(self):
+        services = {name: {'ready': True, 'httpStatus': 200, 'result': 'READY'} for name in ('agent', 'backend', 'frontend')}
+        with patch.object(checks, 'readiness_probes', return_value=services), patch.object(checks, 'compose_states', return_value={}), patch.object(checks, 'emit') as emitted, contextlib.redirect_stdout(io.StringIO()):
+            checks.ready(timeout=0)
+        self.assertEqual(emitted.call_args.args[1]['status'], 'PASS')
+
+    def test_missing_docker_still_emits_diagnostic_artifact(self):
+        with patch.object(checks.subprocess, 'run', side_effect=FileNotFoundError('PRIVATE_PAYLOAD_SENTINEL')), patch.object(checks.HTTP, 'open', side_effect=OSError('PRIVATE_PAYLOAD_SENTINEL')), patch.object(checks, 'emit') as emitted, contextlib.redirect_stdout(io.StringIO()):
+            checks.diagnostics()
+        self.assertEqual(emitted.call_args.args[0], 'compose-diagnostics.json')
+        report = emitted.call_args.args[1]
+        self.assertEqual(report['status'], 'OBSERVATION_ONLY')
+        self.assertFalse(any(row['ready'] for row in report['services'].values()))
+        self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(report))
+
+    def test_bindings_observe_actual_mapping_not_requested_config(self):
+        found = SimpleNamespace(returncode=0, stdout=b'a' * 64, stderr=b'')
+        missing = self.process({'8080/tcp': None, 'PRIVATE_PAYLOAD_SENTINEL': 'ignored'})
+        present = self.process({'8080/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '5173'}]})
+        with patch.object(checks.subprocess, 'run', side_effect=[found, missing, found, present]) as invoked:
+            observed = checks.published_bindings()
+        self.assertFalse(observed['backend']['published'])
+        self.assertTrue(observed['backend']['collected'])
+        self.assertTrue(observed['frontend']['published'])
+        self.assertTrue(observed['frontend']['loopbackOnly'])
+        self.assertTrue(observed['frontend']['expectedHostPort'])
+        self.assertIn('{{json .NetworkSettings.Ports}}', invoked.call_args_list[1].args[0])
+        self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
+
+    def test_nonloopback_or_wrong_port_are_visible_without_raw_addresses(self):
+        found = SimpleNamespace(returncode=0, stdout=b'a' * 64, stderr=b'')
+        wrong = self.process({'8080/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '9000'}]})
+        with patch.object(checks.subprocess, 'run', side_effect=[found, wrong, found, wrong]):
+            observed = checks.published_bindings()
+        self.assertTrue(observed['backend']['published'])
+        self.assertFalse(observed['backend']['loopbackOnly'])
+        self.assertFalse(observed['backend']['expectedHostPort'])
+        self.assertNotIn('0.0.0.0', json.dumps(observed))
+
+    def test_internal_http_only_projects_fixed_readiness(self):
+        backend = SimpleNamespace(returncode=0, stdout=b'HTTP/1.1 200 OK\r\nX-Debug: PRIVATE_PAYLOAD_SENTINEL\r\n\r\n{"status":"UP"}', stderr=b'')
+        frontend = SimpleNamespace(returncode=0, stdout=b'<div id="root">PRIVATE_PAYLOAD_SENTINEL</div>', stderr=b'')
+        with patch.object(checks.subprocess, 'run', side_effect=[backend, frontend]):
+            observed = checks.internal_http_probes()
+        self.assertTrue(all(row['ready'] for row in observed.values()))
+        self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
+
+    def test_internal_success_never_replaces_failed_host_gate(self):
+        services = {name: {'ready': False, 'httpStatus': None, 'result': 'PROBE_ERROR'} for name in ('agent', 'backend', 'frontend')}
+        with patch.object(checks, 'readiness_probes', return_value=services), patch.object(checks, 'internal_http_probes', return_value={'backend': {'ready': True}, 'frontend': {'ready': True}}), patch.object(checks, 'compose_states', return_value={}), patch.object(checks, 'backend_startup_categories', return_value={}), patch.object(checks, 'emit'), contextlib.redirect_stdout(io.StringIO()), self.assertRaises(TimeoutError):
+            checks.ready(timeout=0)
+
+    def test_workflow_always_diagnoses_before_cleanup(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
+        self.assertIn('if: always()\n        run: python scripts/ci-verify.py diagnostics', workflow)
+        self.assertLess(workflow.index('run: python scripts/ci-verify.py diagnostics'), workflow.index('--label compose-cleanup'))
 
 
 class CountReportTest(unittest.TestCase):
