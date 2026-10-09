@@ -80,6 +80,32 @@ describe('operator console', () => {
     await userEvent.click(screen.getByRole('button', { name: '연결 해제' }));
     expect(screen.getByRole('heading', { name: '운영 콘솔 연결' })).toBeInTheDocument();
   });
+  it('keeps hash navigation separate from explicit logout before switching tokens', async () => {
+    const fetcher = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(response({ items: [], total: 0, page: 0, size: 20 })));
+    vi.stubGlobal('fetch', fetcher);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('개발용 인증 토큰'), {
+      target: { value: 'synthetic-first-role' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /연결하고 업무 조회/ }));
+    await screen.findByRole('button', { name: '연결 해제' });
+    window.location.hash = '/experiments';
+    fireEvent(window, new HashChangeEvent('hashchange'));
+    window.location.hash = '';
+    fireEvent(window, new HashChangeEvent('hashchange'));
+    expect(screen.queryByLabelText('개발용 인증 토큰')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '연결 해제' }));
+    const input = await screen.findByLabelText('개발용 인증 토큰');
+    expect(input).toHaveValue('');
+    fireEvent.change(input, { target: { value: 'synthetic-second-role' } });
+    fireEvent.click(screen.getByRole('button', { name: /연결하고 업무 조회/ }));
+    await waitFor(() =>
+      expect(fetcher.mock.lastCall?.[1].headers.Authorization).toBe('Bearer synthetic-second-role'),
+    );
+    expect([localStorage.length, sessionStorage.length]).toEqual([0, 0]);
+  });
   it('displays authentication failure without calling it an attack block', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ reasonCodes: ['UNAUTHENTICATED'] }, 401)));
     render(<App />);

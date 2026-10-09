@@ -30,6 +30,14 @@ function token(role: string): string {
 async function login(page: Page, role: string) {
   checkpoint('SESSION_NAVIGATE');
   await page.goto('/');
+  // Hash-only navigation is not a session-reset contract. Switch roles through the real logout UI.
+  const disconnect = page.getByRole('button', { name: '연결 해제', exact: true });
+  if (await disconnect.isVisible()) {
+    checkpoint('SESSION_DISCONNECT');
+    await disconnect.click();
+  }
+  checkpoint('SESSION_LOGIN_FORM');
+  await expect(page.getByLabel('개발용 인증 토큰')).toBeVisible();
   checkpoint('SESSION_TOKEN_INPUT');
   await page.getByLabel('개발용 인증 토큰').fill(token(role));
   checkpoint('SESSION_CONNECT');

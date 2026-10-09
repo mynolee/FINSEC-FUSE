@@ -1,6 +1,8 @@
 // Public diagnostics may contain only these fixed, source-reviewed labels.
 export const PHASES = [
   'SESSION_NAVIGATE',
+  'SESSION_DISCONNECT',
+  'SESSION_LOGIN_FORM',
   'SESSION_TOKEN_INPUT',
   'SESSION_CONNECT',
   'SESSION_CONNECTED',
