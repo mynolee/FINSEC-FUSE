@@ -272,6 +272,7 @@ jobs:
         run: |
           python scripts/security-scan-test.py
           python scripts/compose-security-test.py
+          python scripts/nginx-logging-test.py
       - name: Resolve Java dependency inventory
         run: python scripts/ci-run.py --label dependency-inventory -- ./gradlew --no-daemon --console=plain writeDependencyInventory
       - name: Run actual scanners without sending source to remote analysis
