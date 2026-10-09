@@ -17,6 +17,7 @@ test('desktop entry has no fabricated live data and supports keyboard login', as
   await expect(page.getByRole('alert')).toBeVisible({ timeout: 15000 });
   await expect(page.getByText('실시간 업무를 불러오지 못했어요')).toBeVisible();
   await expect(page.getByRole('link', { name: 'customer-102', exact: true })).toHaveCount(0);
+  expect(apiCalls.length, 'Login must reach the real API transport').toBeGreaterThan(0);
   expect(apiCalls.every((url) => new URL(url).pathname.startsWith('/api/v1/'))).toBeTruthy();
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await page.screenshot({ path: 'test-results/console-auth-or-offline-error.png', fullPage: true });

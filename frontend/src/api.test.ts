@@ -7,6 +7,41 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 describe('Spring-only API client', () => {
+  it.each([
+    ['default', 'GET'],
+    ['default', 'POST'],
+    ['injected', 'GET'],
+    ['injected', 'POST'],
+  ] as const)('calls %s fetch without an invalid receiver for %s', async (source, method) => {
+    // Browser Web IDL fetch rejects a FuseApi receiver. Node fetch and arrow-function
+    // mocks do not expose that bug, so exercise the browser receiver constraint explicitly.
+    const fetcher = vi.fn(function (this: unknown, ..._args: Parameters<typeof fetch>) {
+      if (this !== undefined && this !== globalThis && this !== window)
+        throw new TypeError('Illegal invocation');
+      return Promise.resolve(json({ decision: 'ALLOW', items: [], total: 0, page: 0, size: 20 }));
+    });
+    try {
+      if (source === 'default') vi.stubGlobal('fetch', fetcher);
+      const api = source === 'default' ? new FuseApi('synthetic') : new FuseApi('synthetic', fetcher);
+      if (method === 'GET') await api.workflows();
+      else await api.mutate('/workflows', { customerId: 'synthetic' }, ACTION_ID);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(fetcher.mock.contexts).toEqual([undefined]);
+      expect(fetcher.mock.calls[0][0]).toBe(
+        method === 'GET' ? '/api/v1/workflows?size=20&page=0' : '/api/v1/workflows',
+      );
+      expect(fetcher.mock.calls[0][1]).toEqual(
+        expect.objectContaining({
+          method,
+          credentials: 'omit',
+          cache: 'no-store',
+          signal: expect.any(AbortSignal),
+        }),
+      );
+    } finally {
+      if (source === 'default') vi.unstubAllGlobals();
+    }
+  });
   it('sends every read to the same-origin Spring API with a bearer token', async () => {
     const fetcher = vi.fn().mockResolvedValue(json({ items: [], total: 0, page: 0, size: 20 }));
     await new FuseApi('unit-test-token', fetcher).workflows('WAIT_APPROVAL', 2);

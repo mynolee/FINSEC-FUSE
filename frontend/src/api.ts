@@ -39,7 +39,10 @@ export class FuseApi {
     const mutation = options.body !== undefined;
     let response: Response;
     try {
-      response = await this.fetcher(`/api/v1${path}`, {
+      // Native browser fetch requires its global receiver, not this FuseApi instance.
+      // A local function call also preserves the ordinary function contract for injected fetchers.
+      const fetcher = this.fetcher;
+      response = await fetcher(`/api/v1${path}`, {
         method: mutation ? 'POST' : 'GET',
         headers: {
           Authorization: `Bearer ${this.token}`,
