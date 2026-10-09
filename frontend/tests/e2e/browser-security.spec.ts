@@ -2,6 +2,7 @@ import { expect, test, type CDPSession } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { checkpoint } from './checkpoints';
+import { isEnforcedFrameAncestorDenial } from './diagnostic-contract';
 
 // Synthetic API responses exercise the real UI; they do not certify backend/DB isolation.
 test('SC-T07 untrusted customer text never creates executable DOM or network work', async ({ page }) => {
@@ -130,20 +131,14 @@ test('SC-T07 hostile loopback parent cannot frame the deployed UI', async ({ pag
     // Immediately reduce Chromium diagnostics to booleans. Never attach/log protocol or browser text.
     const cdp = await page.context().newCDPSession(page);
     session = cdp;
+    const { frameTree } = await cdp.send('Page.getFrameTree');
+    expect(frameTree.frame.url === parentUrl.href && !frameTree.frame.parentId).toBe(true);
+    const parentFrameId = frameTree.frame.id;
     let policyDenied = false;
     let navigationDenied = false;
     cdp.on('Audits.issueAdded', ({ issue }) => {
       const details = issue.details.contentSecurityPolicyIssueDetails;
-      // Accept only an exact marked endpoint of this probe, whether the issue identifies the
-      // protected resource or its offending ancestor. Unknown/normalized URL forms fail closed;
-      // do not infer undocumented frameAncestor semantics or accept an unrelated policy issue.
-      if (
-        details &&
-        !details.isReportOnly &&
-        /^frame-ancestors(?:\s|$)/.test(details.violatedDirective) &&
-        (details.blockedURL === framedUrl.href || details.blockedURL === parentUrl.href)
-      )
-        policyDenied = true;
+      if (isEnforcedFrameAncestorDenial(details, target.origin, parentFrameId)) policyDenied = true;
     });
     page.on('requestfailed', (request) => {
       if (
