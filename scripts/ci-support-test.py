@@ -74,6 +74,23 @@ class WorkflowPresenceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(gates.inspect(Path(directory))['combined']['status'], 'SKIPPED')
 
+    def test_network_harness_static_tests_are_required_prerequisites(self):
+        job = self.job('prerequisites')
+        self.assertIn('        run: python scripts/container-network-test.py\n', job)
+        self.assertNotIn('continue-on-error:', job)
+
+    def test_actual_network_check_runs_immediately_after_readiness(self):
+        import re
+        job = self.job('combined-compose-browser')
+        self.assertRegex(job, r'run: python scripts/ci-verify\.py ready\n'
+                         r'      - name: [^\n]+\n'
+                         r'        run: python scripts/container-network-check\.py\n'
+                         r'      - name: Real authenticated browser')
+        self.assertEqual(job.count('run: python scripts/container-network-check.py'), 1)
+        self.assertNotIn('continue-on-error:', job)
+        self.assertLess(job.index('python scripts/container-network-check.py'),
+                        job.index('python scripts/ci-verify.py diagnostics'))
+
     def test_integration_branch_still_requires_complete_prerequisites(self):
         job = self.job('prerequisites')
         self.assertIn('if [[ "$REVIEW_BRANCH" == chore/integration-verification* ]]; then', job)

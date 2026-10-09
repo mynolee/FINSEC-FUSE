@@ -38,6 +38,8 @@ jobs:
           python scripts/ci-prerequisites.py "${args[@]}"
       - name: Check gate and public artifact safeguards without services
         run: python scripts/ci-support-test.py
+      - name: Check local container-network harness safeguards without services
+        run: python scripts/container-network-test.py
 
   backend:
     name: Backend unit and PostgreSQL 16.15 integration
@@ -195,6 +197,8 @@ jobs:
         run: python scripts/ci-run.py --label compose-up -- docker compose up --build --detach --wait --wait-timeout 240
       - name: Verify actual service readiness
         run: python scripts/ci-verify.py ready
+      - name: Verify actual workload network isolation with local synthetic fixtures
+        run: python scripts/container-network-check.py
       - name: Real authenticated browser workflows, approval, quarantine, recovery and export
         run: npm run test:e2e
         working-directory: frontend
