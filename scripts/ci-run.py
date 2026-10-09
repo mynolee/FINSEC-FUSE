@@ -1,11 +1,47 @@
 #!/usr/bin/env python3
 """Run a check without publishing potentially sensitive stdout/stderr diagnostics."""
 import argparse
+import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+
+
+# Diagnostic bodies stay private. Publish only these fixed booleans, never regex
+# captures, exception text, command arguments, paths, environment or matched lines.
+# Signals aid diagnosis; they neither establish a root cause nor change the gate.
+COMPOSE_SIGNALS = {
+    'DAEMON_UNAVAILABLE': rb'cannot connect to the docker daemon|is the docker daemon running|error during connect',
+    'CONFIGURATION_INVALID': rb'error while interpolating|invalid interpolation|required variable .{0,200} is missing|validating .{0,200}:|no configuration file provided|unsupported config option|additional propert(?:y|ies) .{0,200} not allowed',
+    'IMAGE_FETCH_FAILED': rb'pull access denied|manifest unknown|toomanyrequests|error pulling image|failed to resolve source metadata|failed to fetch oauth token',
+    'BUILD_FAILED': rb'failed to solve:|failed to read dockerfile|unable to prepare context|failed to compute cache key',
+    'STORAGE_EXHAUSTED': rb'no space left on device|disk quota exceeded',
+    'RESOURCE_EXHAUSTED': rb'cannot allocate memory|out of memory|resource temporarily unavailable',
+    'PORT_BIND_FAILED': rb'port is already allocated|address already in use|failed to bind host port',
+    'CONTAINER_NOT_READY': rb'container .{0,200} is unhealthy|dependency failed to start|did not become healthy|timeout waiting for containers',
+    'ACCESS_DENIED': rb'permission denied|operation not permitted',
+    'NETWORK_FAILED': rb'no such host|network is unreachable|tls handshake timeout|i/o timeout|connection timed out|certificate signed by unknown authority',
+}
+DIAGNOSTIC_BYTES = 1024 * 1024
+
+
+def compose_diagnostic_signals(diagnostic):
+    """Inspect a bounded head/tail; output is independent of untrusted text."""
+    diagnostic.flush()
+    size = diagnostic.tell()
+    diagnostic.seek(0)
+    head = diagnostic.read(DIAGNOSTIC_BYTES)
+    # Separate chunks prevent accidental matches across omitted bytes.
+    chunks = [head]
+    if size > DIAGNOSTIC_BYTES:
+        diagnostic.seek(max(DIAGNOSTIC_BYTES, size - DIAGNOSTIC_BYTES))
+        chunks.append(diagnostic.read(DIAGNOSTIC_BYTES))
+    flags = {key: any(re.search(pattern, chunk, re.IGNORECASE) is not None for chunk in chunks)
+             for key, pattern in COMPOSE_SIGNALS.items()}
+    return {'signals': flags, 'unclassified': not any(flags.values()),
+            'scanTruncated': size > 2 * DIAGNOSTIC_BYTES}
 
 
 def main() -> int:
@@ -25,6 +61,8 @@ def main() -> int:
         except Exception as error:
             print(f'{args.label}: FAIL ({type(error).__name__}); diagnostic body withheld.', file=sys.stderr)
             return 1
+        if result.returncode != 0 and command[:2] == ['docker', 'compose']:
+            print('compose-failure-observation: ' + json.dumps(compose_diagnostic_signals(diagnostic), sort_keys=True))
     code = result.returncode
     print(f'{args.label}: {"PASS" if code == 0 else "FAIL"} (exit {code}). Raw logs were not published.')
     return code if code >= 0 else 128 - code

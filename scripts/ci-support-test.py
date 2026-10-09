@@ -24,6 +24,7 @@ gates = module('ci-prerequisites')
 checks = module('ci-verify')
 reports = module('ci-test-report')
 process_reports = module('ci-process-report')
+runner = module('ci-run')
 
 
 class GateTest(unittest.TestCase):
@@ -418,6 +419,91 @@ class ProcessReportTest(unittest.TestCase):
                 summary = process_reports.summarize(report, 'a' * 64)
                 self.assertEqual(summary['status'], 'FAIL')
                 self.assertNotIn('private-scenario-text', json.dumps(summary))
+
+
+class ComposeFailureSignalsTest(unittest.TestCase):
+    def observe(self, raw):
+        with tempfile.TemporaryFile() as diagnostic:
+            diagnostic.write(raw)
+            return runner.compose_diagnostic_signals(diagnostic)
+
+    def test_fixed_signals_cover_precontainer_failures(self):
+        cases = {
+            'DAEMON_UNAVAILABLE': b'Cannot connect to the Docker daemon at unix:///private/socket',
+            'CONFIGURATION_INVALID': b'error while interpolating services.backend: required variable PRIVATE is missing a value',
+            'IMAGE_FETCH_FAILED': b'failed to resolve source metadata for registry.invalid/private/image',
+            'BUILD_FAILED': b'failed to solve: private build details',
+            'STORAGE_EXHAUSTED': b'no space left on device',
+            'RESOURCE_EXHAUSTED': b'cannot allocate memory',
+            'PORT_BIND_FAILED': b'failed to bind host port 127.0.0.1:8080',
+            'CONTAINER_NOT_READY': b'container private-container is unhealthy',
+            'ACCESS_DENIED': b'permission denied: /private/path',
+            'NETWORK_FAILED': b'certificate signed by unknown authority',
+        }
+        for expected, raw in cases.items():
+            with self.subTest(expected=expected):
+                result = self.observe(raw)
+                self.assertTrue(result['signals'][expected])
+                self.assertFalse(result['unclassified'])
+                self.assertFalse(result['scanTruncated'])
+                self.assertEqual(set(result['signals']), set(runner.COMPOSE_SIGNALS))
+                self.assertTrue(all(type(v) is bool for v in result['signals'].values()))
+
+    def test_unknown_and_empty_bodies_remain_unclassified(self):
+        for raw in (b'', b'Unrecognized private error'):
+            result = self.observe(raw)
+            self.assertTrue(result['unclassified'])
+            self.assertFalse(any(result['signals'].values()))
+
+    def test_adversarial_body_cannot_reflect_secrets_or_inject_fields(self):
+        marker = b'PRIVATE_DIAGNOSTIC_SENTINEL'
+        raw = (b'permission denied: /' + marker + b'\nBearer ' + marker +
+               b'\n::error::' + marker + b'\n{"status":"PASS","leaked":"' + marker +
+               b'"}\n\x1b[31m' + marker)
+        result = self.observe(raw)
+        rendered = json.dumps(result)
+        self.assertNotIn(marker.decode(), rendered)
+        self.assertNotIn('status', result)
+        self.assertNotIn('leaked', result)
+        self.assertEqual(set(result), {'signals', 'unclassified', 'scanTruncated'})
+        self.assertTrue(result['signals']['ACCESS_DENIED'])
+
+    def test_bounded_scan_includes_tail_and_marks_omitted_middle(self):
+        raw = b'x' * (3 * runner.DIAGNOSTIC_BYTES) + b' no space left on device'
+        result = self.observe(raw)
+        self.assertTrue(result['signals']['STORAGE_EXHAUSTED'])
+        self.assertTrue(result['scanTruncated'])
+        middle = b'x' * runner.DIAGNOSTIC_BYTES + b' permission denied ' + b'x' * runner.DIAGNOSTIC_BYTES
+        result = self.observe(middle)
+        self.assertTrue(result['scanTruncated'])
+        self.assertTrue(result['unclassified'])
+
+    def invoke(self, command, code, raw):
+        def fake_run(args, stdout, stderr):
+            stdout.write(raw)
+            return SimpleNamespace(returncode=code)
+        output = io.StringIO()
+        with patch.object(runner.sys, 'argv', ['ci-run.py', '--label', 'compose-up', '--'] + command), \
+                patch.object(runner.subprocess, 'run', side_effect=fake_run), \
+                contextlib.redirect_stdout(output):
+            result = runner.main()
+        return result, output.getvalue()
+
+    def test_wrapper_preserves_failure_exit_and_never_prints_body(self):
+        for code, expected in ((1, 1), (17, 17), (-9, 137)):
+            result, output = self.invoke(['docker', 'compose', 'up'], code,
+                                        b'Cannot connect to the Docker daemon PRIVATE_DIAGNOSTIC_SENTINEL')
+            self.assertEqual(result, expected)
+            self.assertIn('compose-failure-observation:', output)
+            self.assertIn('FAIL', output)
+            self.assertNotIn('PRIVATE_DIAGNOSTIC_SENTINEL', output)
+
+    def test_success_and_noncompose_failures_do_not_publish_signals(self):
+        for command, code in ((['docker', 'compose', 'up'], 0), (['private-command'], 1)):
+            result, output = self.invoke(command, code, b'permission denied PRIVATE_DIAGNOSTIC_SENTINEL')
+            self.assertEqual(result, code)
+            self.assertNotIn('compose-failure-observation:', output)
+            self.assertNotIn('PRIVATE_DIAGNOSTIC_SENTINEL', output)
 
 
 if __name__ == '__main__':
