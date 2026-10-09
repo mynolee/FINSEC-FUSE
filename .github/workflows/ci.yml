@@ -38,6 +38,10 @@ jobs:
           python scripts/ci-prerequisites.py "${args[@]}"
       - name: Check gate and public artifact safeguards without services
         run: python scripts/ci-support-test.py
+      - name: Check bounded backend failure identifiers without services
+        run: python scripts/ci-test-report-test.py
+      - name: Check private runtime log capture safeguards without services
+        run: python scripts/runtime-log-privacy-test.py
       - name: Check local container-network harness safeguards without services
         run: python scripts/container-network-test.py
 
@@ -64,7 +68,7 @@ jobs:
       - name: Require nonzero unit and integration counts with no failures or skips
         if: always()
         run: python scripts/ci-test-report.py
-      - name: Publish aggregate test counts only
+      - name: Publish aggregate counts and source-allowlisted failure locations only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -223,6 +227,8 @@ jobs:
       - name: Always capture fixed readiness and container-state diagnostics before teardown
         if: always()
         run: python scripts/ci-verify.py diagnostics
+      - name: Verify terminal synthetic Docker log privacy before teardown
+        run: python scripts/runtime-log-privacy-check.py
       - name: Always remove only this run's Compose containers and volumes
         if: always()
         run: python scripts/ci-run.py --label compose-cleanup -- docker compose --project-name "$COMPOSE_PROJECT_NAME" down --volumes --remove-orphans
