@@ -51,3 +51,40 @@ export const PHASES = [
 export type Phase = (typeof PHASES)[number];
 export const PHASE_ANNOTATION = 'fuse-checkpoint';
 export const MAX_CHECKPOINTS = 64;
+
+type FrameAncestorIssue = {
+  blockedURL?: string;
+  violatedDirective?: string;
+  isReportOnly?: boolean;
+  contentSecurityPolicyViolationType?: string;
+  frameAncestor?: { frameId?: string };
+};
+
+/** Reduce the correlated Chromium policy issue to a boolean; never return browser diagnostics. */
+export function isEnforcedFrameAncestorDenial(
+  details: FrameAncestorIssue | undefined,
+  protectedOrigin: string,
+  parentFrameId: string,
+): boolean {
+  if (
+    !details ||
+    details.isReportOnly !== false ||
+    details.contentSecurityPolicyViolationType !== 'kURLViolation' ||
+    !/^frame-ancestors(?:\s|$)/.test(details.violatedDirective ?? '') ||
+    !parentFrameId ||
+    details.frameAncestor?.frameId !== parentFrameId
+  )
+    return false;
+  // Chromium strips the protected URL to its origin for frame-ancestors, and identifies the
+  // disallowed ancestor separately. Never normalize away a supplied path, query or credential.
+  try {
+    const origin = new URL(protectedOrigin);
+    return (
+      ['http:', 'https:'].includes(origin.protocol) &&
+      origin.origin === protectedOrigin &&
+      details.blockedURL === origin.href
+    );
+  } catch {
+    return false;
+  }
+}

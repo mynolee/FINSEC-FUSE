@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { resolve } from 'node:path';
 import type { TestResult, TestStep } from '@playwright/test/reporter';
 import { summarizeBrowserTest } from '../tests/e2e/safe-reporter';
-import { MAX_CHECKPOINTS, PHASE_ANNOTATION } from '../tests/e2e/diagnostic-contract';
+import {
+  isEnforcedFrameAncestorDenial,
+  MAX_CHECKPOINTS,
+  PHASE_ANNOTATION,
+} from '../tests/e2e/diagnostic-contract';
 
 const title = 'real browser replay experiment exports match persisted API rows and metrics';
 const file = resolve(import.meta.dirname, '../tests/e2e/fullstack.spec.ts');
@@ -20,6 +24,58 @@ function result(overrides: Partial<TestResult> = {}): TestResult {
 function step(overrides: Partial<TestStep> = {}): TestStep {
   return { title: PRIVATE, category: 'pw:api', steps: [], ...overrides } as unknown as TestStep;
 }
+
+describe('Chromium frame-ancestor denial correlation', () => {
+  const origin = 'http://127.0.0.1:5173';
+  const parentFrameId = 'synthetic-parent-frame';
+  const issue = {
+    blockedURL: `${origin}/`,
+    violatedDirective: "frame-ancestors 'none'",
+    isReportOnly: false,
+    contentSecurityPolicyViolationType: 'kURLViolation',
+    frameAncestor: { frameId: parentFrameId },
+  };
+
+  it('accepts only the protected origin and exact disallowed parent for an enforced URL violation', () => {
+    expect(isEnforcedFrameAncestorDenial(issue, origin, parentFrameId)).toBe(true);
+    expect(
+      isEnforcedFrameAncestorDenial(
+        { ...issue, blockedURL: 'https://127.0.0.1:5173/' },
+        'https://127.0.0.1:5173',
+        parentFrameId,
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    { blockedURL: 'http://127.0.0.1:5174/' },
+    { blockedURL: origin },
+    { blockedURL: `${origin}/another-path` },
+    { blockedURL: `${origin}/?fuse-frame-probe=synthetic` },
+    { blockedURL: `${origin}/#fragment` },
+    { blockedURL: 'http://synthetic@127.0.0.1:5173/' },
+    { blockedURL: undefined },
+    { frameAncestor: { frameId: 'synthetic-child-frame' } },
+    { frameAncestor: { frameId: '' } },
+    { frameAncestor: undefined },
+    { contentSecurityPolicyViolationType: 'kInlineViolation' },
+    { contentSecurityPolicyViolationType: undefined },
+    { isReportOnly: true },
+    { isReportOnly: undefined },
+    { violatedDirective: "frame-src 'none'" },
+    { violatedDirective: 'frame-ancestors-other' },
+    { violatedDirective: undefined },
+  ])('rejects mismatched or incomplete policy evidence %#', (override) => {
+    expect(isEnforcedFrameAncestorDenial({ ...issue, ...override }, origin, parentFrameId)).toBe(false);
+  });
+
+  it('rejects absent issues and invalid expected origins or parent identities', () => {
+    expect(isEnforcedFrameAncestorDenial(undefined, origin, parentFrameId)).toBe(false);
+    expect(isEnforcedFrameAncestorDenial(issue, origin, '')).toBe(false);
+    for (const invalid of ['invalid', 'null', `${origin}/path`, `${origin}/?query`, 'file://'])
+      expect(isEnforcedFrameAncestorDenial(issue, invalid, parentFrameId)).toBe(false);
+  });
+});
 
 describe('public browser diagnostic allowlist', () => {
   it('recognizes hostile-frame checks while withholding all raw Chromium diagnostics', () => {
