@@ -1,0 +1,123 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+}
+
+group = 'com.finsec'
+version = '0.1.0-SNAPSHOT'
+description = 'Evidence-bound, exactly-once mock financial workflow safety demonstrator'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation platform('io.zonky.test.postgres:embedded-postgres-binaries-bom:16.15.0')
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'io.zonky.test:embedded-postgres:2.2.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+layout.buildDirectory = layout.projectDirectory.dir('backend/build')
+
+sourceSets {
+    main {
+        java.srcDirs = ['backend/src/main/java']
+        resources.srcDirs = ['backend/src/main/resources']
+    }
+    test {
+        java.srcDirs = ['backend/src/test/java']
+        resources.srcDirs = ['backend/src/test/resources']
+    }
+}
+
+tasks.named('processResources') {
+    from('evaluation/fixtures') {
+        include '*.json'
+        into 'evaluation'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+    options.compilerArgs.add('-parameters')
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+    workingDir = file('backend')
+    maxParallelForks = 1
+    reports {
+        junitXml.required = true
+        html.required = true
+    }
+}
+
+def integrationPatterns = ['**/IT*.class', '**/*IT.class', '**/*ITCase.class']
+
+tasks.named('test') {
+    description = 'Runs unit tests without starting the integration suite.'
+    inputs.file('evaluation/tests/fixtures/metrics-parity.json')
+    include '**/Test*.class', '**/*Test.class', '**/*Tests.class', '**/*TestCase.class'
+    exclude integrationPatterns
+}
+
+def integrationTest = tasks.register('integrationTest', Test) {
+    description = 'Runs real PostgreSQL 16.15 integration tests, including all 60 paired replay cases.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include integrationPatterns
+    outputs.file('evaluation/exported_runs/java-replay-full/raw-java-report.json')
+    shouldRunAfter tasks.named('test')
+}
+
+tasks.named('check') {
+    dependsOn integrationTest
+}
+
+tasks.register('writeTestClasspath') {
+    description = 'Writes the complete test runtime classpath for the isolated HTTP smoke runner.'
+    group = 'verification'
+    dependsOn tasks.named('testClasses')
+    def destination = providers.gradleProperty('testClasspathFile')
+        .map { file(it) }
+        .orElse(layout.buildDirectory.file('test-runtime-classpath.txt').map { it.asFile })
+    inputs.files(sourceSets.test.runtimeClasspath)
+    outputs.file(destination)
+    doLast {
+        def output = destination.get()
+        output.parentFile.mkdirs()
+        output.setText(sourceSets.test.runtimeClasspath.asPath + System.lineSeparator(), 'UTF-8')
+    }
+}
+
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+tasks.named('wrapper') {
+    gradleVersion = '8.14.6'
+    distributionType = Wrapper.DistributionType.BIN
+    distributionSha256Sum = '7988ed071b2a07900e2ec715fca15c6ab72bce6db433af301fa7fa7e9407bd24'
+    networkTimeout = 60000
+}

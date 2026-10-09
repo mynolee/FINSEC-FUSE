@@ -51,3 +51,25 @@ private-prompts/
 *.prompt
 *.prompt.txt
 *.prompt.md
+
+# Additional local AI assistant and tool configuration
+AGENTS*.md
+AGENT*.md
+SKILL*.md
+CLAUDE*.md
+GEMINI*.md
+.continue/
+.windsurf/
+.roo/
+.cline/
+.clinerules/
+.kilocode/
+.opencode/
+.gemini/
+.kiro/
+.serena/
+.aider*
+.mcp.json
+mcp.json
+opencode.json
+opencode.jsonc
