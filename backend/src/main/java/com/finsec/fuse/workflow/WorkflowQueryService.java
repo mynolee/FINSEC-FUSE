@@ -53,7 +53,7 @@ public class WorkflowQueryService {
                 "approvals",rows("SELECT id AS approval_id,generation,actor_id,status,review_snapshot_hash,extra_risk,risk_limit,expires_at,created_at FROM approval WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "riskEvents",rows("SELECT id,stage,event_type,points,generation,action_id,run_id,reservation_id,created_at FROM risk_ledger WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "payments",rows("SELECT id AS payment_id,amount_krw,payout_account_id,generation,approval_id,action_id,receipt_json,created_at FROM mock_payment WHERE workflow_id=? ORDER BY created_at,id",workflowId),
-                "auditEvents",rows("SELECT id,action_id,run_id,quarantine_id,actor_id,event_type,reason_code,details_json,created_at FROM audit_event WHERE workflow_id=? ORDER BY created_at,id",workflowId),
+                "auditEvents",auditRows(workflowId),
                 "sourceUses",rows("SELECT u.* FROM run_source_use u JOIN agent_run r ON r.id=u.run_id WHERE r.workflow_id=? ORDER BY u.run_id,u.document_id,u.document_version",workflowId),
                 "evidenceUses",rows("SELECT u.run_id,e.id AS evidence_id,e.evidence_type,e.outcome,e.status,e.expires_at FROM run_evidence_use u JOIN agent_run r ON r.id=u.run_id JOIN trusted_evidence e ON e.id=u.evidence_id WHERE r.workflow_id=? ORDER BY u.run_id,e.id",workflowId));
     }
@@ -88,6 +88,56 @@ public class WorkflowQueryService {
         if(approval.isEmpty() || integer(approval.get(),"extra_risk")!=policy.approvalExtraRisk() || integer(approval.get(),"risk_limit")!=policy.approvedRiskLimit() ||
                 !evidence.validateStored(id(w,"current_kyc_result_id"),now).validated())return policy.automaticRiskLimit();
         return policy.automaticRiskLimit()+integer(approval.get(),"extra_risk");
+    }
+    private List<Map<String,Object>> auditRows(UUID workflowId) {
+        return db.query("SELECT id,action_id,run_id,quarantine_id,actor_id,event_type,reason_code,details_json,created_at FROM audit_event WHERE workflow_id=? ORDER BY created_at,id",workflowId)
+            .stream().map(this::camelRow).map(row->{
+                String event=Objects.toString(row.get("eventType"),"");
+                if(Set.of("WORKFLOW_RESUMED","RECOVERY_CHECKED").contains(event))
+                    row.put("detailsJson",safeRecoveryAuditDetails(event,row.get("detailsJson")));
+                return row;
+            }).toList();
+    }
+    /** Read projection only: legacy append-only records may still contain freeform notes. */
+    private Map<String,Object> safeRecoveryAuditDetails(String event,Object value) {
+        Map<?,?> original=value instanceof Map<?,?> map?map:Map.of();
+        var safe=new LinkedHashMap<String,Object>();
+        if("WORKFLOW_RESUMED".equals(event)) {
+            for(String key:List.of("previousGeneration","generation","usedRiskRetained","runCountRetained"))
+                copyAuditNumber(original,safe,key);
+            copyAuditUuid(original,safe,"kycJobId");
+            safe.put("reasonProvided",Boolean.TRUE.equals(original.get("reasonProvided")) ||
+                original.get("reason") instanceof String reason && !reason.isBlank());
+        } else {
+            copyAuditUuid(original,safe,"safeDocumentId");
+            copyAuditNumber(original,safe,"safeDocumentVersion");
+            var checks=new ArrayList<Map<String,Object>>();
+            if(original.get("checks") instanceof List<?> values)for(Object item:values) {
+                if(!(item instanceof Map<?,?> check))continue;
+                var selected=new LinkedHashMap<String,Object>();
+                copyAuditUuid(check,selected,"workflowId");
+                if(check.get("evidenceBundleHash") instanceof String hash && hash.matches("[0-9a-f]{64}"))
+                    selected.put("evidenceBundleHash",hash);
+                if(!selected.isEmpty())checks.add(selected);
+            }
+            safe.put("checks",checks);
+            if(original.get("safeAgentId") instanceof String agent && original.get("safeAgentVersion") instanceof Number version &&
+                policy.safeAgentVersions().contains(agent+":"+version)) {
+                safe.put("safeAgentId",agent);safe.put("safeAgentVersion",version);
+            }
+            Map<?,?> legacy=original.get("remediation") instanceof Map<?,?> map?map:Map.of();
+            safe.put("noteProvided",Boolean.TRUE.equals(original.get("noteProvided")) ||
+                legacy.get("note") instanceof String note && !note.isBlank());
+        }
+        return safe;
+    }
+    private static void copyAuditNumber(Map<?,?> source,Map<String,Object> target,String key) {
+        if(source.get(key) instanceof Number number)target.put(key,number);
+    }
+    private static void copyAuditUuid(Map<?,?> source,Map<String,Object> target,String key) {
+        if(source.get(key) instanceof String text)try {
+            UUID id=UUID.fromString(text);if(id.toString().equals(text))target.put(key,text);
+        } catch(IllegalArgumentException ignored) { /* Unrecognized detail is not part of this projection. */ }
     }
     private List<Map<String,Object>> rows(String sql,UUID workflowId){return db.query(sql,workflowId).stream().map(this::camelRow).toList();}
     private Map<String,Object> camelRow(Map<String,Object> row) {
