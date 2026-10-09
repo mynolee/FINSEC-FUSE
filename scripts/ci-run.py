@@ -23,6 +23,12 @@ COMPOSE_SIGNALS = {
     'CONTAINER_NOT_READY': rb'container .{0,200} is unhealthy|dependency failed to start|did not become healthy|timeout waiting for containers',
     'ACCESS_DENIED': rb'permission denied|operation not permitted',
     'NETWORK_FAILED': rb'no such host|network is unreachable|tls handshake timeout|i/o timeout|connection timed out|certificate signed by unknown authority',
+    'CLI_INVALID': rb'unknown (?:command|flag|shorthand flag)|flag provided but not defined|requires (?:at least|exactly) [0-9]+ argument',
+    'YAML_INVALID': rb'yaml:|did not find expected key|mapping values are not allowed|found character that cannot start',
+    'ENV_FILE_INVALID': rb'failed to read .{0,200}env|env file .{0,200} not found|unexpected character .{0,80} variable name',
+    'DEPENDENCY_MISSING': rb'docker: .{0,80} not found|executable file not found|buildx .{0,80} missing|compose .{0,80} is not a docker command',
+    'TRANSPORT_INTERRUPTED': rb'unexpected eof|connection reset by peer|remote error: tls|failed to do request|http: server gave http response to https client',
+    'REGISTRY_HTTP_REJECTED': rb'429 too many requests|503 service unavailable|502 bad gateway|504 gateway timeout|unexpected status .{0,40}(?:429|50[234])',
 }
 DIAGNOSTIC_BYTES = 1024 * 1024
 

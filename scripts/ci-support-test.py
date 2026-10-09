@@ -25,6 +25,7 @@ checks = module('ci-verify')
 reports = module('ci-test-report')
 process_reports = module('ci-process-report')
 runner = module('ci-run')
+diagnostics = module('ci-diagnostics')
 
 
 class GateTest(unittest.TestCase):
@@ -504,6 +505,163 @@ class ComposeFailureSignalsTest(unittest.TestCase):
             self.assertEqual(result, code)
             self.assertNotIn('compose-failure-observation:', output)
             self.assertNotIn('PRIVATE_DIAGNOSTIC_SENTINEL', output)
+
+
+class StructuredDiagnosticsTest(unittest.TestCase):
+    def report(self, status='passed'):
+        return {'success': status == 'passed', 'numTotalTests': 1,
+                'numPassedTests': int(status == 'passed'), 'numFailedTests': int(status == 'failed'),
+                'numPendingTests': 0, 'numTodoTests': 0,
+                'testResults': [{'name': str(diagnostics.ROOT / 'frontend/src/api.test.ts'),
+                                 'status': status, 'message': '', 'assertionResults': [{
+                                     'status': status, 'title': 'PRIVATE_MARKER',
+                                     'fullName': 'PRIVATE_MARKER', 'meta': {'leak': 'PRIVATE_MARKER'},
+                                     'location': {'line': 15, 'file': '/private/PRIVATE_MARKER'},
+                                     'failureMessages': ['AssertionError PRIVATE_MARKER'],
+                                 }]}]}
+
+    def test_versions_never_reflect_suffix_or_unstructured_output(self):
+        self.assertEqual(diagnostics.numeric_version('v2.40.3-desktop.1'), '2.40.3')
+        self.assertEqual(diagnostics.numeric_version('28.5.1+PRIVATE_MARKER'), '28.5.1')
+        for value in (None, True, {'Version': '28.5.1'}, 'PRIVATE_MARKER',
+                      '28.5.1\nPRIVATE_MARKER', 'version 28.5.1', '28.5.1/private'):
+            self.assertIsNone(diagnostics.numeric_version(value))
+
+    def test_success_frontend_counts_are_observed_not_assumed(self):
+        result = diagnostics.frontend_summary(self.report(), 0)
+        self.assertEqual(result['status'], 'PASS')
+        self.assertEqual(result['counts'], {'total': 1, 'passed': 1, 'failed': 0, 'skipped': 0, 'todo': 0})
+        self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
+
+    def test_failure_only_emits_allowlisted_file_line_and_fixed_code(self):
+        result = diagnostics.frontend_summary(self.report('failed'), 1)
+        self.assertEqual(result['status'], 'FAIL')
+        self.assertEqual(result['failedTests'], [{'file': 'frontend/src/api.test.ts',
+                         'testOrdinal': 1, 'line': 15, 'code': 'ASSERTION_FAILED'}])
+        self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
+        self.assertNotIn('"title":', json.dumps(result))
+
+    def test_untrusted_paths_and_duplicate_suites_fail_closed(self):
+        for path in ('/private/PRIVATE_MARKER.test.ts', 'frontend/src/../../PRIVATE_MARKER',
+                     'frontend/src/api.test.ts\nPRIVATE_MARKER', 'frontend/src/new.test.ts'):
+            report = self.report()
+            report['testResults'][0]['name'] = path
+            with self.assertRaises(ValueError):
+                diagnostics.frontend_summary(report, 0)
+        report = self.report()
+        report['testResults'].append(report['testResults'][0])
+        with self.assertRaises(ValueError):
+            diagnostics.frontend_summary(report, 0)
+
+    def test_invalid_lines_are_not_reflected(self):
+        for line in (-1, 0, True, 'PRIVATE_MARKER', 10000000):
+            report = self.report('failed')
+            report['testResults'][0]['assertionResults'][0]['location']['line'] = line
+            result = diagnostics.frontend_summary(report, 1)
+            self.assertIsNone(result['failedTests'][0]['line'])
+            self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
+
+    def test_inconsistent_counts_unknown_status_and_empty_reports_fail(self):
+        for key, value in (('numTotalTests', 2), ('numPassedTests', True), ('numFailedTests', -1)):
+            report = self.report()
+            report[key] = value
+            with self.assertRaises(ValueError):
+                diagnostics.frontend_summary(report, 0)
+        report = self.report()
+        report['testResults'][0]['assertionResults'][0]['status'] = 'PRIVATE_MARKER'
+        with self.assertRaises(ValueError):
+            diagnostics.frontend_summary(report, 0)
+        with self.assertRaises(ValueError):
+            diagnostics.frontend_summary({}, 0)
+
+    def test_nonzero_exit_cannot_become_passing_report(self):
+        for code in (1, 17, None):
+            self.assertEqual(diagnostics.frontend_summary(self.report(), code)['status'], 'FAIL')
+
+    def test_failure_code_is_closed_vocabulary_without_error_reflection(self):
+        for raw, code in [('Test timed out PRIVATE_MARKER', 'TIMEOUT'),
+                          ('Unhandled rejection PRIVATE_MARKER', 'UNHANDLED_ERROR'),
+                          ('expected PRIVATE_MARKER to match', 'ASSERTION_FAILED'),
+                          ('PRIVATE_MARKER', 'UNKNOWN')]:
+            self.assertEqual(diagnostics.failure_code([raw]), code)
+        self.assertEqual(diagnostics.failure_code([{'message': 'PRIVATE_MARKER'}]), 'UNKNOWN')
+
+    def frontend_invoke(self, report, code, missing=False):
+        paths = []
+        def fake_capture(command, **kwargs):
+            self.assertEqual(command[:7], ['npm', '--prefix', 'frontend', 'test', '--', '--run', '--includeTaskLocation'])
+            self.assertIn('--reporter=json', command)
+            path = Path(command[-1].split('=', 1)[1])
+            paths.append(path)
+            if not missing:
+                path.write_text(json.dumps(report))
+            return {'exitCode': code}, b'PRIVATE_MARKER'
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory, patch.object(diagnostics, 'SAFE', Path(directory)), \
+                patch.object(diagnostics, 'captured', side_effect=fake_capture), contextlib.redirect_stdout(output):
+            result = diagnostics.frontend_tests()
+            artifact = json.loads((Path(directory) / 'frontend-test-summary.json').read_text())
+        self.assertTrue(all(not path.exists() for path in paths))
+        self.assertNotIn('PRIVATE_MARKER', output.getvalue())
+        return result, artifact
+
+    def test_private_json_report_is_removed_after_success_or_failure(self):
+        self.assertEqual(self.frontend_invoke(self.report(), 0)[0], 0)
+        result, summary = self.frontend_invoke(self.report('failed'), 7)
+        self.assertEqual(result, 7)
+        self.assertEqual(summary['status'], 'FAIL')
+
+    def test_missing_and_malformed_private_reports_remain_failures(self):
+        for report, missing, expected in (({}, False, 'INVALID'), ({}, True, 'MISSING')):
+            result, summary = self.frontend_invoke(report, 0, missing)
+            self.assertEqual(result, 1)
+            self.assertEqual(summary['reportState'], expected)
+
+    def test_preflight_is_read_only_and_all_checks_are_required(self):
+        for failure in (None, 0, 1, 2):
+            commands = []
+            def fake_capture(command, **kwargs):
+                index = len(commands)
+                commands.append(command)
+                raw = [json.dumps({'Client': {'Version': '28.5.1'}, 'Server': {'Version': '28.5.1'},
+                                   'private': 'PRIVATE_MARKER'}).encode(), b'v2.40.3', b'PRIVATE_MARKER'][index]
+                meta = {'exitCode': int(index == failure), 'invocation': 'COMPLETED',
+                        'signals': {'unclassified': True, 'scanTruncated': False, 'signals': {}}}
+                return meta, raw
+            output = io.StringIO()
+            with tempfile.TemporaryDirectory() as directory, patch.object(diagnostics, 'SAFE', Path(directory)), \
+                    patch.object(diagnostics, 'captured', side_effect=fake_capture), contextlib.redirect_stdout(output):
+                result = diagnostics.compose_preflight()
+                self.assertEqual(result, int(failure is not None))
+            self.assertEqual(commands, [['docker', 'version', '--format', '{{json .}}'],
+                                       ['docker', 'compose', 'version', '--short'],
+                                       ['docker', 'compose', 'config', '--quiet']])
+            self.assertNotIn('PRIVATE_MARKER', output.getvalue())
+
+    def test_new_compose_categories_do_not_echo_diagnostic_bodies(self):
+        cases = {'CLI_INVALID': b'unknown flag: PRIVATE_MARKER',
+                 'YAML_INVALID': b'yaml: PRIVATE_MARKER',
+                 'ENV_FILE_INVALID': b'env file /private/PRIVATE_MARKER not found',
+                 'DEPENDENCY_MISSING': b'executable file not found PRIVATE_MARKER',
+                 'TRANSPORT_INTERRUPTED': b'unexpected EOF PRIVATE_MARKER',
+                 'REGISTRY_HTTP_REJECTED': b'503 Service Unavailable PRIVATE_MARKER'}
+        for key, raw in cases.items():
+            with tempfile.TemporaryFile() as private:
+                private.write(raw)
+                result = runner.compose_diagnostic_signals(private)
+            self.assertTrue(result['signals'][key])
+            self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
+
+    def test_workflow_preserves_build_start_once_and_existing_timeouts(self):
+        workflow = (diagnostics.ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertEqual(workflow.count('run: python scripts/ci-verify.py prepare'), 1)
+        self.assertEqual(workflow.count('-- docker compose build'), 1)
+        self.assertEqual(workflow.count('-- docker compose up --no-build --detach --wait --wait-timeout 240'), 1)
+        self.assertIn('timeout-minutes: 40', workflow)
+        self.assertIn('timeout-minutes: 10', workflow)
+        self.assertIn('path: safe-artifacts/frontend-test-summary.json', workflow)
+        self.assertNotIn('report.json\n', workflow)
+        self.assertNotIn('continue-on-error:', workflow)
 
 
 if __name__ == '__main__':
