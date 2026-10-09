@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener, HTTPRedirectHandler
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,28 +88,244 @@ def prepare() -> None:
     print('Fresh isolated replay configuration generated; credentials remain private.')
 
 
-def ready() -> None:
-    deadline = time.monotonic() + 180
-    while time.monotonic() < deadline:
+def has_root_element(body: bytes) -> bool:
+    """Inspect actual HTML attributes, never data-id, quoted text or comments."""
+    class RootParser(HTMLParser):
+        found = False
+
+        def handle_starttag(self, tag, attrs):
+            identifiers = [value for key, value in attrs if key == 'id']
+            if tag == 'div' and identifiers == ['root']:
+                self.found = True
+
+    parser = RootParser(convert_charrefs=True)
+    try:
+        parser.feed(body.decode('utf-8'))
+        parser.close()
+        return parser.found
+    except (UnicodeError, ValueError):
+        return False
+
+
+def http_status(value):
+    return value if type(value) is int and 100 <= value <= 599 else None
+
+
+def readiness_probes() -> dict:
+    """Independent observations; never serialize response bodies or exception text."""
+    result = {name: {'ready': False, 'httpStatus': None, 'result': 'NOT_RUN'}
+              for name in ('agent', 'backend', 'frontend')}
+    probe = """import json, os, urllib.request, urllib.error
+value = {'ready': False, 'httpStatus': None, 'result': 'NOT_READY'}
+if os.environ.get('FUSE_KYC_MODE') != 'replay':
+    value['result'] = 'REPLAY_REQUIRED'
+else:
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open('http://127.0.0.1:8001/ready', timeout=5) as response:
+            value['httpStatus'] = response.status
+            body = response.read(4097)
+            if len(body) > 4096:
+                value['result'] = 'INVALID_RESPONSE'
+            else:
+                data = json.loads(body)
+                value['ready'] = response.status == 200 and isinstance(data, dict) and data.get('ready') is True
+                value['result'] = 'READY' if value['ready'] else 'NOT_READY'
+    except urllib.error.HTTPError as error:
+        value['httpStatus'] = error.code
+        value['result'] = 'HTTP_ERROR'
+    except Exception:
+        value['result'] = 'PROBE_ERROR'
+print(json.dumps(value))
+"""
+    try:
+        process = subprocess.run(['docker', 'compose', 'exec', '-T', 'agent', 'python', '-c', probe],
+                                 cwd=ROOT, capture_output=True, timeout=10)
+        if process.returncode != 0:
+            result['agent']['result'] = 'EXEC_FAILED'
+        elif len(process.stdout) > 4096:
+            result['agent']['result'] = 'INVALID_RESPONSE'
+        else:
+            data = json.loads(process.stdout)
+            allowed = {'READY', 'NOT_READY', 'REPLAY_REQUIRED', 'INVALID_RESPONSE', 'HTTP_ERROR', 'PROBE_ERROR'}
+            status = http_status(data.get('httpStatus'))
+            label = data.get('result') if data.get('result') in allowed else 'INVALID_RESPONSE'
+            result['agent'] = {'ready': data.get('ready') is True and label == 'READY' and status == 200,
+                               'httpStatus': status, 'result': label}
+    except Exception:
+        result['agent']['result'] = 'PROBE_ERROR'
+    try:
+        with HTTP.open('http://127.0.0.1:8080/actuator/health/readiness', timeout=5) as response:
+            result['backend']['httpStatus'] = http_status(response.status)
+            body = response.read(4097)
+            data = json.loads(body) if len(body) <= 4096 else None
+            up = response.status == 200 and isinstance(data, dict) and data.get('status') == 'UP'
+            result['backend'].update(ready=up, result='READY' if up else 'NOT_READY')
+    except HTTPError as error:
+        result['backend'].update(httpStatus=http_status(error.code), result='HTTP_ERROR')
+    except Exception:
+        result['backend']['result'] = 'PROBE_ERROR'
+    try:
+        with HTTP.open('http://127.0.0.1:5173/', timeout=5) as response:
+            result['frontend']['httpStatus'] = http_status(response.status)
+            body = response.read(65537)
+            marker = has_root_element(body)
+            up = response.status == 200 and len(body) <= 65536 and marker
+            result['frontend'].update(ready=up, result='READY' if up else 'NOT_READY')
+    except HTTPError as error:
+        result['frontend'].update(httpStatus=http_status(error.code), result='HTTP_ERROR')
+    except Exception:
+        result['frontend']['result'] = 'PROBE_ERROR'
+    return result
+
+
+def compose_states() -> dict:
+    """Only fixed service names, lifecycle/health enums and integer exits survive."""
+    services = {name: {'state': 'UNKNOWN', 'health': 'UNKNOWN', 'exitCode': None}
+                for name in ('postgres', 'agent', 'backend', 'frontend')}
+    try:
+        process = subprocess.run(['docker', 'compose', 'ps', '--all', '--format', 'json'],
+                                 cwd=ROOT, capture_output=True, timeout=15)
+        if process.returncode or len(process.stdout) > 1048576:
+            return services
+        text = process.stdout.decode('utf-8').strip()
+        rows = json.loads(text) if text.startswith('[') else [json.loads(line) for line in text.splitlines() if line]
+        for row in rows:
+            name = row.get('Service')
+            if name not in services:
+                continue
+            state = row.get('State', '').upper()
+            health = row.get('Health', '').upper() or 'NONE'
+            code = row.get('ExitCode')
+            services[name] = {
+                'state': state if state in {'CREATED', 'RUNNING', 'RESTARTING', 'EXITED', 'DEAD', 'PAUSED', 'REMOVING'} else 'UNKNOWN',
+                'health': health if health in {'HEALTHY', 'UNHEALTHY', 'STARTING', 'NONE'} else 'UNKNOWN',
+                'exitCode': code if type(code) is int and 0 <= code <= 255 else None}
+    except Exception:
+        pass
+    return services
+
+
+def published_bindings() -> dict:
+    """Inspect only port-binding data for the two fixed project services."""
+    result = {}
+    for service, expected_port in (('backend', '8080'), ('frontend', '5173')):
+        row = {'collected': False, 'containerFound': False, 'published': False,
+               'loopbackOnly': False, 'expectedHostPort': False}
+        result[service] = row
         try:
-            # Agent has no published host port. Readiness is checked within its container;
-            # capture output so configuration/error bodies never reach CI logs.
-            probe = ('import json,os,urllib.request; '
-                     'assert os.environ.get("FUSE_KYC_MODE") == "replay"; '
-                     'r=urllib.request.urlopen("http://127.0.0.1:8001/ready",timeout=5); '
-                     'd=json.load(r); assert r.status == 200 and d.get("ready") is True')
-            agent = subprocess.run(['docker', 'compose', 'exec', '-T', 'agent', 'python', '-c', probe],
+            found = subprocess.run(['docker', 'compose', 'ps', '--all', '--quiet', service],
                                    cwd=ROOT, capture_output=True, timeout=10)
-            backend = request('/actuator/health/readiness')
-            with HTTP.open('http://127.0.0.1:5173/', timeout=5) as response:
-                frontend = response.status == 200 and b'<div id="root">' in response.read()
-            if agent.returncode == 0 and backend.get('status') == 'UP' and frontend:
-                emit('compose-readiness.json', {'agent': 'READY_REPLAY', 'backend': 'UP', 'frontend': 'HTTP_200', 'providerCalls': False})
-                return
+            identifier = found.stdout.decode().strip()
+            if found.returncode or not re.fullmatch(r'[0-9a-f]{64}', identifier):
+                continue
+            row['containerFound'] = True
+            inspected = subprocess.run(['docker', 'inspect', '--format', '{{json .NetworkSettings.Ports}}', identifier],
+                                       cwd=ROOT, capture_output=True, timeout=10)
+            if inspected.returncode or len(inspected.stdout) > 4096:
+                continue
+            data = json.loads(inspected.stdout)
+            bindings = data.get('8080/tcp') if isinstance(data, dict) else None
+            row['collected'] = True
+            if isinstance(bindings, list) and bindings:
+                row['published'] = True
+                row['loopbackOnly'] = all(isinstance(b, dict) and b.get('HostIp') in {'127.0.0.1', '::1'} for b in bindings)
+                row['expectedHostPort'] = all(isinstance(b, dict) and b.get('HostPort') == expected_port for b in bindings)
         except Exception:
             pass
-        time.sleep(1)
-    raise TimeoutError('Compose services did not become ready')
+    return result
+
+
+def internal_http_probes() -> dict:
+    """Diagnostic-only loopback probes; never replace mandatory host readiness."""
+    result = {name: {'ready': False, 'result': 'NOT_RUN'} for name in ('backend', 'frontend')}
+    backend_command = ('exec 3<>/dev/tcp/127.0.0.1/8080; '
+                       "printf 'GET /actuator/health/readiness HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3; "
+                       'head -c 8193 <&3')
+    commands = {
+        'backend': ['docker', 'compose', 'exec', '-T', 'backend', 'bash', '-c', backend_command],
+        'frontend': ['docker', 'compose', 'exec', '-T', 'frontend', 'wget', '-q', '-T', '5', '-O', '-', 'http://127.0.0.1:8080/'],
+    }
+    for name, command in commands.items():
+        try:
+            process = subprocess.run(command, cwd=ROOT, capture_output=True, timeout=10)
+            if process.returncode:
+                result[name]['result'] = 'EXEC_FAILED'
+                continue
+            body = process.stdout
+            if name == 'backend':
+                if len(body) > 8192:
+                    raise ValueError('oversized internal response')
+                header, payload = body.split(b'\r\n\r\n', 1)
+                status_line = header.split(b'\r\n', 1)[0]
+                data = json.loads(payload)
+                up = re.fullmatch(rb'HTTP/1\.[01] 200(?: .*)?', status_line) is not None and isinstance(data, dict) and data.get('status') == 'UP'
+            else:
+                marker = has_root_element(body)
+                up = len(body) <= 65536 and marker
+            result[name] = {'ready': up, 'result': 'READY' if up else 'NOT_READY'}
+        except Exception:
+            result[name]['result'] = 'PROBE_ERROR'
+    return result
+
+
+def backend_startup_categories() -> dict:
+    """Classify captured logs locally; never return raw lines, messages or class names."""
+    patterns = {
+        'APPLICATION_START_FAILED': 'APPLICATION FAILED TO START',
+        'BEAN_CREATION_FAILED': 'BeanCreationException',
+        'DATABASE_CONNECT_FAILED': 'PSQLException',
+        'MIGRATION_FAILED': 'FlywayException|FlywayMigrateException|FlywayValidateException',
+        'FILE_ACCESS_DENIED': 'AccessDeniedException|Permission denied',
+        'ADDRESS_BIND_FAILED': 'BindException|Address already in use',
+        'OUT_OF_MEMORY': 'OutOfMemoryError',
+    }
+    result = {'collected': False, 'flags': {name: False for name in patterns}}
+    try:
+        process = subprocess.run(['docker', 'compose', 'logs', '--no-color', '--tail', '200', 'backend'],
+                                 cwd=ROOT, capture_output=True, timeout=15)
+        if process.returncode or len(process.stdout) > 1048576:
+            return result
+        text = process.stdout.decode('utf-8', errors='replace')
+        result['collected'] = True
+        result['flags'] = {name: re.search(pattern, text) is not None for name, pattern in patterns.items()}
+    except Exception:
+        pass
+    return result
+
+
+def ready(timeout: float = 180, poll_interval: float = 1) -> None:
+    deadline = time.monotonic() + timeout
+    attempts = 0
+    report = {'status': 'ERROR', 'attempts': 0, 'services': {}, 'providerCalls': False}
+    try:
+        while True:
+            attempts += 1
+            services = readiness_probes()
+            report.update(attempts=attempts, services=services)
+            if all(row['ready'] for row in services.values()):
+                report['status'] = 'PASS'
+                return
+            if time.monotonic() >= deadline:
+                report['status'] = 'TIMEOUT'
+                raise TimeoutError('Compose services did not become ready')
+            time.sleep(poll_interval)
+    finally:
+        report['containers'] = compose_states()
+        if report['status'] != 'PASS':
+            report['backendStartup'] = backend_startup_categories()
+        emit('compose-readiness.json', report)
+        # Contains only fixed labels, booleans and bounded status codes.
+        print(json.dumps(report, sort_keys=True))
+
+
+def diagnostics() -> None:
+    # Always called before teardown, including when build/start/readiness failed.
+    report = {'status': 'OBSERVATION_ONLY', 'services': readiness_probes(),
+              'containers': compose_states(), 'bindings': published_bindings(),
+              'internalHttp': internal_http_probes(), 'backendStartup': backend_startup_categories(), 'providerCalls': False}
+    emit('compose-diagnostics.json', report)
+    print(json.dumps(report, sort_keys=True))
 
 
 def smoke() -> None:
@@ -224,7 +442,7 @@ def evidence() -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=['prepare', 'ready', 'smoke', 'database', 'evidence'])
+    parser.add_argument('command', choices=['prepare', 'ready', 'diagnostics', 'smoke', 'database', 'evidence'])
     args = parser.parse_args()
     try:
         globals()[args.command]()
