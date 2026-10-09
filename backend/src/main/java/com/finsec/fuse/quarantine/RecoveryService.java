@@ -61,7 +61,7 @@ public class RecoveryService {
         support.state(workflowId,"KYC_PENDING","ALLOW",null,now);
         UUID jobId=journal.enqueue(workflowId,generation,"KYC",now);
         support.audit(actionId,workflowId,null,null,actor.actorId(),"WORKFLOW_RESUMED",null,
-            Json.ordered("previousGeneration",integer(workflow,"generation"),"generation",generation,"kycJobId",jobId,"usedRiskRetained",integer(workflow,"used_risk"),"runCountRetained",integer(stage,"run_count"),"reason",request.reason()),now);
+            Json.ordered("previousGeneration",integer(workflow,"generation"),"generation",generation,"kycJobId",jobId,"usedRiskRetained",integer(workflow,"used_risk"),"runCountRetained",integer(stage,"run_count"),"reasonProvided",request.reason()!=null && !request.reason().isBlank()),now);
         var response=support.response(actionId,workflow,"KYC_PENDING","ALLOW",null,"A fresh KYC generation is queued; existing costs and execution limits are retained.");
         response.put("generation",generation);response.put("kycJobId",jobId);
         actions.save(actionId,actor.actorId(),"WORKFLOW_RESUME",workflowId,request,response);return response;

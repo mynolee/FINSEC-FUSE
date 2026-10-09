@@ -133,8 +133,15 @@ public class QuarantineService {
             if(!checked.validated())recoveryFailed("Every affected unpaid customer needs current independent evidence: "+checked.reasonCode());
             checks.add(Json.ordered("workflowId",entry.getKey(),"customerId",customer,"evidenceBundleHash",checked.evidenceBundleHash()));
         }
-        support.audit(actionId,null,null,quarantineId,actor.actorId(),"RECOVERY_CHECKED",null,
-            Json.ordered("safeDocumentId",remediation.safeDocumentId(),"safeDocumentVersion",remediation.safeDocumentVersion(),"checks",checks,"remediation",remediation),now);
+        // Audit only the independently checked authority. Freeform business notes remain separate.
+        var checkedDetails=Json.ordered("safeDocumentId",remediation.safeDocumentId(),
+            "safeDocumentVersion",remediation.safeDocumentVersion(),"checks",checks,
+            "noteProvided",remediation.note()!=null && !remediation.note().isBlank());
+        if("AGENT_VERSION".equals(str(quarantine,"scope"))) {
+            checkedDetails.put("safeAgentId",remediation.safeAgentId());
+            checkedDetails.put("safeAgentVersion",remediation.safeAgentVersion());
+        }
+        support.audit(actionId,null,null,quarantineId,actor.actorId(),"RECOVERY_CHECKED",null,checkedDetails,now);
         db.update("update quarantine set status='RELEASED',released_by=?,released_at=?,remediation_json=?::jsonb where id=?",actor.actorId(),now,json.write(remediation),quarantineId);
         db.update("update execution_gate set epoch=epoch+1 where id=1");
         for(UUID workflowId:unpaid.keySet()) {
