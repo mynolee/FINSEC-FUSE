@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -22,6 +24,33 @@ from .fixture_loader import load_fixture_set, fingerprint
 from .metrics import calculate_metrics
 from .report import CaseOutput, EvaluationReport
 from .private_documents import load_private_documents, resolve_document
+
+
+# Stay below the shared actor's 120 authenticated reads per 60-second window.
+# Other clients may consume the same budget, so a GET 429 still needs backoff.
+POLL_INTERVAL_SECONDS = 1.0
+RATE_LIMIT_BACKOFF_SECONDS = 60.0
+
+
+def observation_retry_delay(retry_after: str | None, remaining: float) -> float:
+    """Bound parsing and waiting; never retry earlier than a valid Retry-After."""
+    delay = RATE_LIMIT_BACKOFF_SECONDS
+    if retry_after is not None:
+        # An oversized header cannot create expensive integer/date parsing or
+        # an early retry. Spend only the remaining observation budget, then fail.
+        if len(retry_after) > 128:
+            return remaining
+        value = retry_after.strip()
+        if value and value.isascii() and value.isdecimal():
+            delay = remaining if len(value) > 9 else float(int(value))
+        else:
+            try:
+                instant = parsedate_to_datetime(value)
+                if instant.tzinfo is not None:
+                    delay = instant.timestamp() - time.time()
+            except (ValueError, TypeError, OverflowError):
+                pass
+    return min(remaining, max(POLL_INTERVAL_SECONDS, delay))
 
 
 def write_json(path: Path, value):
@@ -101,6 +130,8 @@ def execute_java(manifest: dict, base_url: str, token: str, model_mode: str, rep
                  output_dir: Path, deadline_seconds: float = 600) -> dict:
     if not token or token == "CHANGE_ME":
         raise ValueError("FUSE_DEVELOPER_TOKEN must be configured")
+    if not math.isfinite(deadline_seconds) or deadline_seconds <= 0:
+        raise ValueError("A positive finite observation deadline is required")
     # Local test endpoint by default; never forward the token through redirects.
     with httpx.Client(base_url=base_url.rstrip("/"), timeout=httpx.Timeout(35, connect=2),
                       follow_redirects=False, trust_env=False,
@@ -118,16 +149,28 @@ def execute_java(manifest: dict, base_url: str, token: str, model_mode: str, rep
         write_json(output_dir / "accepted.json", accepted)
         experiment_id = accepted["experimentId"]
         deadline = time.monotonic() + deadline_seconds
+        def remaining_budget():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Experiment {experiment_id} still running; use GET /api/v1/experiments/{experiment_id} to resume observation. No completion claimed.")
+            return remaining
+
         while True:
-            response = client.get(f"/api/v1/experiments/{experiment_id}")
+            remaining = remaining_budget()
+            response = client.get(f"/api/v1/experiments/{experiment_id}",
+                                  timeout=httpx.Timeout(min(35, remaining), connect=min(2, remaining)))
+            if response.status_code == 429:
+                # Only the observational GET is retried. Creation is never
+                # repeated, and throttling cannot reset the original deadline.
+                time.sleep(observation_retry_delay(response.headers.get("Retry-After"), remaining_budget()))
+                continue
             response.raise_for_status()
             result = response.json()
             write_json(output_dir / "raw-java-report.json", result)
+            remaining = remaining_budget()
             if result.get("status") in {"COMPLETED", "FAILED", "INTERRUPTED", "SUCCEEDED"}:
                 return result
-            if time.monotonic() >= deadline:
-                raise TimeoutError(f"Experiment {experiment_id} still running; use GET /api/v1/experiments/{experiment_id} to resume observation. No completion claimed.")
-            time.sleep(0.25)
+            time.sleep(min(POLL_INTERVAL_SECONDS, remaining))
 
 
 def normalize_java_report(raw: dict, manifest: dict, model_mode: str, repeats: int) -> EvaluationReport:

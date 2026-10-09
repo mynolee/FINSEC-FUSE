@@ -50,6 +50,10 @@ and fails normalization rather than inventing measurements.
 An uncertain POST is not automatically resubmitted with a fresh action ID. An
 observation timeout retains the experiment ID, accepted response and latest raw
 report so the same experiment can be inspected without starting another run.
+Observation polls once per second, below the shared actor's 120-read/minute
+limit. A rate-limited GET honors bounded `Retry-After` parsing and waits only
+within the original observation deadline. Missing or malformed retry timing
+uses a 60-second backoff. Creation POSTs and other HTTP failures are not retried.
 Terminal `INTERRUPTED` or `FAILED` is never promoted to success. Nonzero exit also
 indicates excluded/incomplete pairs and should not be hidden in CI.
 
