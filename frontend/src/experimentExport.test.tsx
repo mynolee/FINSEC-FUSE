@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FuseApi } from './api';
 import { ExperimentsPage } from './components/Experiments';
@@ -362,15 +362,32 @@ describe('v2.1 current export authorization', () => {
       },
     );
     const fetcher = vi
-      .fn()
-      .mockImplementationOnce(async () => new Response(JSON.stringify(experiment())))
-      .mockImplementation(
-        async () => new Response(JSON.stringify({ reasonCodes: ['FORBIDDEN'] }), { status }),
-      );
-    render(<ExperimentsPage api={new FuseApi('synthetic', fetcher)} id={ID} />);
-    fireEvent.click(await screen.findByRole('button', { name: '정제 JSON 내보내기' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(`HTTP ${status}`);
+      .fn<typeof fetch>()
+      .mockImplementation(async () => new Response(JSON.stringify(experiment())));
+    // Completing the experiment changes the polling interval and triggers another query.
+    // Settle all authorized initial reads before revoking access for the export recheck.
+    await act(async () => {
+      render(<ExperimentsPage api={new FuseApi('synthetic', fetcher)} id={ID} />);
+    });
+    const exportButton = screen.getByRole('button', { name: '정제 JSON 내보내기' });
+    expect(screen.getByText('security-evaluation-v1')).toBeInTheDocument();
+    expect(screen.getAllByText('A_EVIDENCE_01').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    const initialReadCount = fetcher.mock.calls.length;
+    fetcher.mockImplementation(
+      async () => new Response(JSON.stringify({ reasonCodes: ['FORBIDDEN'] }), { status }),
+    );
+
+    await act(async () => {
+      fireEvent.click(exportButton);
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(`HTTP ${status}`);
+    expect(fetcher).toHaveBeenCalledTimes(initialReadCount + 1);
     expect(create).not.toHaveBeenCalled();
     expect(fetcher.mock.calls.every(([url]) => url === `/api/v1/experiments/${ID}`)).toBe(true);
+    expect(screen.queryByText('security-evaluation-v1')).not.toBeInTheDocument();
+    expect(screen.queryByText('A_EVIDENCE_01')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '정제 JSON 내보내기' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'CSV 내보내기' })).not.toBeInTheDocument();
   });
 });
