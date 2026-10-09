@@ -45,7 +45,8 @@ COMPONENTS = {
     "compose_files": (
         "compose.yaml", ".env.example", ".dockerignore", "backend/Dockerfile", "agent/Dockerfile",
         "frontend/Dockerfile", "frontend/nginx.conf", "scripts/bootstrap-dev.sh", "scripts/init-postgres.sh",
-        "scripts/nginx-logging-test.py",
+        "scripts/nginx-logging-test.py", "scripts/runtime-log-privacy-check.py",
+        "scripts/runtime-log-privacy-test.py", "scripts/ci-test-report-test.py",
         "scripts/run_demo.py", "scripts/test-fullstack.sh", "scripts/test_fullstack.py",
         "scripts/ci-verify.py", "scripts/ci-test-report.py", "scripts/ci-support-test.py", "scripts/ci-run.py",
         "frontend/playwright.config.ts", "frontend/tests/e2e/console.spec.ts",

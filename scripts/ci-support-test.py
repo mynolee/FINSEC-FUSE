@@ -775,5 +775,23 @@ class StructuredDiagnosticsTest(unittest.TestCase):
         self.assertNotIn('continue-on-error:', workflow)
 
 
+class TerminalPrivacyWorkflowTests(unittest.TestCase):
+    def test_terminal_privacy_keeps_prior_checks_and_always_cleanup(self):
+        workflow = (diagnostics.ROOT / '.github/workflows/ci.yml').read_text()
+        terminal = 'run: python scripts/runtime-log-privacy-check.py'
+        self.assertEqual(workflow.count(terminal), 1)
+        before, after = workflow.split(terminal)
+        for gate in ('run: python scripts/ci-verify.py evidence',
+                     'run: python scripts/ci-verify.py diagnostics',
+                     'run: python scripts/ci-verify.py database',
+                     'run: npm run test:e2e'):
+            self.assertIn(gate, before)
+        self.assertIn("Always remove only this run's Compose containers and volumes\n        if: always()", after)
+        self.assertIn('--project-name "$COMPOSE_PROJECT_NAME" down --volumes --remove-orphans', after)
+        self.assertNotIn('continue-on-error:', workflow)
+        self.assertIn('run: python scripts/runtime-log-privacy-test.py', workflow)
+        self.assertIn('run: python scripts/ci-test-report-test.py', workflow)
+
+
 if __name__ == '__main__':
     unittest.main()

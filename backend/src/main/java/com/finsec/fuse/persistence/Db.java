@@ -8,13 +8,19 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SQLErrorCodeSQLExceptionTranslator;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Repository
 public class Db {
     private final JdbcTemplate jdbc;
-    public Db(JdbcTemplate jdbc) { this.jdbc=jdbc; }
+    public Db(JdbcTemplate jdbc) {
+        // PostgreSQL 55P03 is not classified by Spring's default subclass translator.
+        // Keep actual lock timeouts in the existing bounded, rollback-only retry category.
+        jdbc.setExceptionTranslator(new SQLErrorCodeSQLExceptionTranslator("PostgreSQL"));
+        this.jdbc=jdbc;
+    }
     public JdbcTemplate jdbc() { return jdbc; }
     public int update(String sql,Object... args) { return jdbc.update(sql,bind(args)); }
     public List<Map<String,Object>> query(String sql,Object... args) { return jdbc.queryForList(sql,bind(args)); }

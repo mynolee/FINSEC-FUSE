@@ -68,19 +68,21 @@ class PublicBodyReplayIT extends PaymentFixture {
     private void error(HttpResponse<String> response,UUID action,int status,String reason) {
         assertEquals(status,response.statusCode(),response.body());
         var body=json.map(response.body());
-        assertEquals(action.toString(),body.get("requestId"));
+        assertEquals(action==null?null:action.toString(),body.get("requestId"));
         assertEquals(List.of(reason),body.get("reasonCodes"));
         assertEquals("DENY",body.get("decision")); // HTTP error envelope, not a saved policy DENY.
         assertNull(body.get("workflowId"));assertNull(body.get("generation"));assertNull(body.get("state"));
         assertEquals(false,body.get("replayed"));
     }
-    private void rejectedBodyCanBeCorrectedAndReplayed(String rejectedBody) throws Exception {
+    private void rejectedBodyCanBeCorrectedAndReplayed(String rejectedBody,boolean preMvcRejection) throws Exception {
         String actorId="body-"+UUID.randomUUID(),token=DevActorRegistry.generateToken();
         registry.register(token,new Actor(actorId,"CUSTOMER",Set.of("customer-102")));
         UUID action=UUID.randomUUID();
         var before=snapshot();
         assertTrue(before.get("action_request").isEmpty());
-        error(post(token,action,rejectedBody),action,400,"INVALID_REQUEST");
+        // The streaming guard rejects malformed JSON before MVC creates a correlated envelope.
+        // MVC unknown-field errors retain the validated action ID.
+        error(post(token,action,rejectedBody),preMvcRejection?null:action,400,"INVALID_REQUEST");
         assertEquals(before,snapshot(),"Parser rejection must leave every durable row unchanged, including DENY receipts");
 
         var accepted=post(token,action,VALID_BODY);
@@ -136,9 +138,9 @@ class PublicBodyReplayIT extends PaymentFixture {
         assertEquals(after,snapshot(),"A conflict must not poison later exact replay");
     }
     @Test void malformedJsonLeavesNoReceiptAndCorrectedSameActionSucceedsExactlyOnce() throws Exception {
-        rejectedBodyCanBeCorrectedAndReplayed(VALID_BODY.substring(0,VALID_BODY.length()-1));
+        rejectedBodyCanBeCorrectedAndReplayed(VALID_BODY.substring(0,VALID_BODY.length()-1),true);
     }
     @Test void unknownFieldLeavesNoReceiptAndCorrectedSameActionSucceedsExactlyOnce() throws Exception {
-        rejectedBodyCanBeCorrectedAndReplayed(VALID_BODY.substring(0,VALID_BODY.length()-1)+",\"role\":\"SECURITY_OPERATOR\"}");
+        rejectedBodyCanBeCorrectedAndReplayed(VALID_BODY.substring(0,VALID_BODY.length()-1)+",\"role\":\"SECURITY_OPERATOR\"}",false);
     }
 }
