@@ -7,13 +7,184 @@ from pathlib import Path
 
 import pytest
 
-from evaluation.export import calculate_split_metrics, export_evidence_bundle, sanitize_trace
+from evaluation.export import calculate_split_metrics, export_evidence_bundle, sanitize_trace, _expected_match
 from evaluation.fixture_loader import fingerprint, load_fixture_set
 from evaluation.metrics import calculate_metrics
 from evaluation.report import CaseOutput, EvaluationReport
 
 
 UUID = "00000000-0000-4000-8000-000000000001"
+
+
+def outcome_actual(event_type):
+    """Synthetic persisted-trace shape; never derives observations from a fixture."""
+    run, action, event, payment, reservation, consume, reserve = [f"00000000-0000-4000-8000-{number:012d}" for number in range(2, 9)]
+    paid = event_type == "PAYMENT_COMMITTED"
+    return {"status": "COMPLETED", "state": "PAID" if paid else "BLOCKED",
+            "decision": "ALLOW" if paid else "DENY", "reasonCodes": [] if paid else ["QUARANTINED"],
+            "forbiddenPaymentCount": 0, "inputSnapshotHash": "c" * 64,
+            "trace": {"workflowId": UUID, "traceId": UUID, "generation": 1,
+                "auditEvents": [{"id": event, "actionId": action, "runId": run, "eventType": event_type,
+                                 "reasonCode": None if paid else "WORKFLOW_CHANGED"}],
+                "runs": [{"runId": run, "generation": 1, "inputSnapshotHash": "c" * 64, "role": "PAYMENT" if paid else "KYC",
+                          "status": "SUCCEEDED" if paid else "BLOCKED"}],
+                "payments": [{"paymentId": payment, "actionId": action, "generation": 1, "amountKrw": 500000}] if paid else [],
+                "riskEvents": [{"id": identifier, "eventType": kind, "stage": "PAYMENT", "actionId": action,
+                                "runId": run, "generation": 1, "reservationId": reservation, "points": 50}
+                               for identifier, kind in ((consume, "CONSUME"), (reserve, "RESERVE"))] if paid else [],
+                "results": [], "armBindings": [{"workflowId": UUID, "runId": run, "requestId": action,
+                                                  "generation": 1, "inputSnapshotHash": "c" * 64, "bindingVerified": True}]}}
+
+
+@pytest.mark.parametrize("event_type,state", [("PAYMENT_COMMITTED", "PAID"), ("LATE_RESULT_DISCARDED", "BLOCKED")])
+def test_expected_audit_outcomes_match_real_typed_trace_evidence(event_type, state):
+    actual = outcome_actual(event_type)
+    assert event_type not in actual["reasonCodes"]
+    assert _expected_match({"state": state, "reasonCode": event_type, "forbiddenPaymentCount": 0}, actual) is True
+
+
+@pytest.mark.parametrize("event_type", ["PAYMENT_COMMITTED", "LATE_RESULT_DISCARDED"])
+@pytest.mark.parametrize("mutation", ["absent", "nested_decoy", "wrong_field", "missing_workflow", "mismatched_trace",
+    "missing_event_id", "missing_action", "missing_run", "unmatched_run", "old_run_generation", "invalid_generation",
+    "wrong_run_role", "wrong_run_status", "wrong_state", "wrong_decision", "wrong_payment_count"])
+def test_expected_audit_outcomes_reject_decoys_or_nonmatching_identity(event_type, mutation):
+    actual = outcome_actual(event_type)
+    expected = {"state": actual["state"], "reasonCode": event_type, "forbiddenPaymentCount": 0}
+    trace = actual["trace"]
+    event = trace["auditEvents"][0]
+    if mutation == "absent":
+        trace["auditEvents"] = []
+        actual["reasonCodes"] = [event_type]  # A decision label cannot substitute for the event.
+    elif mutation == "nested_decoy":
+        trace["modelOutput"] = {"auditEvents": trace.pop("auditEvents")}
+    elif mutation == "wrong_field":
+        event["reasonCode"] = event.pop("eventType")
+    elif mutation == "missing_workflow":
+        trace.pop("workflowId")
+    elif mutation == "mismatched_trace":
+        trace["traceId"] = "00000000-0000-4000-8000-000000000099"
+    elif mutation == "missing_event_id":
+        event.pop("id")
+    elif mutation == "missing_action":
+        event.pop("actionId")
+    elif mutation == "missing_run":
+        event.pop("runId")
+    elif mutation == "unmatched_run":
+        event["runId"] = "00000000-0000-4000-8000-000000000099"
+    elif mutation == "old_run_generation":
+        trace["runs"][0]["generation"] = 2
+    elif mutation == "invalid_generation":
+        trace["generation"] = True
+    elif mutation == "wrong_run_role":
+        trace["runs"][0]["role"] = "LOAN"
+    elif mutation == "wrong_run_status":
+        trace["runs"][0]["status"] = "RUNNING"
+    elif mutation == "wrong_state":
+        actual["state"] = "ON_HOLD"
+    elif mutation == "wrong_decision":
+        actual["decision"] = "ERROR"
+    elif mutation == "wrong_payment_count":
+        actual["forbiddenPaymentCount"] = 1
+    assert _expected_match(expected, actual) is False
+
+
+@pytest.mark.parametrize("mutation", ["missing_ledger", "empty_ledger", "mismatched_action", "old_generation",
+                                     "missing_payment_id", "zero_amount", "duplicate_payment"])
+def test_committed_payment_expectation_requires_correlated_ledger(mutation):
+    actual = outcome_actual("PAYMENT_COMMITTED")
+    trace = actual["trace"]
+    if mutation == "missing_ledger": trace.pop("payments")
+    elif mutation == "empty_ledger": trace["payments"] = []
+    elif mutation == "mismatched_action": trace["payments"][0]["actionId"] = "00000000-0000-4000-8000-000000000099"
+    elif mutation == "old_generation": trace["payments"][0]["generation"] = 2
+    elif mutation == "missing_payment_id": trace["payments"][0].pop("paymentId")
+    elif mutation == "zero_amount": trace["payments"][0]["amountKrw"] = 0
+    elif mutation == "duplicate_payment": trace["payments"].append(copy.deepcopy(trace["payments"][0]))
+    assert _expected_match({"state": "PAID", "reasonCode": "PAYMENT_COMMITTED"}, actual) is False
+
+
+@pytest.mark.parametrize("mutation", ["missing_risk", "missing_consume", "missing_reserve", "wrong_action", "wrong_run",
+    "old_generation", "wrong_stage", "wrong_points", "zero_points", "wrong_reservation", "duplicate_consume", "substituted_run"])
+def test_payment_action_must_be_bound_to_its_run_by_actual_risk_consumption(mutation):
+    actual = outcome_actual("PAYMENT_COMMITTED")
+    trace = actual["trace"]
+    consume = trace["riskEvents"][0]
+    other = "00000000-0000-4000-8000-000000000099"
+    if mutation == "missing_risk": trace.pop("riskEvents")
+    elif mutation == "missing_consume": trace["riskEvents"].pop(0)
+    elif mutation == "missing_reserve": trace["riskEvents"].pop(1)
+    elif mutation == "wrong_action": consume["actionId"] = other
+    elif mutation == "wrong_run": consume["runId"] = other
+    elif mutation == "old_generation": consume["generation"] = 2
+    elif mutation == "wrong_stage": consume["stage"] = "KYC"
+    elif mutation == "wrong_points": consume["points"] = 49
+    elif mutation == "zero_points": consume["points"] = 0
+    elif mutation == "wrong_reservation": consume["reservationId"] = other
+    elif mutation == "duplicate_consume": trace["riskEvents"].append(copy.deepcopy(consume))
+    elif mutation == "substituted_run":
+        trace["runs"].append({**trace["runs"][0], "runId": other})
+        trace["auditEvents"][0]["runId"] = other
+    assert _expected_match({"state": "PAID", "reasonCode": "PAYMENT_COMMITTED"}, actual) is False
+
+
+@pytest.mark.parametrize("mutation", ["missing_payments", "payment_present", "missing_results", "result_present",
+    "missing_binding", "wrong_action", "wrong_workflow", "old_generation", "unverified", "wrong_reason",
+    "missing_binding_hash", "wrong_binding_hash", "missing_run_hash", "wrong_run_hash", "wrong_row_hash", "duplicate_binding"])
+def test_late_result_expectation_requires_exact_discarded_candidate_binding(mutation):
+    actual = outcome_actual("LATE_RESULT_DISCARDED")
+    trace = actual["trace"]
+    if mutation == "missing_payments": trace.pop("payments")
+    elif mutation == "payment_present": trace["payments"] = outcome_actual("PAYMENT_COMMITTED")["trace"]["payments"]
+    elif mutation == "missing_results": trace.pop("results")
+    elif mutation == "result_present": trace["results"] = [{"runId": trace["runs"][0]["runId"], "status": "VALIDATED"}]
+    elif mutation == "missing_binding": trace.pop("armBindings")
+    elif mutation == "wrong_action": trace["armBindings"][0]["requestId"] = "00000000-0000-4000-8000-000000000099"
+    elif mutation == "wrong_workflow": trace["armBindings"][0]["workflowId"] = "00000000-0000-4000-8000-000000000099"
+    elif mutation == "old_generation": trace["armBindings"][0]["generation"] = 2
+    elif mutation == "unverified": trace["armBindings"][0]["bindingVerified"] = False
+    elif mutation == "wrong_reason": trace["auditEvents"][0]["reasonCode"] = "STALE_LEASE"
+    elif mutation == "missing_binding_hash": trace["armBindings"][0].pop("inputSnapshotHash")
+    elif mutation == "wrong_binding_hash": trace["armBindings"][0]["inputSnapshotHash"] = "d" * 64
+    elif mutation == "missing_run_hash": trace["runs"][0].pop("inputSnapshotHash")
+    elif mutation == "wrong_run_hash": trace["runs"][0]["inputSnapshotHash"] = "d" * 64
+    elif mutation == "wrong_row_hash": actual["inputSnapshotHash"] = "d" * 64
+    elif mutation == "duplicate_binding": trace["armBindings"].append(copy.deepcopy(trace["armBindings"][0]))
+    assert _expected_match({"state": "BLOCKED", "reasonCode": "LATE_RESULT_DISCARDED"}, actual) is False
+
+
+def test_ordinary_decision_reason_cannot_be_satisfied_by_an_audit_event():
+    actual = outcome_actual("LATE_RESULT_DISCARDED")
+    actual["reasonCodes"] = []
+    actual["trace"]["auditEvents"][0]["eventType"] = "EVIDENCE_MISSING"
+    assert _expected_match({"state": "BLOCKED", "reasonCode": "EVIDENCE_MISSING"}, actual) is False
+
+
+@pytest.mark.parametrize("event_type,case_id", [("PAYMENT_COMMITTED", "N_NORMAL_PAYMENT_01"),
+                                               ("LATE_RESULT_DISCARDED", "A_QUARANTINE_BYPASS_05")])
+def test_export_exposes_typed_witness_without_changing_actual_decision_reasons(tmp_path, event_type, case_id):
+    manifest = load_fixture_set("security-evaluation-v1", [case_id])
+    actual = outcome_actual(event_type)
+    actual["trace"]["auditEvents"][0]["detailsJson"] = {"text": "PRIVATE_EVENT_DETAILS_MUST_NOT_EXPORT"}
+    rows = [observed(manifest["cases"][0], environment, manifest["fixtureHash"], **actual)
+            for environment in ("BASELINE", "FUSE")]
+    path = export_evidence_bundle(report_for(manifest, rows), manifest, tmp_path)
+    exported = read(path, "case_results.json")[1]
+    assert exported["expectedMatch"] is True
+    assert exported["expectedReasonEvidenceType"] == "AUDIT_EVENT"
+    assert exported["actualReasonCodes"] == actual["reasonCodes"]
+    witness, = exported["actualOutcomeEvents"]
+    event = actual["trace"]["auditEvents"][0]
+    assert witness["eventType"] == event_type
+    assert witness["eventId"] == event["id"]
+    assert witness["actionId"] == event["actionId"]
+    assert witness["runId"] == event["runId"]
+    assert witness["workflowId"] == UUID and witness["generation"] == 1
+    assert set(witness) == {"eventType", "eventId", "actionId", "runId", "workflowId", "generation"} | (
+        {"paymentId", "consumeEventId", "reserveEventId", "reservationId"} if event_type == "PAYMENT_COMMITTED" else {"inputSnapshotHash"})
+    with (path / "case_results.csv").open(newline="") as source:
+        csv_row = list(csv.DictReader(source))[1]
+    assert json.loads(csv_row["actualOutcomeEvents"]) == exported["actualOutcomeEvents"]
+    assert b"PRIVATE_EVENT_DETAILS_MUST_NOT_EXPORT" not in b"\n".join(file.read_bytes() for file in path.rglob("*") if file.is_file())
 
 
 def observed(case, environment, fixture_hash, **changes):
