@@ -8,6 +8,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.Set;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -41,9 +44,34 @@ public final class DemoAuthFilter extends OncePerRequestFilter {
         if(!limiter.actor(actor,"GET".equals(request.getMethod())||"HEAD".equals(request.getMethod()))){rate(response);return;}
         if(actor.is("KYC_SERVICE")||actor.is("FUSE_WORKER")){PublicErrors.deny(json,response,403,"FORBIDDEN","Service identities cannot access the public API");return;}
         if(!allowed(request.getMethod(),request.getRequestURI())){PublicErrors.deny(json,response,404,"NOT_FOUND","API route not found");return;}
+        if(!allowedQueryNames(request)) {PublicErrors.deny(json,response,400,"INVALID_REQUEST","Unsupported query parameter");return;}
         request.setAttribute(ActorResolver.ATTRIBUTE,actor);
         response.setHeader("Cache-Control","no-store");response.setHeader("X-Content-Type-Options","nosniff");
         chain.doFilter(request,response);
+    }
+    private static boolean allowedQueryNames(HttpServletRequest request) {
+        String query=request.getQueryString();
+        if(query==null||query.isEmpty())return true;
+        Set<String> allowed="GET".equals(request.getMethod()) && "/api/v1/workflows".equals(request.getRequestURI())
+            ?Set.of("state","page","size"):Set.of();
+        // Inspect only the URL. getParameterMap() may parse a form body before its size/media guard.
+        var seen=new java.util.HashSet<String>();
+        int start=0;
+        while(start<=query.length()) {
+            int end=query.indexOf('&',start);if(end<0)end=query.length();
+            int equals=query.indexOf('=',start);
+            int nameEnd=equals>=start && equals<end?equals:end;
+            // Accepted ASCII names are at most five bytes, or fifteen percent-encoded characters.
+            // Scan values without splitting/copying them, and bound allocation before decoding names.
+            if(nameEnd-start>15)return false;
+            try {
+                String name=URLDecoder.decode(query.substring(start,nameEnd),StandardCharsets.UTF_8);
+                if(!allowed.contains(name)||!seen.add(name))return false;
+            } catch(IllegalArgumentException malformedEncoding) {return false;}
+            if(end==query.length())break;
+            start=end+1;
+        }
+        return true;
     }
     static boolean ambiguous(HttpServletRequest request,String name) {
         var values=Collections.list(request.getHeaders(name));

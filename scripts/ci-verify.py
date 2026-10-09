@@ -182,7 +182,7 @@ print(json.dumps(value))
 def compose_states() -> dict:
     """Only fixed service names, lifecycle/health enums and integer exits survive."""
     services = {name: {'state': 'UNKNOWN', 'health': 'UNKNOWN', 'exitCode': None}
-                for name in ('postgres', 'agent', 'backend', 'frontend')}
+                for name in ('postgres', 'agent', 'backend', 'frontend', 'ingress')}
     try:
         process = subprocess.run(['docker', 'compose', 'ps', '--all', '--format', 'json'],
                                  cwd=ROOT, capture_output=True, timeout=15)
@@ -209,12 +209,12 @@ def compose_states() -> dict:
 def published_bindings() -> dict:
     """Inspect only port-binding data for the two fixed project services."""
     result = {}
-    for service, expected_port in (('backend', '8080'), ('frontend', '5173')):
+    for service, container_port, expected_port in (('backend', '8080/tcp', '8080'), ('frontend', '8081/tcp', '5173')):
         row = {'collected': False, 'containerFound': False, 'published': False,
                'loopbackOnly': False, 'expectedHostPort': False}
         result[service] = row
         try:
-            found = subprocess.run(['docker', 'compose', 'ps', '--all', '--quiet', service],
+            found = subprocess.run(['docker', 'compose', 'ps', '--all', '--quiet', 'ingress'],
                                    cwd=ROOT, capture_output=True, timeout=10)
             identifier = found.stdout.decode().strip()
             if found.returncode or not re.fullmatch(r'[0-9a-f]{64}', identifier):
@@ -225,7 +225,7 @@ def published_bindings() -> dict:
             if inspected.returncode or len(inspected.stdout) > 4096:
                 continue
             data = json.loads(inspected.stdout)
-            bindings = data.get('8080/tcp') if isinstance(data, dict) else None
+            bindings = data.get(container_port) if isinstance(data, dict) else None
             row['collected'] = True
             if isinstance(bindings, list) and bindings:
                 row['published'] = True

@@ -47,15 +47,15 @@ class PublicUuidMvcTest {
             .andExpect(status().isOk());assertEquals(1,controller.calls.get());
     }
     @Test void malformedQueryUuidsAre400BeforeControllerInvocation()throws Exception {
-        for(String id:INVALID)mvc.perform(get("/api/v1/workflows").queryParam("id",id).header("Authorization","Bearer "+token)).andExpect(status().isBadRequest());
+        for(String id:INVALID)mvc.perform(get("/api/v1/workflows").queryParam("state",id).header("Authorization","Bearer "+token)).andExpect(status().isBadRequest());
         assertEquals(0,controller.calls.get());
-        mvc.perform(get("/api/v1/workflows").queryParam("id",VALID).header("Authorization","Bearer "+token)).andExpect(status().isOk());assertEquals(1,controller.calls.get());
+        mvc.perform(get("/api/v1/workflows").queryParam("state",VALID).header("Authorization","Bearer "+token)).andExpect(status().isOk());assertEquals(1,controller.calls.get());
     }
     @Profile("uuid-mvc-contract-test-only")
     @RestController static class BoundaryController {
         final AtomicInteger calls=new AtomicInteger();
         @GetMapping("/api/v1/workflows/{id}") String path(@PathVariable UUID id){calls.incrementAndGet();return "ok";}
-        @GetMapping("/api/v1/workflows") String query(@RequestParam UUID id){calls.incrementAndGet();return "ok";}
+        @GetMapping("/api/v1/workflows") String query(@RequestParam("state") UUID id){calls.incrementAndGet();return "ok";}
         @PostMapping("/api/v1/workflows") String header(@RequestHeader("Idempotency-Key") UUID id){calls.incrementAndGet();return "ok";}
     }
 }

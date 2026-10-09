@@ -74,6 +74,23 @@ class WorkflowPresenceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(gates.inspect(Path(directory))['combined']['status'], 'SKIPPED')
 
+    def test_network_harness_static_tests_are_required_prerequisites(self):
+        job = self.job('prerequisites')
+        self.assertIn('        run: python scripts/container-network-test.py\n', job)
+        self.assertNotIn('continue-on-error:', job)
+
+    def test_actual_network_check_runs_immediately_after_readiness(self):
+        import re
+        job = self.job('combined-compose-browser')
+        self.assertRegex(job, r'run: python scripts/ci-verify\.py ready\n'
+                         r'      - name: [^\n]+\n'
+                         r'        run: python scripts/container-network-check\.py\n'
+                         r'      - name: Real authenticated browser')
+        self.assertEqual(job.count('run: python scripts/container-network-check.py'), 1)
+        self.assertNotIn('continue-on-error:', job)
+        self.assertLess(job.index('python scripts/container-network-check.py'),
+                        job.index('python scripts/ci-verify.py diagnostics'))
+
     def test_integration_branch_still_requires_complete_prerequisites(self):
         job = self.job('prerequisites')
         self.assertIn('if [[ "$REVIEW_BRANCH" == chore/integration-verification* ]]; then', job)
@@ -278,7 +295,7 @@ class ReadinessDiagnosticTest(unittest.TestCase):
     def test_bindings_observe_actual_mapping_not_requested_config(self):
         found = SimpleNamespace(returncode=0, stdout=b'a' * 64, stderr=b'')
         missing = self.process({'8080/tcp': None, 'PRIVATE_PAYLOAD_SENTINEL': 'ignored'})
-        present = self.process({'8080/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '5173'}]})
+        present = self.process({'8081/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '5173'}]})
         with patch.object(checks.subprocess, 'run', side_effect=[found, missing, found, present]) as invoked:
             observed = checks.published_bindings()
         self.assertFalse(observed['backend']['published'])
@@ -287,6 +304,8 @@ class ReadinessDiagnosticTest(unittest.TestCase):
         self.assertTrue(observed['frontend']['loopbackOnly'])
         self.assertTrue(observed['frontend']['expectedHostPort'])
         self.assertIn('{{json .NetworkSettings.Ports}}', invoked.call_args_list[1].args[0])
+        self.assertEqual(invoked.call_args_list[0].args[0][-1], 'ingress')
+        self.assertEqual(invoked.call_args_list[2].args[0][-1], 'ingress')
         self.assertNotIn('PRIVATE_PAYLOAD_SENTINEL', json.dumps(observed))
 
     def test_nonloopback_or_wrong_port_are_visible_without_raw_addresses(self):
