@@ -22,7 +22,7 @@ class DemoSeedTest {
         List.of(new DemoSeed.Document(1,"seed-v1",true),new DemoSeed.Document(2,"seed-v2",false)),List.of());
     private static final class RecordingDb extends Db {
         final List<Object[]> documents=new ArrayList<>();
-        RecordingDb(){super(null);}
+        RecordingDb(){super(new org.springframework.jdbc.core.JdbcTemplate());}
         @Override public void gate(){}
         @Override public int update(String sql,Object... args){if(sql.startsWith("INSERT INTO source_document_version"))documents.add(args);return 1;}
     }
