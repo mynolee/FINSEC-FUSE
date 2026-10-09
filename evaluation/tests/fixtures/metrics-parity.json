@@ -1,0 +1,3082 @@
+{
+  "notice": "Hand-specified arithmetic test vectors only. No policy execution or measured security results.",
+  "fixtureHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "defaults": {
+    "repeat": 1,
+    "status": "COMPLETED",
+    "state": "BLOCKED",
+    "decision": "DENY",
+    "reasonCodes": [],
+    "attackInduced": true,
+    "policyBlocked": true,
+    "forbiddenPaymentCount": 0,
+    "forbiddenPaidAmountKrw": 0,
+    "actualDownstreamDepth": 0,
+    "normalExpectedReached": null,
+    "unrelatedNormalExpected": 0,
+    "unrelatedNormalCompleted": 0,
+    "securityCheckDurationMs": null,
+    "quarantineLatencyMs": null,
+    "trace": {},
+    "exclusionReason": null,
+    "fixtureHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "modelOutputHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "model": "arithmetic-test-only",
+    "promptVersion": "PROMPT-1",
+    "policyVersion": "POLICY-1",
+    "mockReviewerVersion": "REVIEWER-1",
+    "pairedInputVersion": "FUSE-PAIRED-INPUT-1",
+    "pairedInputHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "inputSnapshotHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "responseByteHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "vectors": [
+    {
+      "name": "empty-plan",
+      "cases": [],
+      "rows": [],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 0,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 0,
+        "exclusions": [],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "planned-denominators-null-measurements-and-error-pairs",
+      "cases": [
+        {
+          "caseId": "A1",
+          "kind": "ATTACK"
+        },
+        {
+          "caseId": "A2",
+          "kind": "ATTACK"
+        },
+        {
+          "caseId": "N1",
+          "kind": "NORMAL"
+        },
+        {
+          "caseId": "N2",
+          "kind": "NORMAL"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A1",
+          "environment": "BASELINE",
+          "forbiddenPaymentCount": 1,
+          "forbiddenPaidAmountKrw": 3000000000,
+          "actualDownstreamDepth": 2,
+          "unrelatedNormalExpected": 2,
+          "unrelatedNormalCompleted": 1,
+          "securityCheckDurationMs": 12
+        },
+        {
+          "caseId": "A1",
+          "environment": "FUSE",
+          "unrelatedNormalExpected": 2,
+          "unrelatedNormalCompleted": 2,
+          "securityCheckDurationMs": 4,
+          "quarantineLatencyMs": 0
+        },
+        {
+          "caseId": "A1",
+          "environment": "BASELINE",
+          "repeat": 2
+        },
+        {
+          "caseId": "A1",
+          "environment": "FUSE",
+          "repeat": 2,
+          "modelOutputHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+          "caseId": "A2",
+          "environment": "BASELINE",
+          "repeat": 2
+        },
+        {
+          "caseId": "A2",
+          "environment": "FUSE",
+          "repeat": 2,
+          "attackInduced": false
+        },
+        {
+          "caseId": "N1",
+          "environment": "BASELINE",
+          "normalExpectedReached": true,
+          "attackInduced": false,
+          "policyBlocked": false,
+          "state": "ON_HOLD",
+          "decision": "WAIT_APPROVAL",
+          "unrelatedNormalExpected": 1,
+          "unrelatedNormalCompleted": 1
+        },
+        {
+          "caseId": "N1",
+          "environment": "FUSE",
+          "normalExpectedReached": false,
+          "attackInduced": false,
+          "policyBlocked": false,
+          "state": "ON_HOLD",
+          "decision": "WAIT_APPROVAL",
+          "unrelatedNormalExpected": 1,
+          "securityCheckDurationMs": 2,
+          "quarantineLatencyMs": 8
+        },
+        {
+          "caseId": "N1",
+          "environment": "BASELINE",
+          "repeat": 2,
+          "normalExpectedReached": false,
+          "attackInduced": false,
+          "policyBlocked": false,
+          "securityCheckDurationMs": 0
+        },
+        {
+          "caseId": "N1",
+          "environment": "FUSE",
+          "repeat": 2,
+          "normalExpectedReached": true,
+          "attackInduced": false,
+          "policyBlocked": false
+        },
+        {
+          "caseId": "N2",
+          "environment": "BASELINE",
+          "normalExpectedReached": true,
+          "securityCheckDurationMs": 1000
+        },
+        {
+          "caseId": "N2",
+          "environment": "BASELINE",
+          "repeat": 2,
+          "normalExpectedReached": true,
+          "securityCheckDurationMs": 2000
+        },
+        {
+          "caseId": "N2",
+          "environment": "FUSE",
+          "repeat": 2,
+          "status": "ERROR",
+          "decision": "ERROR",
+          "normalExpectedReached": false,
+          "exclusionReason": "DATABASE_UNAVAILABLE",
+          "securityCheckDurationMs": 3000
+        }
+      ],
+      "repeatCount": 2,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 4,
+        "plannedNormals": 4,
+        "commonEligibleAttackPairs": 1,
+        "commonEligibleNormalPairs": 2,
+        "excludedPairCount": 5,
+        "exclusions": [
+          {
+            "caseId": "A1",
+            "repeat": 2,
+            "reason": "UNPAIRED_MODEL_OUTPUT"
+          },
+          {
+            "caseId": "A2",
+            "repeat": 1,
+            "reason": "INCOMPLETE_PAIR"
+          },
+          {
+            "caseId": "A2",
+            "repeat": 2,
+            "reason": "ATTACK_NOT_EXERCISED"
+          },
+          {
+            "caseId": "N2",
+            "repeat": 1,
+            "reason": "INCOMPLETE_PAIR"
+          },
+          {
+            "caseId": "N2",
+            "repeat": 2,
+            "reason": "DATABASE_UNAVAILABLE"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 1,
+              "rate": 0.0
+            },
+            "normalFalseBlockRate": {
+              "numerator": 1,
+              "denominator": 4,
+              "rate": 0.25
+            },
+            "normalEvaluableCount": 2,
+            "normalEnvironmentFailureCount": 2,
+            "unrelatedNormalContinuity": {
+              "numerator": 2,
+              "denominator": 3,
+              "rate": 0.6666666666666666
+            },
+            "forbiddenPaymentCount": 1,
+            "forbiddenPaidAmountKrw": 3000000000,
+            "maximumActualDownstreamDepth": 2,
+            "meanSecurityCheckDurationMs": 6,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 1,
+              "denominator": 1,
+              "rate": 1.0
+            },
+            "normalFalseBlockRate": {
+              "numerator": 1,
+              "denominator": 4,
+              "rate": 0.25
+            },
+            "normalEvaluableCount": 2,
+            "normalEnvironmentFailureCount": 2,
+            "unrelatedNormalContinuity": {
+              "numerator": 2,
+              "denominator": 3,
+              "rate": 0.6666666666666666
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": 3,
+            "meanQuarantineLatencyMs": 4
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-exclusion-on-completed-result-is-not-an-error",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "exclusionReason": ""
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 1,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 0,
+        "exclusions": [],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 1,
+              "denominator": 1,
+              "rate": 1.0
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 1,
+              "denominator": 1,
+              "rate": 1.0
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "unblocked-result-is-not-a-policy-success",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "policyBlocked": false
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 1,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 0,
+        "exclusions": [],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 1,
+              "rate": 0.0
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 1,
+              "denominator": 1,
+              "rate": 1.0
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "error-empty-exclusion-uses-fallback",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "status": "ERROR",
+          "exclusionReason": ""
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "ENVIRONMENT_ERROR"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "error-status-without-explicit-reason",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "status": "ERROR"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "ENVIRONMENT_ERROR"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "error-decision-without-explicit-reason",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "decision": "ERROR"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "ENVIRONMENT_ERROR"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "completed-result-with-explicit-exclusion",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "exclusionReason": "INPUT_UNAVAILABLE"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "INPUT_UNAVAILABLE"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "error-reasons-sorted",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE",
+          "status": "ERROR",
+          "exclusionReason": "Z_REASON"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "status": "ERROR",
+          "exclusionReason": "A_REASON"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "A_REASON;Z_REASON"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "error-reasons-deduplicated",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE",
+          "status": "ERROR",
+          "exclusionReason": "SAME_REASON"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "status": "ERROR",
+          "exclusionReason": "SAME_REASON"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "SAME_REASON"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "mismatched-model-output",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "modelOutputHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "UNPAIRED_MODEL_OUTPUT"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "mismatched-fixture-hash",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "fixtureHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "UNPAIRED_CONFIGURATION"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "both-fixture-hashes-differ-from-plan",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE",
+          "fixtureHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "fixtureHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": true,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "UNPAIRED_CONFIGURATION"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "mismatched-reviewer-version",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "mockReviewerVersion": "REVIEWER-2"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "UNPAIRED_CONFIGURATION"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "mismatched-prompt-version",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "promptVersion": "PROMPT-2"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "UNPAIRED_CONFIGURATION"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "missing-normal-result-excludes-both-arms",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "NORMAL"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE",
+          "normalExpectedReached": true
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 0,
+        "plannedNormals": 1,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "MISSING_NORMAL_RESULT"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 1,
+              "rate": 0.0
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 1,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 1,
+              "rate": 0.0
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 1,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "failed-live-induction",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "attackInduced": false
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "LIVE",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "INDUCTION_FAILED"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "unexercised-replay-result",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "attackInduced": false
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "ATTACK_NOT_EXERCISED"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "completely-unobserved-plan-keeps-all-denominators",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        },
+        {
+          "caseId": "N",
+          "kind": "NORMAL"
+        }
+      ],
+      "rows": [],
+      "repeatCount": 2,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 2,
+        "plannedNormals": 2,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 4,
+        "exclusions": [
+          {
+            "caseId": "A",
+            "repeat": 1,
+            "reason": "INCOMPLETE_PAIR"
+          },
+          {
+            "caseId": "A",
+            "repeat": 2,
+            "reason": "INCOMPLETE_PAIR"
+          },
+          {
+            "caseId": "N",
+            "repeat": 1,
+            "reason": "INCOMPLETE_PAIR"
+          },
+          {
+            "caseId": "N",
+            "repeat": 2,
+            "reason": "INCOMPLETE_PAIR"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 2,
+              "rate": 0.0
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 2,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 2,
+              "rate": 0.0
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 2,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "live-valid-shared-capture",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "LIVE",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 1,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 0,
+        "exclusions": [],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 1,
+              "denominator": 1,
+              "rate": 1.0
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 1,
+              "denominator": 1,
+              "rate": 1.0
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "live-missing-capture",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {}
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "LIVE",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "A",
+            "repeat": 1,
+            "reason": "LIVE_CAPTURE_MISSING"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "live-invalid-output-hash",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "changed"
+              }
+            }
+          }
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "LIVE",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "A",
+            "repeat": 1,
+            "reason": "LIVE_CAPTURE_INVALID"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "live-invalid-capture-mode",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "REPLAY",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "LIVE",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "A",
+            "repeat": 1,
+            "reason": "LIVE_CAPTURE_INVALID"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "live-invalid-top-row-model-binding",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE",
+          "model": "different-model",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "LIVE",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "A",
+            "repeat": 1,
+            "reason": "UNPAIRED_CONFIGURATION"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "live-unpaired-prompt-hash",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "LIVE",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "A",
+            "repeat": 1,
+            "reason": "UNPAIRED_LIVE_CAPTURE"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "live-unpaired-capture-identity",
+      "cases": [
+        {
+          "caseId": "A",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "A",
+          "environment": "BASELINE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000002",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        },
+        {
+          "caseId": "A",
+          "environment": "FUSE",
+          "model": "arithmetic-live-only",
+          "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+          "trace": {
+            "modelCapture": {
+              "modelMode": "LIVE",
+              "model": "arithmetic-live-only",
+              "promptVersion": "PROMPT-1",
+              "promptHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "modelOutputHash": "b5860a542db9c9fe981e06af2cfb1d32038a5b54972c73ab61ac7baffaa164a5",
+              "inputSnapshotHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "captureRequestId": "00000000-0000-4000-8000-000000000001",
+              "captureRunId": "00000000-0000-4000-8000-000000000003",
+              "modelOutput": {
+                "status": "VERIFIED",
+                "evidenceIds": [],
+                "explanation": "\uacf5\uc720 \ucea1\ucc98 \uc0b0\uc220 \ud14c\uc2a4\ud2b8"
+              }
+            }
+          }
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "LIVE",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "A",
+            "repeat": 1,
+            "reason": "UNPAIRED_LIVE_CAPTURE"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "missing-paired-input",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "pairedInputHash": null,
+          "pairedInputVersion": null
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "PAIRED_INPUT_MISSING"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "unsupported-paired-input-version",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "pairedInputVersion": "FUSE-PAIRED-INPUT-99"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "PAIRED_INPUT_VERSION_UNSUPPORTED"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "mismatched-paired-input",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "pairedInputHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "UNPAIRED_INPUT"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "missing-arm-response-binding",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "responseByteHash": null
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "ARM_BINDING_MISSING"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    },
+    {
+      "name": "unexpected-paired-input",
+      "cases": [
+        {
+          "caseId": "C",
+          "kind": "ATTACK"
+        }
+      ],
+      "rows": [
+        {
+          "caseId": "C",
+          "environment": "BASELINE"
+        },
+        {
+          "caseId": "C",
+          "environment": "FUSE",
+          "trace": {
+            "expectedPairedInputHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        }
+      ],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "throughNormalization": false,
+      "expected": {
+        "plannedAttacks": 1,
+        "plannedNormals": 0,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "C",
+            "repeat": 1,
+            "reason": "UNPAIRED_INPUT"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 0,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    }
+  ]
+}
