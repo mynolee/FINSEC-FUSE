@@ -1,0 +1,21 @@
+# Runtime security controls
+
+The server requires an explicit `demo` or `test` profile for development capabilities. Normal profiles reject demo seed, experiments, test-hook flags, mock automatic approval, replay mode and development token registry configuration. Combining a development profile with another profile fails startup. Normal runtime defaults to live KYC; this is still a mock financial system, not production banking authorization.
+
+Signing material is loaded only from operator-configured regular files, with POSIX permissions exactly 0600, size 32–4096 bytes and no placeholder. Unsupported filesystem permission validation fails closed. Windows private-ACL support has not been implemented; startup there is not certified. Only isolated `test` may generate an ephemeral CSPRNG key. Service-token strength is checked before workers become eligible to poll.
+
+`FUSE_SIGNING_KEY_ID` and `FUSE_SIGNING_KEY_PATH` select the single issuing key. `FUSE_VERIFY_KEYS` optionally registers comma-separated `kid:VERIFY_ONLY:/private/path` or `kid:REVOKED:/private/path` entries. IDs are fixed identifiers, never client-selected paths. During a planned rotation retain the old key as VERIFY_ONLY for at least the maximum existing Grant TTL (60 seconds in the current policy); afterward remove or revoke it. Compromise requires immediate REVOKED status and process restart with the new registry. Rotation changes verification of new executions, not historical payment receipts. Keys and token bytes must not be published.
+
+Admission counts PENDING durable jobs under the existing execution gate in the caller's transaction. At 1000 queued jobs it throws 429 RATE_LIMITED; transaction rollback removes all partially created application, workflow and action rows. RUNNING jobs do not count as queued. Model concurrency remains four.
+
+Each pooled PostgreSQL connection sets lock_timeout=2s and statement_timeout=5s. Existing retries permit at most two retries only for known rolled-back lock/deadlock failures, using the same operation closure. Other database failures, including unknown commit outcomes, are not retried automatically. Integration race tests requiring a longer barrier window must declare a test-only override and must not claim it is the normal runtime limit.
+
+Actuator exposes health only with details disabled. Scheduled workers check the required agent registry/policy/key readiness before claiming jobs. Tests verify actual PostgreSQL timeout SQLSTATEs, queue rollback and slot reuse, exact decoded Grant limits and key rotation/revocation. Recorded test execution results remain separate from this implementation description.
+
+## Developer Compose private key ownership
+
+Linux Compose file-backed secrets retain host ownership; declaring secret `uid` or `mode` does not reliably materialize a differently owned private file. The developer bootstrap now records the invoking user's nonzero UID and primary GID in the untracked environment file. Compose uses that identity for the backend JVM, so the host-owned 0600 key is readable without a root entrypoint, additional capabilities, world-readable permissions or a writable image filesystem. Standalone images still default to UID/GID 10001.
+
+Run bootstrap as a non-root developer. It creates only new credentials, exclusively, and preserves a valid existing configuration byte-for-byte. Legacy 0444 keys, symlinks, incorrect ownership, partial configurations or missing/mismatched runtime identity fields fail with an instruction to review the existing files. It never silently changes existing permissions or regenerates credentials. For migration, the owner must review and restore key/environment mode 0600 and directory mode 0700, and add the current non-root `FUSE_RUNTIME_UID` / `FUSE_RUNTIME_GID` values to their private environment file. Do not publish these generated files. Rootless Docker with user-namespace remapping may use different effective ownership; that configuration requires separate runtime validation rather than relaxing the key permissions.
+
+`python3 scripts/bootstrap-dev-test.py` exercises provisioning and failure paths only in disposable synthetic directories. It does not certify Docker startup. Application token TTL/revocation behavior is unchanged by credential provisioning.
