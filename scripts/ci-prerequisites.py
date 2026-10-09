@@ -31,6 +31,7 @@ COMPONENTS = {
         "evaluation/fixtures/security-evaluation-v1.json",
     ),
     "frontend": (
+        "scripts/ci-diagnostics.py",
         "frontend/package.json", "frontend/package-lock.json", "frontend/tsconfig.json",
         "frontend/src/App.tsx", "frontend/src/App.test.tsx", "frontend/src/components/Workflows.tsx",
         "frontend/src/components/Quarantine.tsx", "frontend/src/components/Experiments.tsx",

@@ -149,7 +149,15 @@ jobs:
       - name: Build frontend
         run: python scripts/ci-run.py --label frontend-build -- npm --prefix frontend run build
       - name: Component tests are separate from real browser verification
-        run: python scripts/ci-run.py --label frontend-tests -- npm --prefix frontend test -- --run
+        run: python scripts/ci-diagnostics.py frontend-tests
+      - name: Publish frontend counts and fixed failure locations only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-test-counts
+          path: safe-artifacts/frontend-test-summary.json
+          if-no-files-found: error
+          retention-days: 7
 
   combined-compose-browser:
     name: Combined tree only — Compose, real browser, full paired replay
@@ -193,8 +201,12 @@ jobs:
         working-directory: frontend
       - name: Bootstrap fresh random mock credentials (provider disabled)
         run: python scripts/ci-verify.py prepare
-      - name: Build and wait for this project's Compose services
-        run: python scripts/ci-run.py --label compose-up -- docker compose up --build --detach --wait --wait-timeout 240
+      - name: Check Compose CLI, daemon and quiet configuration before starting services
+        run: python scripts/ci-diagnostics.py compose-preflight
+      - name: Build this project's Compose images without starting services
+        run: python scripts/ci-run.py --label compose-build -- docker compose build
+      - name: Start built Compose services and wait with the unchanged readiness limit
+        run: python scripts/ci-run.py --label compose-up -- docker compose up --no-build --detach --wait --wait-timeout 240
       - name: Verify actual service readiness
         run: python scripts/ci-verify.py ready
       - name: Verify actual workload network isolation with local synthetic fixtures
