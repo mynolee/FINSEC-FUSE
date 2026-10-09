@@ -466,7 +466,7 @@ class ComposeFailureSignalsTest(unittest.TestCase):
         self.assertNotIn(marker.decode(), rendered)
         self.assertNotIn('status', result)
         self.assertNotIn('leaked', result)
-        self.assertEqual(set(result), {'signals', 'unclassified', 'scanTruncated'})
+        self.assertEqual(set(result), {'signals', 'unclassified', 'scanTruncated', 'registry'})
         self.assertTrue(result['signals']['ACCESS_DENIED'])
 
     def test_bounded_scan_includes_tail_and_marks_omitted_middle(self):
@@ -505,6 +505,117 @@ class ComposeFailureSignalsTest(unittest.TestCase):
             self.assertEqual(result, code)
             self.assertNotIn('compose-failure-observation:', output)
             self.assertNotIn('PRIVATE_DIAGNOSTIC_SENTINEL', output)
+
+
+class RegistryDiagnosticsTest(unittest.TestCase):
+    def observe(self, raw, *, truncated=False, flags=None, images=None):
+        return runner.registry_observation([raw], truncated, flags or {},
+                                           runner.BASE_IMAGES if images is None else images)
+
+    def test_known_transient_statuses_are_numeric_and_observation_only(self):
+        for code, reason in ((429, 'Too Many Requests'), (500, 'Internal Server Error'),
+                             (502, 'Bad Gateway'), (503, 'Service Unavailable'), (504, 'Gateway Timeout')):
+            raw = (f'failed to solve: node:24-alpine: failed to resolve source metadata: '
+                   f'unexpected status from HEAD request to https://private.invalid/v2/library/node/manifests/24-alpine: {code} {reason}').encode()
+            result = self.observe(raw)
+            self.assertEqual(result['httpStatuses'], [code])
+            self.assertTrue(result['transientOnlyObserved'])
+            self.assertFalse(result['automaticRetry'])
+            self.assertEqual(result['baseImageIds'], ['NODE_BUILD'])
+            self.assertNotIn('private.invalid', json.dumps(result))
+
+    def test_denial_codes_and_missing_image_override_transient_statuses(self):
+        for code, reason in ((401, 'Unauthorized'), (403, 'Forbidden'), (404, 'Not Found')):
+            raw = f'failed to fetch oauth token: unexpected status: {code} {reason}\nHTTP status: 503 Service Unavailable'.encode()
+            result = self.observe(raw)
+            self.assertEqual(result['httpStatuses'], [code, 503])
+            self.assertTrue(result['knownAccessOrImageDenial'])
+            self.assertFalse(result['transientOnlyObserved'])
+        for phrase in ('pull access denied', 'repository does not exist', 'manifest unknown',
+                       'unauthorized: authentication required', 'insufficient_scope'):
+            result = self.observe(('HTTP status: 429 Too Many Requests\n' + phrase).encode())
+            self.assertTrue(result['knownAccessOrImageDenial'])
+            self.assertFalse(result['transientOnlyObserved'])
+
+    def test_unknown_or_nontransient_codes_never_allow_retry_classification(self):
+        for raw in (b'', b'private body 429', b'port 503', b'image:500', b'HTTP status: 503PRIVATE',
+                    b'HTTP status: 5030', b'build completed 200', b'HTTP status: 501 Not Implemented',
+                    b'HTTP status: 418', b'failed to solve: node:24-alpine'):
+            self.assertFalse(self.observe(raw)['transientOnlyObserved'])
+        self.assertEqual(self.observe(b'HTTP status: 503PRIVATE')['httpStatuses'], [])
+
+    def test_status_tokens_require_whitespace_or_end_and_nonword_prefix(self):
+        for raw in (b'HTTP status: 503.5', b'HTTP status: 503/PRIVATE_MARKER',
+                    b'failed to solve: PRIVATE503 Service Unavailable'):
+            result = self.observe(raw)
+            self.assertEqual(result['httpStatuses'], [])
+            self.assertFalse(result['transientOnlyObserved'])
+            self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
+
+    def test_truncation_overlong_lines_and_conflicting_errors_fail_closed(self):
+        raw = b'HTTP status: 503 Service Unavailable'
+        self.assertFalse(self.observe(raw, truncated=True)['transientOnlyObserved'])
+        long_result = self.observe(raw + b'\n' + b'x' * 9000)
+        self.assertFalse(long_result['transientOnlyObserved'])
+        self.assertTrue(long_result['statusScanIncomplete'])
+        for key in ('ACCESS_DENIED', 'CONFIGURATION_INVALID', 'CLI_INVALID', 'YAML_INVALID',
+                    'ENV_FILE_INVALID', 'DEPENDENCY_MISSING', 'STORAGE_EXHAUSTED', 'PORT_BIND_FAILED',
+                    'DAEMON_UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'NETWORK_FAILED',
+                    'TRANSPORT_INTERRUPTED', 'CONTAINER_NOT_READY'):
+            self.assertFalse(self.observe(raw, flags={key: True})['transientOnlyObserved'])
+
+    def test_additional_ambiguous_status_context_prevents_transient_inference(self):
+        for suffix in (b'\nfailed to solve: unexpected status PRIVATE_MARKER',
+                       b' unexpected status PRIVATE_MARKER', b'\nHTTP status: 503PRIVATE_MARKER'):
+            result = self.observe(b'HTTP status: 503 Service Unavailable' + suffix)
+            self.assertEqual(result['httpStatuses'], [503])
+            self.assertTrue(result['statusScanIncomplete'])
+            self.assertFalse(result['transientOnlyObserved'])
+
+    def test_head_tail_boundary_cannot_hide_partial_denial(self):
+        prefix = b'HTTP status: 503 Service Unavailable\n'
+        raw = prefix + b'x' * (runner.DIAGNOSTIC_BYTES - len(prefix) - 4) + b'unau' + b'thorized: PRIVATE_MARKER'
+        with tempfile.TemporaryFile() as private:
+            private.write(raw)
+            result = runner.compose_diagnostic_signals(private)
+        self.assertFalse(result['scanTruncated'])
+        self.assertTrue(result['registry']['statusScanIncomplete'])
+        self.assertFalse(result['registry']['transientOnlyObserved'])
+
+    def test_images_require_actual_reviewed_from_literal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'frontend').mkdir()
+            (root / 'frontend/Dockerfile').write_text('FROM node:24-alpine AS build\nFROM private.invalid/PRIVATE_MARKER:latest\n')
+            (root / 'agent').mkdir()
+            (root / 'agent/Dockerfile').write_text('FROM ${PRIVATE_MARKER}\n')
+            images = runner.project_base_images(root)
+            self.assertEqual(images, {'node:24-alpine': 'NODE_BUILD'})
+            result = self.observe(b'failed to solve: python:3.12.15-slim HTTP status: 503', images=images)
+            self.assertEqual(result['baseImageIds'], [])
+            (root / 'frontend/Dockerfile').unlink()
+            (root / 'frontend/Dockerfile').symlink_to(root / 'agent/Dockerfile')
+            self.assertEqual(runner.project_base_images(root), {})
+
+    def test_image_identity_does_not_reflect_arbitrary_paths_hosts_or_values(self):
+        raw = (b'failed to resolve source metadata for docker.io/library/node:24-alpine: HTTP status: 503\n'
+               b'failed to solve private.invalid/PRIVATE_MARKER HTTP status: 503\n'
+               b'Bearer PRIVATE_MARKER\n::error::PRIVATE_MARKER\n{"httpStatuses":[200],"leak":"PRIVATE_MARKER"}')
+        result = self.observe(raw)
+        self.assertEqual(result['baseImageIds'], ['NODE_BUILD'])
+        self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
+        self.assertNotIn('private.invalid', json.dumps(result))
+        injected = self.observe(raw, images={'node:24-alpine': 'PRIVATE_MARKER'})
+        self.assertEqual(injected['baseImageIds'], [])
+        self.assertNotIn('PRIVATE_MARKER', json.dumps(injected))
+
+    def test_image_token_boundaries_do_not_match_longer_private_tags(self):
+        result = self.observe(b'failed to solve: node:24-alpine-PRIVATE_MARKER HTTP status: 503')
+        self.assertEqual(result['baseImageIds'], [])
+        result = self.observe(b'failed to do request: https://private.invalid/v2/library/node/manifests/24-alpine: 503 Service Unavailable')
+        self.assertEqual(result['baseImageIds'], ['NODE_BUILD'])
+        result = self.observe(b'failed to do request: https://private.invalid/v2/library/node/manifests/24-alpine HTTP status: 503')
+        self.assertEqual(result['baseImageIds'], ['NODE_BUILD'])
 
 
 class StructuredDiagnosticsTest(unittest.TestCase):
