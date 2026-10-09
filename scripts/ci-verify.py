@@ -409,35 +409,54 @@ def validate_bundle(bundle: Path, secret_values: list[str]) -> list[str]:
     return names
 
 
+def evidence_failure_summary(stage: str, error: Exception) -> dict:
+    # Never serialize exception strings, response bodies, URLs or headers.
+    stages = {'CONFIGURATION', 'EXECUTE_REPLAY', 'NORMALIZE_REPORT', 'EXPORT_EVIDENCE',
+              'VALIDATE_BUNDLE', 'PUBLISH_SAFE_EVIDENCE', 'VERIFY_RESULTS'}
+    return {'status': 'FAIL', 'stage': stage if stage in stages else 'UNKNOWN',
+            'httpStatus': http_status(getattr(getattr(error, 'response', None), 'status_code', None))}
+
+
 def evidence() -> None:
-    from evaluation.fixture_loader import load_fixture_set
-    from evaluation.scenario_runner import execute_java, normalize_java_report
-    from evaluation.export import export_evidence_bundle
-    tokens = credentials()
-    manifest = load_fixture_set('security-evaluation-v1', [])
-    # Private API diagnostics stay in an automatically removed temp directory.
-    with tempfile.TemporaryDirectory(prefix='fuse-private-ci-') as work:
-        raw = execute_java(manifest, 'http://127.0.0.1:8080', tokens['FUSE_DEVELOPER_TOKEN'],
-                           'REPLAY', 1, Path(work), deadline_seconds=900)
-        report = normalize_java_report(raw, manifest, 'REPLAY', 1)
-        bundle = export_evidence_bundle(report, manifest, Path(work) / 'safe')
-        secret_values = [value for key, value in tokens.items() if key.endswith(('_TOKEN', '_PASSWORD')) and len(value) >= 32]
-        names = validate_bundle(bundle, secret_values)
-        destination = SAFE / 'evidence' / bundle.name
-        destination.mkdir(parents=True, mode=0o700)
-        for name in names:
-            path = destination / name
-            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            shutil.copyfile(bundle / name, path)
-            path.chmod(0o600)
-        if report.status != 'COMPLETED' or len(report.caseOutputs) != 120 or report.metrics['excludedPairCount'] != 0:
-            raise ValueError('Full replay did not finish all 120 environment results without exclusions')
-        rows = json.loads((destination / 'case_results.json').read_bytes())
-        if any(row['expectedMatch'] is not True for row in rows):
-            raise ValueError('Full replay contains an expectation mismatch or missing result')
-        emit('experiment-summary.json', {'status': 'PASS', 'fixtureSetId': 'security-evaluation-v1',
-             'plannedCases': 60, 'environmentResults': 120, 'modelMode': 'REPLAY', 'syntheticModelOutputs': True,
-             'liveRobustnessMeasured': False, 'source': 'JAVA_POSTGRES_EXECUTION'})
+    stage = 'CONFIGURATION'
+    try:
+        from evaluation.fixture_loader import load_fixture_set
+        from evaluation.scenario_runner import execute_java, normalize_java_report
+        from evaluation.export import export_evidence_bundle
+        tokens = credentials()
+        manifest = load_fixture_set('security-evaluation-v1', [])
+        # Private API diagnostics stay in an automatically removed temp directory.
+        with tempfile.TemporaryDirectory(prefix='fuse-private-ci-') as work:
+            stage = 'EXECUTE_REPLAY'
+            raw = execute_java(manifest, 'http://127.0.0.1:8080', tokens['FUSE_DEVELOPER_TOKEN'],
+                               'REPLAY', 1, Path(work), deadline_seconds=900)
+            stage = 'NORMALIZE_REPORT'
+            report = normalize_java_report(raw, manifest, 'REPLAY', 1)
+            stage = 'EXPORT_EVIDENCE'
+            bundle = export_evidence_bundle(report, manifest, Path(work) / 'safe')
+            secret_values = [value for key, value in tokens.items() if key.endswith(('_TOKEN', '_PASSWORD')) and len(value) >= 32]
+            stage = 'VALIDATE_BUNDLE'
+            names = validate_bundle(bundle, secret_values)
+            stage = 'PUBLISH_SAFE_EVIDENCE'
+            destination = SAFE / 'evidence' / bundle.name
+            destination.mkdir(parents=True, mode=0o700)
+            for name in names:
+                path = destination / name
+                path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                shutil.copyfile(bundle / name, path)
+                path.chmod(0o600)
+            stage = 'VERIFY_RESULTS'
+            if report.status != 'COMPLETED' or len(report.caseOutputs) != 120 or report.metrics['excludedPairCount'] != 0:
+                raise ValueError('Full replay did not finish all 120 environment results without exclusions')
+            rows = json.loads((destination / 'case_results.json').read_bytes())
+            if any(row['expectedMatch'] is not True for row in rows):
+                raise ValueError('Full replay contains an expectation mismatch or missing result')
+            emit('experiment-summary.json', {'status': 'PASS', 'fixtureSetId': 'security-evaluation-v1',
+                 'plannedCases': 60, 'environmentResults': 120, 'modelMode': 'REPLAY', 'syntheticModelOutputs': True,
+                 'liveRobustnessMeasured': False, 'source': 'JAVA_POSTGRES_EXECUTION'})
+    except Exception as error:
+        emit('experiment-summary.json', evidence_failure_summary(stage, error))
+        raise
 
 
 def main() -> int:
