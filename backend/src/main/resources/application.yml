@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: finsec-fuse
+  datasource:
+    url: ${FUSE_DB_URL:jdbc:postgresql://localhost:5432/finsec_fuse}
+    username: ${FUSE_DB_USERNAME:fuse_runtime}
+    password: ${FUSE_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 12
+      connection-timeout: 5000
+      connection-init-sql: "SET lock_timeout = '2s'; SET statement_timeout = '5s'"
+  flyway:
+    enabled: ${FUSE_MIGRATE:true}
+    user: ${FUSE_MIGRATION_USERNAME:${FUSE_DB_USERNAME:fuse_runtime}}
+    password: ${FUSE_MIGRATION_PASSWORD:${FUSE_DB_PASSWORD:}}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+      fail-on-trailing-tokens: true
+server:
+  max-http-request-header-size: 16KB
+  forward-headers-strategy: none
+  port: ${PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,db,fuseSecurity
+fuse:
+  demo-seed: ${FUSE_DEMO_SEED:false}
+  worker-enabled: ${FUSE_WORKER_ENABLED:true}
+  kyc-base-url: ${FUSE_KYC_BASE_URL:http://localhost:8001}
+  kyc-mode: ${FUSE_KYC_MODE:live}
+  service-token: ${FUSE_SERVICE_TOKEN:}
+  test-time: ${FUSE_TEST_TIME:2026-10-09T04:00:00Z}
