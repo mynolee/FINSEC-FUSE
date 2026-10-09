@@ -174,6 +174,26 @@ class ArtifactTest(unittest.TestCase):
                     checks.validate_bundle(root, ['{}'] if kind == 'secret' else [])
 
 
+class EvidenceFailureDiagnosticTest(unittest.TestCase):
+    def test_only_fixed_stage_and_numeric_http_status_survive(self):
+        marker = 'PRIVATE_RESPONSE_HEADER_URL_AND_EXCEPTION_SENTINEL'
+        error = RuntimeError(marker)
+        error.response = SimpleNamespace(status_code=429, text=marker, headers={'private': marker})
+        error.request = SimpleNamespace(url=marker, headers={'Authorization': marker})
+        result = checks.evidence_failure_summary('EXECUTE_REPLAY', error)
+        self.assertEqual(result, {'status': 'FAIL', 'stage': 'EXECUTE_REPLAY', 'httpStatus': 429})
+        self.assertNotIn(marker, json.dumps(result))
+        self.assertEqual(checks.evidence_failure_summary(marker, error)['stage'], 'UNKNOWN')
+
+    def test_invalid_status_and_non_http_failure_are_not_exposed(self):
+        error = RuntimeError('PRIVATE_SENTINEL')
+        self.assertIsNone(checks.evidence_failure_summary('NORMALIZE_REPORT', error)['httpStatus'])
+        for status in ('429', 'PRIVATE_SENTINEL', True, 99, 600, None):
+            error.response = SimpleNamespace(status_code=status)
+            self.assertEqual(checks.evidence_failure_summary('EXPORT_EVIDENCE', error),
+                             {'status': 'FAIL', 'stage': 'EXPORT_EVIDENCE', 'httpStatus': None})
+
+
 class ReadinessDiagnosticTest(unittest.TestCase):
     class Response:
         def __init__(self, status, body):
