@@ -23,6 +23,40 @@ describe('v2.1 browser boundaries (DOM, not real browser CSP enforcement)', () =
     expect(container.querySelectorAll('img,svg,script,a')).toHaveLength(0);
     expect((window as unknown as Record<string, unknown>).syntheticExecuted).toBeUndefined();
   });
+  it('keeps the literal customer link distinct from its descriptive detail link', async () => {
+    window.location.hash = '/workflows';
+    const marker = '<img src="/synthetic-xss-probe" onerror="window.syntheticExecuted=1">';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            items: [
+              {
+                workflowId: '00000000-0000-4000-8000-000000000102',
+                customerId: marker,
+                state: 'WAIT_APPROVAL',
+                reasonCodes: [],
+                usedRisk: 35,
+                reservedRisk: 0,
+                riskLimit: 40,
+              },
+            ],
+            total: 1,
+            page: 0,
+            size: 20,
+          }),
+        ),
+      ),
+    );
+    const { container } = render(<App />);
+    fireEvent.change(screen.getByLabelText('개발용 인증 토큰'), { target: { value: 'synthetic-session' } });
+    fireEvent.click(screen.getByRole('button', { name: /연결하고 업무 조회/ }));
+    const literalLink = await screen.findByRole('link', { name: marker });
+    expect(literalLink).toHaveTextContent(marker);
+    expect(screen.getAllByRole('link', { name: (name) => name.includes(marker) })).toHaveLength(2);
+    expect(container.querySelectorAll('img,script')).toHaveLength(0);
+  });
   it('configures enforced response headers without inline allowances', () => {
     const config = readFileSync('nginx.conf', 'utf8');
     for (const part of [

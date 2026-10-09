@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { checkpoint } from './checkpoints';
 
 // Synthetic API responses exercise the real UI; they do not certify backend/DB isolation.
 test('SC-T07 untrusted customer text never creates executable DOM or network work', async ({ page }) => {
+  checkpoint('SECURITY_ROUTE_STUB');
   const marker = '<img src="/synthetic-xss-probe" onerror="window.syntheticExecuted=1">';
   let mutationCount = 0;
   let probeCount = 0;
@@ -32,13 +34,16 @@ test('SC-T07 untrusted customer text never creates executable DOM or network wor
   await page.goto('/');
   await page.getByLabel('개발용 인증 토큰').fill('synthetic-browser-session');
   await page.getByRole('button', { name: /연결하고 업무 조회/ }).click();
-  await expect(page.getByRole('link', { name: marker })).toBeVisible();
+  checkpoint('SECURITY_LITERAL_LINK');
+  await expect(page.getByRole('link', { name: marker, exact: true })).toBeVisible();
+  checkpoint('SECURITY_NO_EXECUTION');
   expect(
     await page.evaluate(() => (window as unknown as Record<string, unknown>).syntheticExecuted),
   ).toBeUndefined();
   expect(probeCount).toBe(0);
   expect(mutationCount).toBe(0);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+  checkpoint('SECURITY_LOGOUT_HISTORY');
   await page.getByRole('link', { name: /비교 실험/ }).click();
   await page.getByRole('button', { name: '연결 해제' }).click();
   await page.goBack();
@@ -47,6 +52,7 @@ test('SC-T07 untrusted customer text never creates executable DOM or network wor
 
 test('SC-T07 deployed UI enforces CSP, no-store, frame and referrer headers', async ({ page }) => {
   test.skip(!process.env.FUSE_UI_SECURITY_HEADERS, 'Requires actual nginx deployment, not Vite dev server');
+  checkpoint('SECURITY_HEADERS');
   const response = await page.goto('/');
   const headers = response!.headers();
   expect(headers['cache-control']).toContain('no-store');
@@ -65,6 +71,7 @@ test('SC-T07 deployed UI enforces CSP, no-store, frame and referrer headers', as
     expect(csp).toContain(directive);
   expect(csp).not.toMatch(/unsafe-inline|unsafe-eval/);
   // Install a harmless inline script; enforced script-src must block it.
+  checkpoint('SECURITY_CSP');
   await page.evaluate(() => {
     const script = document.createElement('script');
     script.textContent = 'window.syntheticCspExecuted = true';
