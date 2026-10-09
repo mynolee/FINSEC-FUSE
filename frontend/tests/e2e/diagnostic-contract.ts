@@ -43,6 +43,10 @@ export const PHASES = [
   'SECURITY_LOGOUT_HISTORY',
   'SECURITY_HEADERS',
   'SECURITY_CSP',
+  'SECURITY_FRAME_TOP_LEVEL',
+  'SECURITY_FRAME_PARENT',
+  'SECURITY_FRAME_DENIAL',
+  'SECURITY_FRAME_UI_ABSENT',
 ] as const;
 export type Phase = (typeof PHASES)[number];
 export const PHASE_ANNOTATION = 'fuse-checkpoint';

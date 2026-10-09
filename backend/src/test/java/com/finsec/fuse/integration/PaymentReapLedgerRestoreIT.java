@@ -73,6 +73,19 @@ class PaymentReapLedgerRestoreIT extends PaymentFixture {
         return json.write(rows);
     }
 
+    /** Include execution bookkeeping and recorded inputs, even when a row set is empty. */
+    private String durableRows(UUID workflow) {
+        var rows = new LinkedHashMap<String,Object>();
+        rows.put("business", businessRows(workflow));
+        for (String table : List.of("workflow_job", "audit_event"))
+            rows.put(table, db.query("SELECT * FROM " + table + " WHERE workflow_id=? ORDER BY id", workflow));
+        rows.put("actions", db.query("SELECT * FROM action_request WHERE workflow_id=? ORDER BY action_id", workflow));
+        rows.put("dependencies", db.query("SELECT * FROM run_dependency WHERE workflow_id=? ORDER BY parent_run_id,child_run_id", workflow));
+        rows.put("sources", db.query("SELECT u.* FROM run_source_use u JOIN agent_run r ON r.id=u.run_id WHERE r.workflow_id=? ORDER BY u.run_id,u.document_id,u.document_version", workflow));
+        rows.put("evidence", db.query("SELECT u.* FROM run_evidence_use u JOIN agent_run r ON r.id=u.run_id WHERE r.workflow_id=? ORDER BY u.run_id,u.evidence_id", workflow));
+        return json.write(rows);
+    }
+
     private long restorations(Paid paid) {
         return ((Number) db.required("SELECT count(*) n FROM audit_event WHERE action_id=? AND event_type='PAYMENT_RECEIPT_RESTORED'",
             paid.actionId()).get("n")).longValue();
@@ -207,19 +220,64 @@ class PaymentReapLedgerRestoreIT extends PaymentFixture {
         assertEquals("ON_HOLD", workflow(paid.lease().workflowId()).get("state"));
     }
 
-    @Test void recoveredReceiptRejectsForeignOwnerAndChangedGenerationOrWorkflowContext() {
+    @Test void recoveredReceiptRejectsChangedContextIncludingForeignJobWithoutTouchingIndependentLiveExecution() {
         var paid = paid();
         injectRecoveryState(paid, true);
-        clock.set(paid.leaseUntil());
-        payments.reap(paid.lease().jobId());
+        clock.set(paid.leaseUntil().plusSeconds(1));
+        // Start the independent lease AFTER expiring the injected historical recovery state.
+        // Local KYC preparation persists a real live run; no model/provider is executed.
+        UUID independent = start("customer-103");
+        var current = jobs.claim().orElseThrow();
+        assertEquals(independent, current.workflowId());
+        assertEquals("KYC", current.phase());
+        assertNotEquals(paid.lease().workflowId(), independent);
+        assertNotEquals(paid.lease().jobId(), current.jobId());
+        var prepared = kyc.prepare(current.jobId(), current.token()).orElseThrow();
+        var currentJob = job(current.jobId());
+        var currentRun = db.required("SELECT * FROM agent_run WHERE id=?", prepared.input().runId());
+        assertNotEquals(job(paid.lease().jobId()).get("run_id"), currentRun.get("id"));
+        assertEquals(independent, currentJob.get("workflow_id"));
+        assertEquals(independent, currentRun.get("workflow_id"));
+        assertEquals(currentRun.get("id"), currentJob.get("run_id"));
+        assertEquals(current.generation(), ((Number) workflow(independent).get("generation")).intValue());
+        assertEquals(current.generation(), ((Number) currentJob.get("generation")).intValue());
+        assertEquals(current.generation(), ((Number) currentRun.get("generation")).intValue());
+        assertEquals(current.token(), currentJob.get("lease_token"));
+        assertEquals("RUNNING", currentJob.get("state"));
+        assertEquals("RUNNING", currentRun.get("status"));
+        assertTrue(((Timestamp) currentJob.get("lease_until")).toInstant().isAfter(clock.now()));
+        String independentBefore = durableRows(independent);
+        // START_WORKFLOW receipts have no workflow_id, so include them explicitly in the oracle.
+        String otherActionsBefore = json.write(db.query("SELECT * FROM action_request WHERE action_id<>? ORDER BY action_id", paid.actionId()));
         String before = businessRows(paid.lease().workflowId());
+        payments.reap(paid.lease().jobId());
+        assertRestored(paid, before);
+        assertEquals(1, restorations(paid));
+        assertEquals(independentBefore, durableRows(independent), "Reaping historical payment must preserve the independent live execution");
+        assertEquals(otherActionsBefore, json.write(db.query("SELECT * FROM action_request WHERE action_id<>? ORDER BY action_id", paid.actionId())));
+        assertEquals("RUNNING", job(current.jobId()).get("state"));
+        assertEquals("RUNNING", db.required("SELECT * FROM agent_run WHERE id=?", prepared.input().runId()).get("status"));
+        assertTrue(((Timestamp) job(current.jobId()).get("lease_until")).toInstant().isAfter(clock.now()));
+        String paidBeforeReplay = durableRows(paid.lease().workflowId());
+        String allActionsBeforeReplay = json.write(db.query("SELECT * FROM action_request ORDER BY action_id"));
         String receipt = json.write(db.required("SELECT * FROM action_request WHERE action_id=?", paid.actionId()));
+        // Change ONLY canonical jobId; retain the original actor, workflow, action and terms.
+        var changedJob = new LinkedHashMap<>(paid.body());
+        assertEquals(paid.lease().jobId(), changedJob.put("jobId", current.jobId()));
+        assertReplayDenied(paid, WORKER, paid.lease().workflowId(), changedJob, 409, "REPLAY_CONFLICT");
+        assertEquals(allActionsBeforeReplay, json.write(db.query("SELECT * FROM action_request ORDER BY action_id")));
+        assertEquals(paidBeforeReplay, durableRows(paid.lease().workflowId()));
+        assertEquals(independentBefore, durableRows(independent), "Foreign job replay must preserve the independent live execution");
         assertReplayDenied(paid, "customer-102", paid.lease().workflowId(), paid.body(), 403, "FORBIDDEN");
         var changedGeneration = new LinkedHashMap<>(paid.body());
         changedGeneration.put("generation", paid.lease().generation()+1);
         assertReplayDenied(paid, WORKER, paid.lease().workflowId(), changedGeneration, 409, "REPLAY_CONFLICT");
         assertReplayDenied(paid, WORKER, UUID.randomUUID(), paid.body(), 409, "REPLAY_CONFLICT");
         assertEquals(receipt, json.write(db.required("SELECT * FROM action_request WHERE action_id=?", paid.actionId())));
+        assertEquals(allActionsBeforeReplay, json.write(db.query("SELECT * FROM action_request ORDER BY action_id")));
+        assertEquals(paidBeforeReplay, durableRows(paid.lease().workflowId()));
+        assertEquals(independentBefore, durableRows(independent));
+        assertEquals(1, restorations(paid));
         assertRestored(paid, before);
     }
 

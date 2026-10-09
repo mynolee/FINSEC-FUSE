@@ -8,6 +8,7 @@ import com.finsec.fuse.common.ApiException;
 import com.finsec.fuse.common.Json;
 import com.finsec.fuse.payment.*;
 import com.finsec.fuse.quarantine.*;
+import com.finsec.fuse.workflow.StartWorkflowRequest;
 import com.finsec.fuse.workflow.WorkflowQueryService;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,80 @@ class AuditPrivacyIT extends PaymentFixture {
         "SYNTHETIC_SERVICE_TOKEN", "SYNTHETIC_DB_PASSWORD", "SYNTHETIC_ID_DOCUMENT", "SYNTHETIC_FACE");
     private static final String FORGED="SYNTHETIC_FORGED_AUDIT_EVENT";
     private static String privateText() {return String.join("|",MARKERS)+"\r\n"+FORGED+"\n\t";}
+
+    @Test @Timeout(30)
+    void unregisteredBusinessReferenceCannotCreateAuditOrActionReceipt() {
+        String reference="SYNTHETIC_REFERENCE\r\n"+FORGED;
+        var customer=new Actor("customer-102","CUSTOMER",Set.of("customer-102"));
+        var request=new StartWorkflowRequest(reference,"customer-102",1000000L,
+            UUID.fromString("00000000-0000-4000-8000-000000000102"));
+        UUID action=UUID.randomUUID();
+        assertTrue(reference.length()<=80);
+        assertTrue(db.one("SELECT business_reference FROM application_registry WHERE business_reference=?",reference).isEmpty());
+        var before=durableRows();
+
+        var rejected=assertThrows(ApiException.class,()->workflows.start(customer,action,request));
+
+        assertEquals(409,rejected.status());assertEquals("APPLICATION_CONFLICT",rejected.reasonCode());
+        assertTrue(db.one("SELECT action_id FROM action_request WHERE action_id=?",action).isEmpty());
+        assertTrue(db.query("SELECT id FROM audit_event WHERE action_id=?",action).isEmpty());
+        assertEquals(before,durableRows(),"Registry rejection must leave all observed durable rows unchanged");
+    }
+
+    @Test @Timeout(30)
+    void registeredBusinessReferenceIsOneJsonFieldNotAnExtraAuditEvent() {
+        String reference="SYNTHETIC_REFERENCE\r\n"+FORGED;
+        var customer=new Actor("customer-102","CUSTOMER",Set.of("customer-102"));
+        var request=new StartWorkflowRequest(reference,"customer-102",1000000L,
+            UUID.fromString("00000000-0000-4000-8000-000000000102"));
+        assertTrue(reference.length()<=80);
+        // Test-only registration: public workflow input cannot create this registry entry.
+        tx.executeWithoutResult(status->{db.gate();assertEquals(1,db.update(
+            "INSERT INTO application_registry(business_reference,customer_id,amount_krw,payout_account_id,document_id,document_version) "+
+            "SELECT ?,customer_id,amount_krw,payout_account_id,document_id,document_version FROM application_registry WHERE business_reference='APP-DEMO-102-001'",reference));});
+        var before=durableRows();UUID action=UUID.randomUUID();
+
+        var accepted=workflows.start(customer,action,request);
+
+        UUID workflowId=(UUID)accepted.get("workflowId");
+        assertEquals("KYC_PENDING",accepted.get("state"));assertEquals(false,accepted.get("replayed"));
+        var created=db.required("SELECT * FROM audit_event WHERE action_id=?",action);
+        assertInstanceOf(UUID.class,created.get("id"));assertEquals(workflowId,created.get("workflow_id"));
+        assertEquals(customer.actorId(),created.get("actor_id"));assertEquals("WORKFLOW_CREATED",created.get("event_type"));
+        var details=auditDetails(action,"WORKFLOW_CREATED");
+        assertEquals(Set.of("jobId","businessReference"),details.keySet());
+        assertEquals(reference,details.get("businessReference"));
+        UUID jobId=UUID.fromString((String)details.get("jobId"));
+        assertEquals(workflowId,db.required("SELECT workflow_id FROM workflow_job WHERE id=?",jobId).get("workflow_id"));
+        assertEquals(reference,db.required("SELECT business_reference FROM loan_application WHERE id=?",
+            workflow(workflowId).get("application_id")).get("business_reference"));
+        String storedJson=str(created,"details_json");
+        assertFalse(storedJson.contains("\r"));assertFalse(storedJson.contains("\n"));
+        assertEquals(details,json.map(storedJson));
+
+        var after=durableRows();
+        var expectedAdds=Map.of("loan_application",1,"workflow",1,"workflow_stage",3,"workflow_job",1,"audit_event",1,"action_request",1);
+        before.forEach((table,rows)->{
+            assertEquals(rows.size()+expectedAdds.getOrDefault(table,0),after.get(table).size(),table+" record count");
+            assertTrue(after.get(table).containsAll(rows),table+" existing rows must remain unchanged");
+        });
+        assertTrue(db.query("SELECT id FROM audit_event WHERE event_type=?",FORGED).isEmpty());
+        var receipt=json.map(str(db.required("SELECT result_json FROM action_request WHERE action_id=?",action),"result_json"));
+        assertEquals(workflowId.toString(),receipt.get("workflowId"));assertEquals(action.toString(),receipt.get("requestId"));
+
+        // Authorized operational projections retain registered business data; they are not sanitized exports.
+        var trace=queries.trace(REVIEWER,workflowId);
+        assertEquals(1,((List<?>)trace.get("auditEvents")).size());
+        assertEquals(details,traceDetails(trace,action));
+        String traceJson=json.write(trace);
+        assertFalse(traceJson.contains("\r"));assertFalse(traceJson.contains("\n"));
+        assertEquals(1,((List<?>)json.map(traceJson).get("auditEvents")).size());
+        var customerDetail=queries.detail(customer,workflowId);
+        assertEquals(reference,json.map(json.write(customerDetail)).get("businessReference"));
+        assertEquals(403,assertThrows(ApiException.class,()->queries.trace(customer,workflowId)).status());
+        assertEquals(true,workflows.start(customer,action,request).get("replayed"));
+        assertEquals(after,durableRows(),"Reads and exact replay must not append events or receipts");
+    }
 
     @Test @Timeout(30)
     void releaseAndResumeAuditOnlyCheckedFieldsWhileOriginalBodiesStillBindReplay() {
@@ -144,7 +219,7 @@ class AuditPrivacyIT extends PaymentFixture {
     }
     private Map<String,List<String>> durableRows() {
         var result=new LinkedHashMap<String,List<String>>();
-        for(String table:List.of("execution_gate","workflow","workflow_stage","workflow_job","agent_run","agent_result",
+        for(String table:List.of("execution_gate","application_registry","loan_application","workflow","workflow_stage","workflow_job","agent_run","agent_result",
             "delegation_grant","approval","payment_reservation","mock_payment","risk_ledger","quarantine","action_request","audit_event"))
             result.put(table,db.query("SELECT to_jsonb(t)::text AS row_json FROM "+table+" t ORDER BY row_json")
                 .stream().map(row->str(row,"row_json")).toList());

@@ -13,6 +13,7 @@ import { MAX_CHECKPOINTS, PHASE_ANNOTATION, PHASES, type Phase } from './diagnos
 const TEST_TITLES = [
   'SC-T07 untrusted customer text never creates executable DOM or network work',
   'SC-T07 deployed UI enforces CSP, no-store, frame and referrer headers',
+  'SC-T07 hostile loopback parent cannot frame the deployed UI',
   'desktop entry has no fabricated live data and supports keyboard login',
   'mobile layout does not overflow and route history stays usable',
   'real browser approval pays exactly once while missing evidence stays blocked',

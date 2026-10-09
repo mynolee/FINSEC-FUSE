@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type CDPSession } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import { checkpoint } from './checkpoints';
 
 // Synthetic API responses exercise the real UI; they do not certify backend/DB isolation.
@@ -80,4 +82,94 @@ test('SC-T07 deployed UI enforces CSP, no-store, frame and referrer headers', as
   expect(
     await page.evaluate(() => (window as unknown as Record<string, unknown>).syntheticCspExecuted),
   ).toBeUndefined();
+});
+
+test('SC-T07 hostile loopback parent cannot frame the deployed UI', async ({ page, browserName }) => {
+  test.skip(
+    process.env.FUSE_UI_SECURITY_HEADERS !== '1' || !process.env.FUSE_UI_URL,
+    'Requires explicit deployed UI with enforced security headers',
+  );
+  checkpoint('SECURITY_FRAME_TOP_LEVEL');
+  expect(browserName === 'chromium').toBe(true);
+  const target = new URL('/', process.env.FUSE_UI_URL!);
+  expect(['http:', 'https:'].includes(target.protocol) && !target.username && !target.password).toBe(true);
+  // Synthetic correlation only; the marker carries no session/customer/provider information.
+  const marker = randomUUID();
+  const framedUrl = new URL(target);
+  framedUrl.searchParams.set('fuse-frame-probe', marker);
+  const response = await page.goto(framedUrl.href);
+  expect(response?.ok() === true).toBe(true);
+  await expect(page.getByLabel('개발용 인증 토큰')).toBeVisible();
+  await expect(page.getByRole('button', { name: /연결하고 업무 조회/ })).toBeVisible();
+
+  // No app proxy, token, customer fixture or parent CSP: only the deployed response can deny framing.
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.end(
+      '<!doctype html><title>Hostile parent</title><iframe id="hostile-frame" title="Framing probe"></iframe>',
+    );
+  });
+  let session: CDPSession | undefined;
+  try {
+    checkpoint('SECURITY_FRAME_PARENT');
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('FRAME_PARENT_UNAVAILABLE');
+    const parentOrigin = `http://127.0.0.1:${address.port}`;
+    expect(parentOrigin !== target.origin).toBe(true);
+    const parentUrl = new URL(parentOrigin);
+    parentUrl.searchParams.set('fuse-frame-probe', marker);
+    await page.goto(parentUrl.href);
+    const element = await page.locator('#hostile-frame').elementHandle();
+    const frame = await element!.contentFrame();
+    expect(frame !== null && page.frames().length === 2).toBe(true);
+
+    // Immediately reduce Chromium diagnostics to booleans. Never attach/log protocol or browser text.
+    const cdp = await page.context().newCDPSession(page);
+    session = cdp;
+    let policyDenied = false;
+    let navigationDenied = false;
+    cdp.on('Audits.issueAdded', ({ issue }) => {
+      const details = issue.details.contentSecurityPolicyIssueDetails;
+      // Accept only an exact marked endpoint of this probe, whether the issue identifies the
+      // protected resource or its offending ancestor. Unknown/normalized URL forms fail closed;
+      // do not infer undocumented frameAncestor semantics or accept an unrelated policy issue.
+      if (
+        details &&
+        !details.isReportOnly &&
+        /^frame-ancestors(?:\s|$)/.test(details.violatedDirective) &&
+        (details.blockedURL === framedUrl.href || details.blockedURL === parentUrl.href)
+      )
+        policyDenied = true;
+    });
+    page.on('requestfailed', (request) => {
+      if (
+        request.url() === framedUrl.href &&
+        request.isNavigationRequest() &&
+        request.frame() === frame &&
+        request.failure()?.errorText === 'net::ERR_BLOCKED_BY_RESPONSE'
+      )
+        navigationDenied = true;
+    });
+    await cdp.send('Audits.enable');
+    checkpoint('SECURITY_FRAME_DENIAL');
+    await page.locator('#hostile-frame').evaluate((element, url) => {
+      (element as HTMLIFrameElement).src = url;
+    }, framedUrl.href);
+    await expect.poll(() => policyDenied && navigationDenied).toBe(true);
+
+    // Playwright inspects the child directly; a cross-origin DOM exception/load event is not evidence.
+    checkpoint('SECURITY_FRAME_UI_ABSENT');
+    expect((await element!.contentFrame()) === frame).toBe(true);
+    expect(await frame!.locator('#root').count()).toBe(0);
+    expect(await frame!.getByLabel('개발용 인증 토큰').count()).toBe(0);
+    expect(await frame!.getByRole('button', { name: /연결하고 업무 조회/ }).count()).toBe(0);
+  } finally {
+    await session?.detach().catch(() => undefined);
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });

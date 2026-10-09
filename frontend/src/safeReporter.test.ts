@@ -22,6 +22,38 @@ function step(overrides: Partial<TestStep> = {}): TestStep {
 }
 
 describe('public browser diagnostic allowlist', () => {
+  it('recognizes hostile-frame checks while withholding all raw Chromium diagnostics', () => {
+    const frameTitle = 'SC-T07 hostile loopback parent cannot frame the deployed UI';
+    const phases = [
+      'SECURITY_FRAME_TOP_LEVEL',
+      'SECURITY_FRAME_PARENT',
+      'SECURITY_FRAME_DENIAL',
+      'SECURITY_FRAME_UI_ABSENT',
+    ];
+    for (const phase of phases) {
+      const summary = summarizeBrowserTest(
+        { title: frameTitle },
+        result({
+          status: 'failed',
+          annotations: [{ type: PHASE_ANNOTATION, description: phase }],
+          error: { message: `Framing '${PRIVATE}' violates frame-ancestors 'none'` },
+          errors: [{ message: `net::ERR_BLOCKED_BY_RESPONSE ${PRIVATE}` }],
+          steps: [step({ category: 'expect', error: { message: PRIVATE } })],
+          stdout: [PRIVATE],
+          stderr: [PRIVATE],
+          attachments: [{ name: PRIVATE, contentType: 'text/plain', body: Buffer.from(PRIVATE) }],
+        }),
+      );
+      expect(summary.title).toBe(frameTitle);
+      expect(summary.diagnostics.phase).toBe(phase);
+      expect(summary.diagnostics.checkpoints).toEqual([phase]);
+      expect(summary.diagnostics.failureCode).toBe('ASSERTION_FAILED');
+      expect(JSON.stringify(summary)).not.toContain(PRIVATE);
+      expect(JSON.stringify(summary)).not.toContain('ERR_BLOCKED_BY_RESPONSE');
+      expect(JSON.stringify(summary)).not.toContain('frame-ancestors');
+    }
+  });
+
   it('reports fixed checkpoints, failure code and only the test filename/line', () => {
     const error = {
       message: `strict mode violation: ${PRIVATE}`,
