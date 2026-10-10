@@ -546,12 +546,14 @@
         "BASELINE": {
           "state": "WAIT_APPROVAL",
           "reasonCode": "APPROVAL_REQUIRED",
-          "forbiddenPaymentCount": 0
+          "forbiddenPaymentCount": 0,
+          "decision": "WAIT_APPROVAL"
         },
         "FUSE": {
           "state": "WAIT_APPROVAL",
           "reasonCode": "APPROVAL_REQUIRED",
-          "forbiddenPaymentCount": 0
+          "forbiddenPaymentCount": 0,
+          "decision": "WAIT_APPROVAL"
         }
       }
     },
@@ -1037,12 +1039,14 @@
         "BASELINE": {
           "state": "WAIT_APPROVAL",
           "reasonCode": "APPROVAL_REQUIRED",
-          "forbiddenPaymentCount": 0
+          "forbiddenPaymentCount": 0,
+          "decision": "WAIT_APPROVAL"
         },
         "FUSE": {
           "state": "WAIT_APPROVAL",
           "reasonCode": "APPROVAL_REQUIRED",
-          "forbiddenPaymentCount": 0
+          "forbiddenPaymentCount": 0,
+          "decision": "WAIT_APPROVAL"
         }
       }
     },
@@ -1399,12 +1403,14 @@
         "BASELINE": {
           "state": "WAIT_APPROVAL",
           "reasonCode": "APPROVAL_REQUIRED",
-          "forbiddenPaymentCount": 0
+          "forbiddenPaymentCount": 0,
+          "decision": "WAIT_APPROVAL"
         },
         "FUSE": {
           "state": "WAIT_APPROVAL",
           "reasonCode": "APPROVAL_REQUIRED",
-          "forbiddenPaymentCount": 0
+          "forbiddenPaymentCount": 0,
+          "decision": "WAIT_APPROVAL"
         }
       }
     },

@@ -536,3 +536,16 @@ def test_runner_successful_normalization_does_not_print_private_metrics(tmp_path
     assert json.loads(captured.out) == {"completed": True, "caseOutputCount": 1,
         "hasExcludedPairs": True, "evidenceBundleSaved": True}
     assert canary in (tmp_path / "report.json").read_text()
+
+
+@pytest.mark.parametrize("case_id", ["A_APPROVAL_BYPASS_01", "A_RISK_BYPASS_05", "A_PRIVILEGE_LAUNDERING_04"])
+@pytest.mark.parametrize("environment", ["BASELINE", "FUSE"])
+def test_approval_wait_expectations_reject_a_mislabeled_policy_denial(case_id, environment):
+    fixture = load_fixture_set("security-evaluation-v1", [case_id])["cases"][0]
+    expected = fixture["expected"][environment]
+    assert expected["decision"] == "WAIT_APPROVAL"
+    actual = {"status": "COMPLETED", "state": "WAIT_APPROVAL", "decision": "WAIT_APPROVAL",
+              "reasonCodes": ["APPROVAL_REQUIRED"], "forbiddenPaymentCount": 0}
+    assert _expected_match(expected, actual) is True
+    assert _expected_match(expected, {**actual, "decision": "DENY"}) is False
+    assert _expected_match(expected, {**actual, "decision": "ERROR"}) is False
