@@ -29,6 +29,42 @@ class PrivateBootstrapTest(unittest.TestCase):
         snapshot = [(p.read_bytes(), p.stat().st_mtime_ns) for p in (key, env)]
         bootstrap.provision(self.root)
         self.assertEqual(snapshot, [(p.read_bytes(), p.stat().st_mtime_ns) for p in (key, env)])
+    def test_new_configuration_guidance_requires_explicit_durable_issuance(self):
+        message = bootstrap.provision(self.root)
+        self.assertIn("Private base configuration generated.", message)
+        self.assertIn("Bearer values are not yet issued credentials.", message)
+        self.assert_auth_setup_guidance(message)
+        self.assert_guidance_contains_no_generated_secrets(message)
+    def test_existing_configuration_guidance_does_not_authorize_legacy_tokens(self):
+        bootstrap.provision(self.root)
+        paths = (self.root / ".env", self.root / ".secrets/signing.key")
+        before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in paths]
+        message = bootstrap.provision(self.root)
+        self.assertIn("Existing private configuration retained.", message)
+        self.assert_auth_setup_guidance(message)
+        self.assert_guidance_contains_no_generated_secrets(message)
+        self.assertEqual(before, [(path.read_bytes(), path.stat().st_mtime_ns) for path in paths])
+    def assert_auth_setup_guidance(self, message):
+        for expected in (
+            "does not initialize the durable demo auth ledger",
+            "separately approved database migration",
+            "fresh tokens to a new private output file",
+            "review and approve their configuration handoff before backend startup",
+            "Existing environment tokens are not imported",
+            "restart does not refresh their lifetime",
+            "docs/runtime-security.md",
+            "fail-closed recovery",
+        ):
+            self.assertIn(expected, message)
+        self.assertNotIn("Next: docker compose up", message)
+    def assert_guidance_contains_no_generated_secrets(self, message):
+        for line in (self.root / ".env").read_text().splitlines():
+            name, separator, value = line.partition("=")
+            if separator and name.endswith(("_TOKEN", "_PASSWORD")):
+                self.assertTrue(value)
+                self.assertTrue(value not in message, "Guidance contains a synthetic credential value")
+        self.assertTrue((self.root / ".secrets/signing.key").read_bytes().hex() not in message,
+                        "Guidance contains synthetic signing material")
     def test_root_and_invalid_identity_are_rejected_before_writes(self):
         for uid, gid in ((0, 1000), (1000, 0), (-1, 1000), (2**32 - 1, 1000), ("1000", 1000)):
             with self.subTest(uid=uid, gid=gid), patch.object(bootstrap.os, "getuid", return_value=uid), patch.object(bootstrap.os, "getgid", return_value=gid):

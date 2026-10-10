@@ -10,10 +10,11 @@
     "Compose static topology tests: 20 passed; actual Docker execution NOT_RUN",
     "Bootstrap isolated tests: 6 passed; no real-user credential changes",
     "Ingress revision: 27 Compose static, 33 CI-support and 17 scanner-static tests passed; actual nginx/Docker startup and browser verification NOT_RUN until next CI.",
-    "2026-10-10: independently reviewed environment-file exclusion-only .dockerignore change; publication privacy gate has 8 offline tests passing. Fresh exact-head CI remains required."
+    "2026-10-10: independently reviewed environment-file exclusion-only .dockerignore change; publication privacy gate has 8 offline tests passing. Fresh exact-head CI remains required.",
+    "2026-10-10: static build.gradle delta review found only the explicit demoTokenProvision JavaExec task using the existing main runtime classpath. Removing that task reproduces the previously reviewed file byte-for-byte; dependencies, repositories, plugins, resolution and security settings are unchanged. Refreshed this exact manifest binding only. No Gradle, dependency resolution, downloads or runtime verification were executed for this update."
   ],
   "sha256": {
-    "build.gradle": "66d8ad143039b2bd5a5db7be8edcc6245390be07834d1325af37009120b325e9",
+    "build.gradle": "6495cf6f5e719cbb63c837dbfe84020df000fb5aae9fe2f5540fd4b7c0667467",
     "settings.gradle": "4923253e34baac194581bd7f6810a322c1dd6b403d21f6624fe705bfc76c7f9e",
     "gradle/wrapper/gradle-wrapper.properties": "eec0e0552947873a3e2d491f69cdd1176e546b4bef8c3aec1af58504bad608a8",
     "agent/requirements.txt": "a2e9095465c7069352c7f7c76eb635f11deaf352c959f3d92f7e43ccaa6ad287",

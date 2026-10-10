@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Generate private developer fixtures; never repair or replace existing credentials."""
+"""Prepare private base configuration; never issue durable bearer authority."""
 import os
 from pathlib import Path
 import secrets
 import stat
 import sys
+
+
+AUTH_SETUP_GUIDANCE = (
+    "Bootstrap does not initialize the durable demo auth ledger or authorize bearer values. "
+    "After separately approved database migration, explicitly provision fresh tokens to a new private output file, "
+    "then review and approve their configuration handoff before backend startup. "
+    "Existing environment tokens are not imported; restart does not refresh their lifetime. "
+    "See docs/runtime-security.md for setup, replacement, and fail-closed recovery."
+)
 
 
 def validate_identity(uid: int, gid: int) -> None:
@@ -41,7 +50,7 @@ def provision(root: Path) -> str:
             matches = [line.partition("=")[2] for line in lines if line.startswith(name + "=")]
             if matches != [str(value)]:
                 raise ValueError(f"Existing configuration needs exactly {name}={value} for private Compose secret access; update it yourself. No credentials were changed.")
-        return "Existing private configuration retained."
+        return "Existing private configuration retained. " + AUTH_SETUP_GUIDANCE
     template = (root / ".env.example").read_text()
     lines = [line.replace("CHANGE_ME", secrets.token_hex(32)) if "CHANGE_ME" in line and not line.startswith("#") else line for line in template.splitlines()]
     if any(line.startswith(("FUSE_RUNTIME_UID=", "FUSE_RUNTIME_GID=")) for line in lines):
@@ -60,7 +69,7 @@ def provision(root: Path) -> str:
         for path in reversed(created):
             path.unlink()
         raise
-    return "Local random demo credentials generated privately. Next: docker compose up --build"
+    return "Private base configuration generated. Bearer values are not yet issued credentials. " + AUTH_SETUP_GUIDANCE
 
 
 if __name__ == "__main__":

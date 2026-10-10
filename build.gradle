@@ -104,6 +104,14 @@ tasks.named('check') {
     dependsOn integrationTest
 }
 
+tasks.register('demoTokenProvision', JavaExec) {
+    description = 'Runs explicit offline demo token administration against an already migrated database.'
+    group = 'application'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.finsec.fuse.auth.DemoTokenProvisioner'
+}
+
 tasks.register('writeTestClasspath') {
     description = 'Writes the complete test runtime classpath for the isolated HTTP smoke runner.'
     group = 'verification'
