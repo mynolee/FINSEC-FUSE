@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Verify process-recovery evidence and publish only fixed aggregate fields."""
+"""Verify process-recovery evidence and publish only fixed aggregate fields.
+
+Raw schema 2 and summary 2 require closed per-scenario diagnostics. PASS rows
+must be COMPLETE/NONE; FAIL rows must name an unfinished stage and a failure
+category. Legacy, absent or invalid diagnostics cannot establish a v2 PASS.
+Stage values describe the last attempted region, not successful completion of
+that region or proof that a report survives a hard kill of the harness itself.
+"""
 import argparse
 import importlib.util
 import json
@@ -7,11 +14,24 @@ from pathlib import Path
 import re
 
 SCENARIOS = ('KYC_INFLIGHT', 'PAY_CLAIM', 'PAY_RESERVED', 'PAY_COMMITTED', 'DB_UNAVAILABLE')
+STAGES = (
+    'WORK_DIRECTORY', 'CREDENTIAL_PREPARATION', 'DATABASE_START', 'DATABASE_VERSION',
+    'DATABASE_MIGRATION', 'AUTH_INITIALIZATION', 'AUTH_SNAPSHOT', 'MOCK_SETUP',
+    'PREPARE_LAUNCH', 'PREPARE_READINESS', 'PREPARE_BOUNDARY', 'PREPARE_ASSERTIONS',
+    'DATABASE_OUTAGE', 'DATABASE_RESTART', 'PROCESS_KILL', 'RESTART_LAUNCH',
+    'RESTART_READINESS', 'RECOVERY_ASSERTIONS', 'COMPLETE',
+)
+FAILURE_CATEGORIES = ('NONE', 'ASSERTION', 'DATABASE', 'IO', 'INTERRUPTED', 'UNEXPECTED')
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def canonical(value: object, allowed: tuple[str, ...]) -> str:
+    # Return a fixed local literal, never an untrusted input object.
+    return next((literal for literal in allowed if type(value) is str and value == literal), 'UNKNOWN')
+
+
 def summarize(report: dict | None, current_source_hash: str) -> dict:
-    data = report or {}
+    data = report if isinstance(report, dict) else {}
     raw_rows = data.get('scenarios')
     rows = raw_rows if isinstance(raw_rows, list) else []
     known = [row for row in rows if isinstance(row, dict) and row.get('scenario') in SCENARIOS]
@@ -19,29 +39,41 @@ def summarize(report: dict | None, current_source_hash: str) -> dict:
     statuses = []
     for name in SCENARIOS:
         observed = [row for row in known if row['scenario'] == name]
-        verdict = observed[0].get('verdict') if len(observed) == 1 else None
-        status = 'NOT_RUN' if not observed else verdict if verdict in {'PASS', 'FAIL'} else 'INVALID'
-        statuses.append({'scenario': name, 'status': status})
+        row = observed[0] if len(observed) == 1 else {}
+        verdict = canonical(row.get('verdict'), ('PASS', 'FAIL'))
+        stage = canonical(row.get('scenarioStage'), STAGES)
+        category = canonical(row.get('failureCategory'), FAILURE_CATEGORIES)
+        valid_pair = ((verdict == 'PASS' and stage == 'COMPLETE' and category == 'NONE')
+                      or (verdict == 'FAIL' and stage not in ('UNKNOWN', 'COMPLETE')
+                          and category not in ('UNKNOWN', 'NONE')))
+        status = 'NOT_RUN' if not observed else verdict if valid_pair else 'INVALID'
+        statuses.append({'scenario': name, 'status': status,
+                         'scenarioStage': stage if observed else 'NOT_RUN',
+                         'failureCategory': category if observed else 'NOT_RUN'})
     passed = sum(row['status'] == 'PASS' for row in statuses)
     hash_valid = bool(re.fullmatch(r'[a-f0-9]{64}', current_source_hash))
     source_matches = (hash_valid and data.get('sourceHashBefore') == current_source_hash
                       and data.get('sourceHashAfter') == current_source_hash
                       and data.get('sourceUnchangedDuringRun') is True)
+    schema_valid = type(data.get('schemaVersion')) is int and data['schemaVersion'] == 2
     shape_valid = len(rows) == 5 and len(known) == 5 and all(count == 1 for count in counts.values())
+    diagnostics_valid = all(row['status'] in ('PASS', 'FAIL') for row in statuses)
     count_valid = (type(data.get('plannedScenarioCount')) is int and data['plannedScenarioCount'] == 5
                    and type(data.get('passedScenarioCount')) is int and data['passedScenarioCount'] == passed)
     exit_valid = type(data.get('exitCode')) is int and data['exitCode'] == 0
     clean = data.get('cleanupVerified') is True
     attested = (data.get('resultsSource') == 'REAL_POSTGRES_CHILD_JVM_CRASH_AND_OUTAGE'
                 and data.get('syntheticModelOutputs') is True and data.get('liveRobustnessMeasured') is False)
-    success = (data.get('status') == 'PASS' and shape_valid and count_valid and passed == 5
+    success = (data.get('status') == 'PASS' and schema_valid and shape_valid and diagnostics_valid
+               and count_valid and passed == 5
                and exit_valid and clean and source_matches and attested)
-    return {'schemaVersion': 'FUSE-PROCESS-SUMMARY-1',
+    return {'schemaVersion': 'FUSE-PROCESS-SUMMARY-2',
             'status': 'NOT_RUN' if report is None or data.get('status') == 'NOT_RUN' else 'PASS' if success else 'FAIL',
             'plannedScenarioCount': 5, 'observedScenarioCount': len(rows), 'passedScenarioCount': passed,
             'cleanupVerified': clean, 'sourceUnchangedAndMatchesCurrentTree': source_matches,
             'sourceHash': current_source_hash if hash_valid else None,
-            'exitSuccessful': exit_valid, 'evidenceShapeVerified': shape_valid and count_valid,
+            'exitSuccessful': exit_valid, 'evidenceShapeVerified': schema_valid and shape_valid and count_valid,
+            'scenarioDiagnosticsVerified': diagnostics_valid,
             'syntheticReplayAndRealProcessAttestation': attested, 'scenarios': statuses,
             'scope': 'Five real PostgreSQL/child-JVM failure scenarios only; full T12 and LIVE are not claimed.',
             'privacy': 'No database rows, process IDs, HTTP bodies, credentials, paths, or raw logs.'}

@@ -20,6 +20,15 @@ public final class ProcessRecoveryHarness {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Instant T0 = Instant.parse("2026-10-09T04:00:00Z");
     private static final List<String> SCENARIOS = List.of("KYC_INFLIGHT", "PAY_CLAIM", "PAY_RESERVED", "PAY_COMMITTED", "DB_UNAVAILABLE");
+    // Closed row diagnostics only: never serialize exception names, messages, URLs or SQL.
+    private enum ScenarioStage {
+        WORK_DIRECTORY, CREDENTIAL_PREPARATION, DATABASE_START, DATABASE_VERSION,
+        DATABASE_MIGRATION, AUTH_INITIALIZATION, AUTH_SNAPSHOT, MOCK_SETUP,
+        PREPARE_LAUNCH, PREPARE_READINESS, PREPARE_BOUNDARY, PREPARE_ASSERTIONS,
+        DATABASE_OUTAGE, DATABASE_RESTART, PROCESS_KILL, RESTART_LAUNCH,
+        RESTART_READINESS, RECOVERY_ASSERTIONS, COMPLETE
+    }
+    private enum FailureCategory { NONE, ASSERTION, DATABASE, IO, INTERRUPTED, UNEXPECTED }
     private final Path root;
     private final Path report;
     private final List<Map<String, Object>> results = new ArrayList<>();
@@ -54,13 +63,13 @@ public final class ProcessRecoveryHarness {
     }
 
     private void scenario(String scenario) throws Exception {
-        Path work = Files.createDirectory(root.resolve(scenario.toLowerCase(Locale.ROOT)));
         var row = new LinkedHashMap<String, Object>();
         row.put("testId", "KYC_INFLIGHT".equals(scenario) ? "FAILURE-6-KYC" : "T12-" + scenario);
         row.put("scenario", scenario);
         row.put("specSections", List.of("12", "17.3"));
         row.put("implementedTestFile", "backend/src/test/java/com/finsec/fuse/testing/ProcessRecoveryHarness.java");
         row.put("verdict", "FAIL");
+        row.put("failureCategory", FailureCategory.NONE.name());
         row.put("expected", expected(scenario));
         row.put("timeSource", "Shared Spring test TimeSource: T0, then T0+91s at new process startup; OS/SQL clock unchanged");
         row.put("startedAt", Instant.now().toString());
@@ -68,23 +77,33 @@ public final class ProcessRecoveryHarness {
         var calls = new AtomicInteger();
         var inflight = new CountDownLatch(1);
         var releaseAgent = new CountDownLatch(1);
-        String token = com.finsec.fuse.auth.DevActorRegistry.generateToken();
-        var actorTokens = new LinkedHashMap<String, String>();
-        for (String role : List.of("customer-101", "customer-102", "customer-103", "customer-104", "reviewer", "security", "developer"))
-            actorTokens.put(role, com.finsec.fuse.auth.DevActorRegistry.generateToken());
+        ScenarioStage stage = ScenarioStage.WORK_DIRECTORY;
         try {
+            Path work = Files.createDirectory(root.resolve(scenario.toLowerCase(Locale.ROOT)));
+            stage = ScenarioStage.CREDENTIAL_PREPARATION;
+            String token = com.finsec.fuse.auth.DevActorRegistry.generateToken();
+            var actorTokens = new LinkedHashMap<String, String>();
+            for (String role : List.of("customer-101", "customer-102", "customer-103", "customer-104", "reviewer", "security", "developer"))
+                actorTokens.put(role, com.finsec.fuse.auth.DevActorRegistry.generateToken());
+            stage = ScenarioStage.DATABASE_START;
             pg = database(work.resolve("database"), 0);
             String databaseUrl = pg.getJdbcUrl("postgres", "postgres");
+            stage = ScenarioStage.DATABASE_VERSION;
             row.put("postgresVersion", single(databaseUrl, "show server_version"));
             check("16.15".equals(row.get("postgresVersion")), "Expected PostgreSQL 16.15");
             ownedPorts.add(pg.getPort());
             // Explicitly initialize this scenario's fresh owned ledger once, before either child starts.
-            org.flywaydb.core.Flyway.configure().dataSource(pg.getPostgresDatabase())
+            var dataSource = new org.springframework.jdbc.datasource.DriverManagerDataSource(databaseUrl, "postgres", "");
+            stage = ScenarioStage.DATABASE_MIGRATION;
+            org.flywaydb.core.Flyway.configure().dataSource(dataSource)
                 .locations("classpath:db/migration").load().migrate();
             var fixtureTokens = new LinkedHashMap<>(actorTokens);
             fixtureTokens.put("kyc-service", token);
-            DemoTokenTestFixture.initializeOwned(pg.getPostgresDatabase(), databaseUrl, fixtureTokens);
+            stage = ScenarioStage.AUTH_INITIALIZATION;
+            DemoTokenTestFixture.initializeOwned(dataSource, databaseUrl, fixtureTokens);
+            stage = ScenarioStage.AUTH_SNAPSHOT;
             var originalAuthority = authSnapshot(databaseUrl);
+            stage = ScenarioStage.MOCK_SETUP;
             byte[] key = new byte[32];
             new SecureRandom().nextBytes(key);
             Path keyFile = work.resolve("ephemeral-signing-key");
@@ -128,12 +147,15 @@ public final class ProcessRecoveryHarness {
                 "agentUrl", "http://127.0.0.1:" + agent.getAddress().getPort(), "time", T0.toString(),
                 "keyPath", keyFile.toString(), "token", token));
             config.putAll(actorTokens);
+            stage = ScenarioStage.PREPARE_LAUNCH;
             Process child = launch(work, config);
             row.put("killedProcessId", child.pid());
+            stage = ScenarioStage.PREPARE_READINESS;
             awaitFile(work.resolve("prepare.port"), child, 60);
             int backendPort = Integer.parseInt(Files.readString(work.resolve("prepare.port")));
             ownedPorts.add(backendPort);
             awaitFile(work.resolve("workflow.id"), child, 30);
+            stage = ScenarioStage.PREPARE_BOUNDARY;
             if ("KYC_INFLIGHT".equals(scenario)) {
                 check(inflight.await(30, TimeUnit.SECONDS), "Actual KYC HTTP request never reached barrier");
                 row.put("injectionBoundary", "Actual KYC HTTP request accepted; no response delivered");
@@ -141,11 +163,13 @@ public final class ProcessRecoveryHarness {
                 awaitFile(work.resolve("boundary.ready"), child, 30);
                 row.put("injectionBoundary", Files.readString(work.resolve("boundary.ready")));
             }
+            stage = ScenarioStage.PREPARE_ASSERTIONS;
             var before = snapshot(databaseUrl);
             check(originalAuthority.equals(authSnapshot(databaseUrl)), "Initial child changed credential authority");
             row.put("beforeFailure", before);
             assertPrepared(scenario, before);
             if ("DB_UNAVAILABLE".equals(scenario)) {
+                stage = ScenarioStage.DATABASE_OUTAGE;
                 int port = pg.getPort();
                 long databasePid = pg.getProcess().pid();
                 pg.close(); pg = null;
@@ -162,12 +186,14 @@ public final class ProcessRecoveryHarness {
                 ProcessRecoveryServer.publish(work.resolve("boundary.release"), "Attempt final commit while DB is down");
                 awaitFile(work.resolve("execution.returned"), child, 30);
                 check(child.isAlive(), "Backend unexpectedly exited during DB outage");
+                stage = ScenarioStage.DATABASE_RESTART;
                 pg = database(work.resolve("database"), port);
                 row.put("restartedDatabaseProcessId", pg.getProcess().pid());
                 var restored = snapshot(databaseUrl);
                 row.put("afterDatabaseRestoreBeforeReaping", restored);
                 check(before.equals(restored), "Failed DB access changed persistent policy/payment state");
             }
+            stage = ScenarioStage.PROCESS_KILL;
             child.destroyForcibly();
             check(child.waitFor(10, TimeUnit.SECONDS), "Child process did not terminate");
             row.put("killedProcessExitCode", child.exitValue());
@@ -176,12 +202,15 @@ public final class ProcessRecoveryHarness {
             check(before.equals(snapshot(databaseUrl)), "Committed boundary did not survive actual process kill");
             config.put("phase", "recover");
             config.put("time", T0.plusSeconds(91).toString());
+            stage = ScenarioStage.RESTART_LAUNCH;
             Process restarted = launch(work, config);
             row.put("restartedProcessId", restarted.pid());
             check(restarted.pid() != child.pid(), "Restart did not create a new process");
+            stage = ScenarioStage.RESTART_READINESS;
             awaitFile(work.resolve("recover.port"), restarted, 60);
             ownedPorts.add(Integer.parseInt(Files.readString(work.resolve("recover.port"))));
             awaitFile(work.resolve("recovery.ready"), restarted, 30);
+            stage = ScenarioStage.RECOVERY_ASSERTIONS;
             var actual = snapshot(databaseUrl);
             check(originalAuthority.equals(authSnapshot(databaseUrl)),
                 "Restart must retain exact original credential rows, issuance/expiry, scope and revocation");
@@ -191,17 +220,27 @@ public final class ProcessRecoveryHarness {
             row.put("kycHttpCallCount", calls.get());
             assertRecovered(scenario, actual, row);
             check(calls.get() == 1, "Restart repeated the original KYC provider request");
+            stage = ScenarioStage.COMPLETE;
             row.put("verdict", "PASS");
             System.out.println("PROCESS_RECOVERY_CASE_PASS " + scenario);
         } catch (Throwable failure) {
-            row.put("failure", failure.getClass().getSimpleName() + ": " + failure.getMessage());
+            row.put("failureCategory", failureCategory(failure).name());
             throw failure;
         } finally {
+            row.put("scenarioStage", stage.name());
             releaseAgent.countDown();
             cleanup();
             row.put("completedAt", Instant.now().toString());
             writeReport(false);
         }
+    }
+
+    private static FailureCategory failureCategory(Throwable failure) {
+        if (failure instanceof InterruptedException) return FailureCategory.INTERRUPTED;
+        if (failure instanceof AssertionError) return FailureCategory.ASSERTION;
+        if (failure instanceof SQLException) return FailureCategory.DATABASE;
+        if (failure instanceof java.io.IOException) return FailureCategory.IO;
+        return FailureCategory.UNEXPECTED;
     }
 
     private EmbeddedPostgres database(Path directory, int port) throws Exception {
@@ -385,7 +424,7 @@ public final class ProcessRecoveryHarness {
             && databaseProcesses.stream().noneMatch(Process::isAlive)
             && ownedPorts.stream().noneMatch(ProcessRecoveryHarness::portOpen);
         var document = new LinkedHashMap<String, Object>();
-        document.put("schemaVersion", 1);
+        document.put("schemaVersion", 2);
         document.put("status", completed && cleaned ? "PASS" : "INCOMPLETE_OR_FAILED");
         document.put("resultsSource", "REAL_POSTGRES_CHILD_JVM_CRASH_AND_OUTAGE");
         document.put("syntheticModelOutputs", true);

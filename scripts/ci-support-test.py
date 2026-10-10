@@ -379,19 +379,94 @@ class CountReportTest(unittest.TestCase):
 
 
 class ProcessReportTest(unittest.TestCase):
+    def require_process_source(self, name):
+        path = process_reports.ROOT / name
+        if not path.is_file():
+            # Require a positive tooling layout and no service tree. Read errors
+            # and incomplete feature trees are failures, never NOT_APPLICABLE.
+            self.assertFalse(path.exists() or path.is_symlink())
+            for service in ('backend/src/main', 'scripts/test_process_recovery.py',
+                            'backend/src/test/java/com/finsec/fuse/testing/ProcessRecoveryHarness.java'):
+                marker = process_reports.ROOT / service
+                self.assertFalse(marker.exists() or marker.is_symlink())
+            for tooling in ('scripts/ci-prerequisites.py', 'scripts/ci-process-report.py',
+                            'scripts/ci-support-test.py', '.github/workflows/ci.yml'):
+                self.assertTrue((process_reports.ROOT / tooling).is_file())
+            self.skipTest('NOT_APPLICABLE: partial tooling tree; recovery source check NOT_RUN')
+        return path
+
+    def test_only_explicit_partial_tooling_layout_can_be_not_applicable(self):
+        helper = 'scripts/test_process_recovery.py'
+        harness = 'backend/src/test/java/com/finsec/fuse/testing/ProcessRecoveryHarness.java'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(process_reports, 'ROOT', root):
+                with self.assertRaises(AssertionError):
+                    self.require_process_source(helper)
+                for name in ('scripts/ci-prerequisites.py', 'scripts/ci-process-report.py',
+                             'scripts/ci-support-test.py', '.github/workflows/ci.yml'):
+                    path = root / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text('# synthetic tooling presence fixture\n')
+                with self.assertRaisesRegex(unittest.SkipTest, 'recovery source check NOT_RUN'):
+                    self.require_process_source(helper)
+                main = root / 'backend/src/main'
+                main.mkdir(parents=True)
+                with self.assertRaises(AssertionError):
+                    self.require_process_source(helper)
+                main.rmdir()
+                source = root / helper
+                source.write_text('# synthetic helper presence fixture\n')
+                with self.assertRaises(AssertionError):
+                    self.require_process_source(harness)
+                source.unlink()
+                source = root / harness
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text('// synthetic harness presence fixture\n')
+                with self.assertRaises(AssertionError):
+                    self.require_process_source(helper)
+
+    def test_dangling_service_markers_cannot_be_skipped_as_partial_tooling(self):
+        helper = 'scripts/test_process_recovery.py'
+        harness = 'backend/src/test/java/com/finsec/fuse/testing/ProcessRecoveryHarness.java'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('scripts/ci-prerequisites.py', 'scripts/ci-process-report.py',
+                         'scripts/ci-support-test.py', '.github/workflows/ci.yml'):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('# synthetic tooling presence fixture\n')
+            with patch.object(process_reports, 'ROOT', root):
+                for name in ('backend/src/main', helper, harness):
+                    marker = root / name
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.symlink_to(root / 'missing-service-target')
+                    try:
+                        self.assertFalse(marker.exists())
+                        self.assertTrue(marker.is_symlink())
+                        for requested in (helper, harness):
+                            with self.subTest(marker=name, requested=requested):
+                                with self.assertRaises(AssertionError):
+                                    self.require_process_source(requested)
+                    finally:
+                        marker.unlink()
+
     def report(self):
-        return {'status': 'PASS', 'plannedScenarioCount': 5, 'passedScenarioCount': 5,
+        return {'schemaVersion': 2, 'status': 'PASS', 'plannedScenarioCount': 5, 'passedScenarioCount': 5,
                 'cleanupVerified': True, 'sourceUnchangedDuringRun': True, 'exitCode': 0,
                 'sourceHashBefore': 'a' * 64, 'sourceHashAfter': 'a' * 64,
                 'resultsSource': 'REAL_POSTGRES_CHILD_JVM_CRASH_AND_OUTAGE',
                 'syntheticModelOutputs': True, 'liveRobustnessMeasured': False,
-                'scenarios': [{'scenario': name, 'verdict': 'PASS', 'beforeFailure': {'private': 'secret-text'},
+                'scenarios': [{'scenario': name, 'verdict': 'PASS',
+                               'scenarioStage': 'COMPLETE', 'failureCategory': 'NONE', 'beforeFailure': {'private': 'secret-text'},
                                'outageHttp': {'body': 'Bearer private-value'}} for name in process_reports.SCENARIOS]}
 
     def test_complete_current_report_passes_without_raw_data(self):
         summary = process_reports.summarize(self.report(), 'a' * 64)
         self.assertEqual(summary['status'], 'PASS')
         self.assertEqual(summary['passedScenarioCount'], 5)
+        self.assertEqual(summary['schemaVersion'], 'FUSE-PROCESS-SUMMARY-2')
+        self.assertTrue(summary['scenarioDiagnosticsVerified'])
         serialized = json.dumps(summary)
         self.assertNotIn('secret-text', serialized)
         self.assertNotIn('Bearer', serialized)
@@ -422,6 +497,142 @@ class ProcessReportTest(unittest.TestCase):
                 summary = process_reports.summarize(report, 'a' * 64)
                 self.assertEqual(summary['status'], 'FAIL')
                 self.assertNotIn('private-scenario-text', json.dumps(summary))
+
+    def test_stage_and_category_are_closed_literals_and_never_raw_input(self):
+        canary = 'PRIVATE_TOKEN_URL_SQL_ARGS_EXCEPTION_CANARY'
+        invalid = (None, True, 1, [], {}, [canary], {'private': canary}, '',
+                   canary, 'COMPLETE' + canary, 'NONE' + canary, 'complete', 'none')
+        for field in ('scenarioStage', 'failureCategory'):
+            for value in invalid:
+                with self.subTest(field=field, kind=type(value).__name__):
+                    report = self.report()
+                    report['scenarios'][0][field] = value
+                    report['scenarios'][0]['failure'] = canary
+                    summary = process_reports.summarize(report, 'a' * 64)
+                    self.assertEqual(summary['status'], 'FAIL')
+                    self.assertEqual(summary['scenarios'][0]['status'], 'INVALID')
+                    self.assertEqual(summary['scenarios'][0][field], 'UNKNOWN')
+                    self.assertFalse(summary['scenarioDiagnosticsVerified'])
+                    self.assertNotIn(canary, json.dumps(summary))
+
+    def test_absent_diagnostics_cannot_establish_current_schema_pass(self):
+        for field in ('scenarioStage', 'failureCategory'):
+            report = self.report()
+            del report['scenarios'][0][field]
+            summary = process_reports.summarize(report, 'a' * 64)
+            self.assertEqual(summary['status'], 'FAIL')
+            self.assertEqual(summary['scenarios'][0][field], 'UNKNOWN')
+        for version in (None, True, '2', 1, 3, [], {}):
+            report = self.report()
+            report['schemaVersion'] = version
+            self.assertEqual(process_reports.summarize(report, 'a' * 64)['status'], 'FAIL')
+
+    def test_pass_requires_complete_and_none_and_fail_cannot_reuse_pass_pair(self):
+        for stage in process_reports.STAGES:
+            for category in process_reports.FAILURE_CATEGORIES:
+                with self.subTest(stage=stage, category=category):
+                    report = self.report()
+                    report['scenarios'][0].update(scenarioStage=stage, failureCategory=category)
+                    summary = process_reports.summarize(report, 'a' * 64)
+                    expected = 'PASS' if (stage, category) == ('COMPLETE', 'NONE') else 'FAIL'
+                    self.assertEqual(summary['status'], expected)
+                    report['scenarios'][0]['verdict'] = 'FAIL'
+                    summary = process_reports.summarize(report, 'a' * 64)
+                    self.assertEqual(summary['status'], 'FAIL')
+                    self.assertEqual(summary['scenarios'][0]['status'],
+                                     'FAIL' if stage != 'COMPLETE' and category != 'NONE' else 'INVALID')
+
+    def test_partial_failure_retains_only_canonical_stage_and_other_cases_not_run(self):
+        report = self.report()
+        report.update(status='INCOMPLETE_OR_FAILED', passedScenarioCount=0, exitCode=1)
+        report['scenarios'] = [dict(report['scenarios'][0], verdict='FAIL',
+                                    scenarioStage='AUTH_INITIALIZATION', failureCategory='UNEXPECTED')]
+        summary = process_reports.summarize(report, 'a' * 64)
+        self.assertEqual(summary['status'], 'FAIL')
+        self.assertEqual(summary['passedScenarioCount'], 0)
+        self.assertEqual(summary['observedScenarioCount'], 1)
+        self.assertEqual(summary['scenarios'][0], {'scenario': 'KYC_INFLIGHT', 'status': 'FAIL',
+                         'scenarioStage': 'AUTH_INITIALIZATION', 'failureCategory': 'UNEXPECTED'})
+        for row in summary['scenarios'][1:]:
+            self.assertEqual((row['status'], row['scenarioStage'], row['failureCategory']), ('NOT_RUN',) * 3)
+        for row in process_reports.summarize(None, 'a' * 64)['scenarios']:
+            self.assertEqual((row['status'], row['scenarioStage'], row['failureCategory']), ('NOT_RUN',) * 3)
+
+    def test_duplicate_rows_cannot_choose_a_stage_or_pass(self):
+        report = self.report()
+        report['scenarios'].append(dict(report['scenarios'][0], scenarioStage='PRIVATE_DUPLICATE_CANARY'))
+        summary = process_reports.summarize(report, 'a' * 64)
+        self.assertEqual(summary['status'], 'FAIL')
+        self.assertEqual(summary['scenarios'][0], {'scenario': 'KYC_INFLIGHT', 'status': 'INVALID',
+                         'scenarioStage': 'UNKNOWN', 'failureCategory': 'UNKNOWN'})
+        self.assertNotIn('PRIVATE_DUPLICATE_CANARY', json.dumps(summary))
+
+    def test_malformed_report_rows_and_verdict_fail_closed_without_reflection(self):
+        canary = 'PRIVATE_MALFORMED_CANARY'
+        for value in (None, True, 1, canary, [], {}, [canary], {'private': canary}):
+            report = self.report()
+            report['scenarios'][0]['verdict'] = value
+            summary = process_reports.summarize(report, 'a' * 64)
+            self.assertEqual(summary['status'], 'FAIL')
+            self.assertNotIn(canary, json.dumps(summary))
+        for rows in (None, {}, canary, [None], [canary], [{'scenario': []}], [{'scenario': {}}]):
+            report = self.report()
+            report['scenarios'] = rows
+            summary = process_reports.summarize(report, 'a' * 64)
+            self.assertEqual(summary['status'], 'FAIL')
+            self.assertNotIn(canary, json.dumps(summary))
+
+    def test_current_harness_diagnostic_enums_match_reporter_allowlists(self):
+        import re
+        source = self.require_process_source(
+            'backend/src/test/java/com/finsec/fuse/testing/ProcessRecoveryHarness.java').read_text()
+        for name, expected in (('ScenarioStage', process_reports.STAGES),
+                               ('FailureCategory', process_reports.FAILURE_CATEGORIES)):
+            body = re.search(r'private enum ' + name + r' \{([^}]+)\}', source).group(1)
+            self.assertEqual(tuple(value.strip() for value in body.split(',')), expected)
+        self.assertIn('document.put("schemaVersion", 2);', source)
+        self.assertNotIn('row.put("failure",', source)
+
+    def test_all_eight_known_credential_literals_redacted_from_private_logs(self):
+        self.require_process_source('scripts/test_process_recovery.py')
+        recovery = module('test_process_recovery')
+        keys = ('token', 'customer-101', 'customer-102', 'customer-103', 'customer-104',
+                'reviewer', 'security', 'developer')
+        self.assertEqual(recovery.CREDENTIAL_KEYS, keys)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            work, destination = root / 'work', root / 'retained'
+            work.mkdir()
+            config = {key: 'SYNTHETIC_CREDENTIAL_CANARY_' + str(index) for index, key in enumerate(keys)}
+            (work / 'prepare-config.json').write_text(json.dumps(config))
+            (work / 'prepare.log').write_text('\n'.join(config.values()))
+            with patch.object(recovery.subprocess, 'Popen', side_effect=AssertionError('No processes allowed')):
+                recovery.retain_logs(work, destination)
+            content = (destination / 'logs/prepare.log').read_text()
+            self.assertEqual(content, '\n'.join(['[REDACTED]'] * 8))
+            self.assertFalse((destination / 'prepare-config.json').exists())
+
+    def test_private_log_redaction_handles_malformed_configs_and_longest_literal_first(self):
+        self.require_process_source('scripts/test_process_recovery.py')
+        recovery = module('test_process_recovery')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            work, destination = root / 'work', root / 'retained'
+            work.mkdir()
+            values = [None, [], 'string', True, 8, {'token': ''}, {'token': None},
+                      {'token': []}, {'token': {}}, {'token': 8},
+                      {'token': 'LITERAL', 'reviewer': 'LITERAL_LONG',
+                       'unknown': 'PRIVATE_UNRECOGNIZED_VALUE'}]
+            for index, value in enumerate(values):
+                (work / f'{index}-config.json').write_text(json.dumps(value))
+            (work / 'malformed-config.json').write_text('{bad')
+            (work / 'prepare.log').write_text('LITERAL_LONG LITERAL PRIVATE_UNRECOGNIZED_VALUE')
+            (work / 'database').mkdir()
+            (work / 'database/private.log').write_text('PRIVATE_DATABASE_CANARY')
+            recovery.retain_logs(work, destination)
+            self.assertEqual((destination / 'logs/prepare.log').read_text(),
+                             '[REDACTED] [REDACTED] PRIVATE_UNRECOGNIZED_VALUE')
+            self.assertFalse((destination / 'logs/database').exists())
 
 
 class ComposeFailureSignalsTest(unittest.TestCase):
