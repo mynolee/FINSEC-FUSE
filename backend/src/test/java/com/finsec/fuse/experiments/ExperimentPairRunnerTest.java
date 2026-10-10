@@ -90,6 +90,77 @@ class ExperimentPairRunnerTest {
             "pairedInputHash","0".repeat(64));
         assertThrows(tools.jackson.core.JacksonException.class,()->json.read(json.write(body),ExperimentRequest.class));
     }
+    @Test void technicalArmFailureKeepsItsRootCauseAndExcludesTheWholePair() {
+        var selection=registry.select("mvp-security-v1",List.of("T02_MISSING_EVIDENCE"));
+        for(var mode:ExperimentRequest.ModelMode.values())for(boolean failingBaseline:List.of(true,false)) {
+            var runner=new ExperimentPairRunner(json,i->capture(i,proposal()),
+                (f,live)->new ExperimentPairedInput.Prepared(input(),Map.of()),(f,h,r,baseline)->{
+                    if(baseline==failingBaseline)throw new ApiException(503,"DEPENDENCY_UNAVAILABLE","Synthetic failure");
+                    var row=arm(f,h);row.put("caseId",f.get("caseId"));row.put("repeat",r);
+                    row.put("environment",baseline?"BASELINE":"FUSE");row.put("status","COMPLETED");row.put("decision","ALLOW");
+                    return row;
+                });
+            var rows=runner.run(fixture(),selection.hash(),1,mode);
+            var failed=rows.get(failingBaseline?0:1);var completed=rows.get(failingBaseline?1:0);
+            assertEquals("ERROR",failed.get("status"));assertEquals("ERROR",failed.get("decision"));
+            assertEquals("ENVIRONMENT_ERROR:ApiException",failed.get("exclusionReason"));
+            assertEquals(List.of("ENVIRONMENT_ERROR:ApiException"),failed.get("reasonCodes"));
+            assertEquals(false,failed.get("policyBlocked"));assertEquals(false,failed.get("attackInduced"));
+            assertNull(failed.get("inputSnapshotHash"));assertNull(failed.get("responseByteHash"));
+            assertEquals(((Map<?,?>)failed.get("trace")).get("expectedPairedInputHash"),failed.get("pairedInputHash"));
+            assertNotNull(failed.get("pairedInputHash"));assertNull(completed.get("exclusionReason"));
+            var metrics=ExperimentMetrics.calculate(selection,rows,1,mode.name());
+            assertEquals(0,metrics.get("commonEligibleAttackPairs"));assertEquals(1,metrics.get("excludedPairCount"));
+            assertEquals(List.of(Json.ordered("caseId",fixture().get("caseId"),"repeat",1,"reason","ENVIRONMENT_ERROR:ApiException")),metrics.get("exclusions"));
+        }
+    }
+    @Test void returnedErrorOrExplicitExclusionTakesPrecedenceOverIncompleteArmProvenance() {
+        var selection=registry.select("mvp-security-v1",List.of("T02_MISSING_EVIDENCE"));
+        for(String failure:List.of("STATUS","DECISION","EXCLUSION"))for(boolean missingHash:List.of(true,false)) {
+            String originalReason=failure.equals("EXCLUSION")?"DEPENDENCY_UNAVAILABLE":null;
+            var runner=new ExperimentPairRunner(json,i->{fail("Replay must not call a model");return null;},
+                (f,live)->new ExperimentPairedInput.Prepared(input(),Map.of()),(f,h,r,baseline)->{
+                    var row=arm(f,h);row.put("caseId",f.get("caseId"));row.put("repeat",r);
+                    row.put("environment",baseline?"BASELINE":"FUSE");row.put("status","COMPLETED");row.put("decision","ALLOW");
+                    if(!baseline) {
+                        if(failure.equals("STATUS"))row.put("status","ERROR");
+                        if(failure.equals("DECISION"))row.put("decision","ERROR");
+                        row.put("exclusionReason",originalReason);row.put("reasonCodes",List.of("DEPENDENCY_UNAVAILABLE"));
+                        row.put("pairedInputHash",missingHash?null:"c".repeat(64));
+                    }
+                    return row;
+                });
+            var rows=runner.run(fixture(),selection.hash(),1,ExperimentRequest.ModelMode.REPLAY);
+            var failed=rows.getLast();assertEquals(originalReason,failed.get("exclusionReason"));
+            assertEquals(List.of("DEPENDENCY_UNAVAILABLE"),failed.get("reasonCodes"));
+            assertEquals(missingHash?((Map<?,?>)failed.get("trace")).get("expectedPairedInputHash"):"c".repeat(64),failed.get("pairedInputHash"));
+            assertNull(failed.get("inputSnapshotHash"));assertNull(failed.get("responseByteHash"));
+            assertNull(rows.getFirst().get("exclusionReason"));
+            var metrics=ExperimentMetrics.calculate(selection,rows,1,"REPLAY");
+            assertEquals(0,metrics.get("commonEligibleAttackPairs"));assertEquals(1,metrics.get("excludedPairCount"));
+            assertEquals(List.of(Json.ordered("caseId",fixture().get("caseId"),"repeat",1,"reason",
+                originalReason==null?"ENVIRONMENT_ERROR":originalReason)),metrics.get("exclusions"));
+        }
+    }
+    @Test void successfulArmsWithMissingHashOrWrongVersionStillFailPairing() {
+        for(var mode:ExperimentRequest.ModelMode.values())for(boolean badBaseline:List.of(true,false))
+            for(boolean missingHash:List.of(true,false)) {
+                var runner=new ExperimentPairRunner(json,i->capture(i,proposal()),
+                    (f,live)->new ExperimentPairedInput.Prepared(input(),Map.of()),(f,h,r,baseline)->{
+                        var row=arm(f,h);row.put("status","COMPLETED");row.put("decision","ALLOW");
+                        if(baseline==badBaseline) {
+                            if(missingHash)row.put("pairedInputHash",null);
+                            else row.put("pairedInputVersion","UNSUPPORTED-PAIRING-VERSION");
+                        }
+                        return row;
+                    });
+                var rows=runner.run(fixture(),"a".repeat(64),1,mode);
+                var invalid=rows.get(badBaseline?0:1);
+                assertEquals("UNPAIRED_INPUT",invalid.get("exclusionReason"));
+                assertNull(rows.get(badBaseline?1:0).get("exclusionReason"));
+                if(!missingHash)assertEquals("UNSUPPORTED-PAIRING-VERSION",invalid.get("pairedInputVersion"));
+            }
+    }
     private static void assertExcluded(List<Map<String,Object>> rows,String reason){
         assertEquals(2,rows.size());for(var row:rows){assertEquals("ERROR",row.get("status"));assertEquals(reason,row.get("exclusionReason"));assertEquals(false,row.get("policyBlocked"));assertEquals(false,row.get("attackInduced"));}
     }
