@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
+import importlib.util
 from html.parser import HTMLParser
 import json
 import os
@@ -30,8 +32,9 @@ class NoRedirect(HTTPRedirectHandler):
 HTTP = build_opener(ProxyHandler({}), NoRedirect())
 
 
-def credentials(path: Path = ROOT / '.env') -> dict[str, str]:
-    # Parse data, never source shell code. Only bootstrap's literal hex credentials.
+def credentials(path: Path = ROOT / '.env', *, issued: bool = True) -> dict[str, str]:
+    # Parse data, never source shell code. DB passwords remain literal hex;
+    # runtime bearers are the unchanged canonical output of the fresh issuer.
     result = {}
     for line in path.read_text().splitlines():
         if not line or line.startswith('#') or '=' not in line:
@@ -40,11 +43,23 @@ def credentials(path: Path = ROOT / '.env') -> dict[str, str]:
         if key in result:
             raise ValueError('Duplicate configuration field')
         result[key] = value
-    keys = ['FUSE_DB_PASSWORD', 'FUSE_DB_OWNER_PASSWORD', 'FUSE_EXPERIMENT_DB_PASSWORD',
-            'FUSE_SERVICE_TOKEN', 'FUSE_REVIEWER_TOKEN', 'FUSE_SECURITY_TOKEN', 'FUSE_DEVELOPER_TOKEN']
-    keys += [f'FUSE_CUSTOMER_{number}_TOKEN' for number in range(101, 105)]
-    if any(not re.fullmatch(r'[a-f0-9]{64}', result.get(key, '')) for key in keys):
+    passwords = ['FUSE_DB_PASSWORD', 'FUSE_DB_OWNER_PASSWORD', 'FUSE_EXPERIMENT_DB_PASSWORD']
+    tokens = ['FUSE_SERVICE_TOKEN', 'FUSE_REVIEWER_TOKEN', 'FUSE_SECURITY_TOKEN', 'FUSE_DEVELOPER_TOKEN']
+    tokens += [f'FUSE_CUSTOMER_{number}_TOKEN' for number in range(101, 105)]
+    keys = passwords + tokens
+    if any(not re.fullmatch(r'[a-f0-9]{64}', result.get(key, '')) for key in passwords):
         raise ValueError('Fresh random bootstrap credentials required')
+    for key in tokens:
+        value = result.get(key, '')
+        if not issued:
+            valid = re.fullmatch(r'[a-f0-9]{64}', value) is not None
+        else:
+            valid = re.fullmatch(r'[A-Za-z0-9_-]{43}', value) is not None
+            if valid:
+                decoded = base64.b64decode(value + '=', altchars=b'-_', validate=True)
+                valid = len(decoded) == 32 and base64.urlsafe_b64encode(decoded).decode().rstrip('=') == value
+        if not valid:
+            raise ValueError('Fresh issued CI bearer format required')
     if len({result[key] for key in keys}) != len(keys):
         raise ValueError('Role credentials must be independent')
     if result.get('FUSE_KYC_MODE') != 'replay' or result.get('FUSE_EXPERIMENT_LIVE_ENABLED') != 'false':
@@ -84,8 +99,13 @@ def prepare() -> None:
     if forbidden:
         raise ValueError('Ambient application configuration cannot override generated CI configuration')
     subprocess.run(['bash', 'scripts/bootstrap-dev.sh'], cwd=ROOT, check=True, capture_output=True)
-    credentials()
-    print('Fresh isolated replay configuration generated; credentials remain private.')
+    credentials(issued=False)
+    if os.getenv('GITHUB_ACTIONS') == 'true':
+        spec = importlib.util.spec_from_file_location('ci_auth_preparation', ROOT / 'scripts/ci-auth-bootstrap.py')
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        helper.record_preparation(ROOT)
+    print('Fresh isolated replay base configuration generated; bearer authority is not yet issued.')
 
 
 def has_root_element(body: bytes) -> bool:

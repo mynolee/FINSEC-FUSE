@@ -22,7 +22,7 @@ TOOLS = {'semgrep': '1.99.0', 'detect-secrets': '1.5.0', 'pip-audit': '2.9.0', '
 SCOPE = ('backend/src', 'agent', 'evaluation', 'frontend/src', 'frontend/tests', 'scripts', '.github/workflows', 'ingress')
 EXCLUDED = {'node_modules', '__pycache__', '.pytest_cache', 'build', 'dist', 'exported_runs', '.git', '.venv', 'venv'}
 SUFFIXES = {'.py', '.java', '.ts', '.tsx', '.js', '.json', '.yml', '.yaml', '.sh', '.txt', '.sql', '.properties', '.conf'}
-MANIFESTS = ('build.gradle', 'settings.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'agent/requirements.txt', 'agent/requirements-dev.txt', 'frontend/package.json', 'frontend/package-lock.json', 'compose.yaml', 'compose.dev.yaml', 'compose.live.yaml', 'compose.private.yaml', '.dockerignore', 'agent/Dockerfile', 'backend/Dockerfile', 'frontend/Dockerfile', 'scripts/security/requirements.txt', 'scripts/security/requirements.lock', 'ingress/Dockerfile', 'ingress/nginx.conf')
+MANIFESTS = ('build.gradle', 'settings.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'agent/requirements.txt', 'agent/requirements-dev.txt', 'frontend/package.json', 'frontend/package-lock.json', 'compose.yaml', 'compose.dev.yaml', 'compose.live.yaml', 'compose.private.yaml', 'compose.ci.yaml', '.dockerignore', 'agent/Dockerfile', 'backend/Dockerfile', 'frontend/Dockerfile', 'scripts/security/requirements.txt', 'scripts/security/requirements.lock', 'ingress/Dockerfile', 'ingress/nginx.conf')
 
 
 def candidate(root, destination):

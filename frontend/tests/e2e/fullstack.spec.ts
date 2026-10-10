@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { checkpoint } from './checkpoints';
 
 // No route mocking or direct DB writes. All commands go through the real Java API.
-// Run against a newly bootstrapped, isolated Compose project only.
+// Run against a freshly provisioned, isolated synthetic CI Compose project only.
 test.skip(process.env.FUSE_E2E_INTEGRATION !== '1', 'NOT_RUN: opt into a fresh real Compose/API/DB stack.');
 
 type Json = Record<string, any>;
@@ -22,8 +22,10 @@ function token(role: string): string {
     .split(/\r?\n/)
     .find((item) => item.startsWith(`FUSE_${role}_TOKEN=`));
   const value = line?.slice(line.indexOf('=') + 1);
-  if (!value || !/^[a-f0-9]{64}$/.test(value)) {
-    throw new Error('Missing random bootstrap credential; generate a fresh CI mock configuration.');
+  if (!value || !/^[A-Za-z0-9_-]{43}$/.test(value)
+      || Buffer.from(value, 'base64url').length !== 32
+      || Buffer.from(value, 'base64url').toString('base64url') !== value) {
+    throw new Error('Missing fresh issued CI credential; explicit private handoff is required.');
   }
   return value;
 }

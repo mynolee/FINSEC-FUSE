@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline regression checks for CI gates and artifact/credential boundaries."""
 import hashlib
+import base64
 import importlib.util
 import json
 from pathlib import Path
@@ -105,7 +106,8 @@ class CredentialTest(unittest.TestCase):
         keys = ['FUSE_DB_PASSWORD', 'FUSE_DB_OWNER_PASSWORD', 'FUSE_EXPERIMENT_DB_PASSWORD',
                 'FUSE_SERVICE_TOKEN', 'FUSE_REVIEWER_TOKEN', 'FUSE_SECURITY_TOKEN', 'FUSE_DEVELOPER_TOKEN']
         keys += [f'FUSE_CUSTOMER_{number}_TOKEN' for number in range(101, 105)]
-        return {**{key: hashlib.sha256(key.encode()).hexdigest() for key in keys},
+        return {**{key: (base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest()).decode().rstrip('=')
+                         if key.endswith('_TOKEN') else hashlib.sha256(key.encode()).hexdigest()) for key in keys},
                 'FUSE_KYC_MODE': 'replay', 'FUSE_EXPERIMENT_LIVE_ENABLED': 'false', 'FUSE_LLM_API_KEY': ''}
 
     def validate(self, data):
@@ -956,7 +958,7 @@ class TerminalPrivacyWorkflowTests(unittest.TestCase):
                      'run: python scripts/ci-verify.py database',
                      'run: npm run test:e2e'):
             self.assertIn(gate, before)
-        self.assertIn("Always remove only this run's Compose containers and volumes\n        if: always()", after)
+        self.assertIn("Always remove only this run's Compose containers and volumes\n        if: always() && steps.ci_auth.outputs.owns_project == 'true'", after)
         self.assertIn('--project-name "$COMPOSE_PROJECT_NAME" down --volumes --remove-orphans', after)
         self.assertNotIn('continue-on-error:', workflow)
         self.assertIn('run: python scripts/runtime-log-privacy-test.py', workflow)

@@ -43,6 +43,8 @@ COMPONENTS = {
         "backend/src/test/java/com/finsec/fuse/testing/ProcessRecoveryServer.java",
     ),
     "compose_files": (
+        "compose.ci.yaml", "scripts/ci-auth-bootstrap.py", "scripts/ci-auth-bootstrap-test.py",
+        "backend/src/test/java/com/finsec/fuse/testing/ComposeCiAuthBootstrap.java",
         "compose.yaml", ".env.example", ".dockerignore", "backend/Dockerfile", "agent/Dockerfile",
         "frontend/Dockerfile", "frontend/nginx.conf", "scripts/bootstrap-dev.sh", "scripts/init-postgres.sh",
         "scripts/nginx-logging-test.py", "scripts/runtime-log-privacy-check.py",

@@ -246,6 +246,7 @@ jobs:
     timeout-minutes: 40
     env:
       COMPOSE_PROJECT_NAME: fuse-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      COMPOSE_FILE: compose.yaml:compose.ci.yaml
       FUSE_UI_URL: http://127.0.0.1:5173
       FUSE_E2E_INTEGRATION: '1'
       FUSE_UI_SECURITY_HEADERS: '1'
@@ -278,12 +279,17 @@ jobs:
       - name: Install version-matched Chromium on this new isolated CI runner
         run: npx playwright install --with-deps chromium
         working-directory: frontend
-      - name: Bootstrap fresh random mock credentials (provider disabled)
+      - name: Check synthetic CI auth scope and private handoff without services
+        run: python scripts/ci-auth-bootstrap-test.py
+      - name: Prepare fresh synthetic base configuration (no bearer authority yet)
         run: python scripts/ci-verify.py prepare
       - name: Check Compose CLI, daemon and quiet configuration before starting services
         run: python scripts/ci-diagnostics.py compose-preflight
       - name: Build this project's Compose images without starting services
         run: python scripts/ci-run.py --label compose-build -- docker compose build
+      - name: Explicitly migrate and issue fresh synthetic CI auth before application startup
+        id: ci_auth
+        run: python scripts/ci-auth-bootstrap.py provision
       - name: Start built Compose services and wait with the unchanged readiness limit
         run: python scripts/ci-run.py --label compose-up -- docker compose up --no-build --detach --wait --wait-timeout 240
       - name: Verify actual service readiness
@@ -305,7 +311,7 @@ jobs:
       - name: Verify terminal synthetic Docker log privacy before teardown
         run: python scripts/runtime-log-privacy-check.py
       - name: Always remove only this run's Compose containers and volumes
-        if: always()
+        if: always() && steps.ci_auth.outputs.owns_project == 'true'
         run: python scripts/ci-run.py --label compose-cleanup -- docker compose --project-name "$COMPOSE_PROJECT_NAME" down --volumes --remove-orphans
       - name: Publish only allowlisted evidence and aggregate check summaries
         if: always()
