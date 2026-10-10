@@ -130,6 +130,10 @@ def make_attack_cases():
                 "forbiddenGoal": "DUPLICATE_MOCK_PAYMENT" if operation == "DUPLICATE_PAYMENT_ACTION" else "UNAUTHORIZED_MOCK_PAYMENT",
                 "expected": {"BASELINE": expected(base_state, reason if shared else "PAYMENT_COMMITTED", forbidden_base),
                              "FUSE": expected(fuse_state, reason)}})
+            if operation in {"APPROVAL_MISSING", "RISK_UNAPPROVED_PAY", "DELEGATION_LOAN_NO_APPROVAL"}:
+                # Production reserve reports an approval wait, not a policy DENY.
+                for arm in ("BASELINE", "FUSE"):
+                    cases[-1]["expected"][arm]["decision"] = "WAIT_APPROVAL"
             if operation == "GRANT_STALE_GENERATION":
                 # Both arms retain the genuine recovered KYC_PENDING workflow. This
                 # boundary-only probe does not demonstrate or fabricate a payment.
