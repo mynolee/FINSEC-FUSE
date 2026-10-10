@@ -36,6 +36,12 @@ export interface WorkflowList {
   page: number;
   size: number;
 }
+export type EvidenceTemporalStatus = 'NOT_YET_ISSUED' | 'WITHIN_PERIOD' | 'EXPIRED';
+export interface EvidenceUse extends Row {
+  issuedAt?: string;
+  expiresAt?: string;
+  temporalStatus?: EvidenceTemporalStatus;
+}
 export interface Trace extends Row {
   workflowId: string;
   generation: number;
@@ -48,7 +54,8 @@ export interface Trace extends Row {
   payments: Row[];
   auditEvents: Row[];
   sourceUses?: Row[];
-  evidenceUses?: Row[];
+  evidenceCheckedAt?: string;
+  evidenceUses?: EvidenceUse[];
 }
 export interface ApprovalPreview extends Row {
   workflowId: string;
