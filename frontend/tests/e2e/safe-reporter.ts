@@ -11,6 +11,9 @@ import type {
 import { MAX_CHECKPOINTS, PHASE_ANNOTATION, PHASES, type Phase } from './diagnostic-contract';
 
 const TEST_TITLES = [
+  'potential impact displays exact API amount and count at 1440px',
+  'potential impact displays exact API amount and count at 390px',
+  'potential impact distinguishes zero from absent API values in the browser',
   'SC-T07 untrusted customer text never creates executable DOM or network work',
   'SC-T07 deployed UI enforces CSP, no-store, frame and referrer headers',
   'SC-T07 hostile loopback parent cannot frame the deployed UI',
@@ -20,7 +23,12 @@ const TEST_TITLES = [
   'real browser quarantine impact, safe release and explicit recovery preserve history',
   'real browser replay experiment exports match persisted API rows and metrics',
 ] as const;
-const TEST_FILES = ['browser-security.spec.ts', 'console.spec.ts', 'fullstack.spec.ts'] as const;
+const TEST_FILES = [
+  'browser-security.spec.ts',
+  'console.spec.ts',
+  'fullstack.spec.ts',
+  'potential-impact.spec.ts',
+] as const;
 const STATUSES = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'] as const;
 const RUN_STATUSES = ['passed', 'failed', 'timedout', 'interrupted'] as const;
 const MAX_SOURCE_LINE = 10000;

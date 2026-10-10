@@ -1,7 +1,7 @@
 import { useCallback, useState, type FormEvent } from 'react';
 import { FuseApi } from '../api';
 import { navigate } from '../App';
-import { currency, formatValue, isUuid, shortId } from '../format';
+import { applicationCount, currency, formatValue, integerKrw, isUuid, shortId } from '../format';
 import { useCommand, useQuery } from '../hooks';
 import type { QuarantineScope } from '../types';
 import {
@@ -144,10 +144,38 @@ export function QuarantinePage({ api, id }: { api: FuseApi; id?: string }) {
             <div className="section-heading">
               <span className="section-indicator potential" />
               <h2 id="potential-impact">정책상 잠재 영향</h2>
-              <span className="code">POTENTIAL · 아직 실행되지 않은 가능성</span>
+              <span className="code">POTENTIAL · 영향받을 수 있는 범위</span>
+            </div>
+            <p className="panel-description" id="potential-amount-description">
+              영향받을 수 있는 신청 금액의 합계. 실제 지급액이나 확정 손실액이 아닙니다.
+            </p>
+            <div
+              className="stats-grid potential-summary"
+              role="group"
+              aria-label="동일 범위의 잠재 영향 금액과 대상 신청 수"
+              aria-describedby="potential-amount-description"
+            >
+              <Stat
+                label="잠재 영향 금액"
+                value={integerKrw(impact.potential?.totalAmountKrw, impact.potential?.currency)}
+                detail="영향받을 수 있는 신청 금액의 합계"
+              />
+              <Stat
+                label="잠재 영향 대상 신청 수"
+                value={applicationCount(impact.potential?.applicationCount)}
+                detail="금액과 동일한 범위 · 서버에서 신청별 중복 제외"
+              />
             </div>
             <div className="stats-grid">
-              <Stat label="도달 가능한 역할" value={impact.potential?.roles?.join(' → ') || '미제공'} />
+              <Stat
+                label="도달 가능한 역할"
+                value={
+                  Array.isArray(impact.potential?.roles) &&
+                  impact.potential.roles.every((role) => typeof role === 'string')
+                    ? impact.potential.roles.join(' → ') || '미제공'
+                    : '미제공'
+                }
+              />
               <Stat label="최대 후속 깊이" value={impact.potential?.maxDownstreamDepth ?? '계산 불가'} />
               <Stat
                 label="등록된 고객 접근 범위"
@@ -159,11 +187,13 @@ export function QuarantinePage({ api, id }: { api: FuseApi; id?: string }) {
                 detail="전체 고객 합계가 아닙니다"
               />
             </div>
-            {!!impact.potential?.missingPolicyFields?.length && (
-              <p className="muted">
-                계산에 필요한 정책 필드 미제공: {impact.potential.missingPolicyFields.join(', ')}
-              </p>
-            )}
+            {Array.isArray(impact.potential?.missingPolicyFields) &&
+              impact.potential.missingPolicyFields.every((field) => typeof field === 'string') &&
+              !!impact.potential.missingPolicyFields.length && (
+                <p className="muted">
+                  계산에 필요한 정책 필드 미제공: {impact.potential.missingPolicyFields.join(', ')}
+                </p>
+              )}
           </section>
           <div className="two-columns">
             <Panel title="현재 차단 대상 업무" kicker="CURRENT GENERATION">

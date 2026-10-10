@@ -1168,6 +1168,10 @@ td .json {
 .potential-section .stats-grid {
   margin-bottom: 0;
 }
+.potential-section .potential-summary {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  margin-bottom: 15px;
+}
 .potential-section .stat {
   background: none;
   border-style: dashed;
