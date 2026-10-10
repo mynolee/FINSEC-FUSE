@@ -1,0 +1,8 @@
+# Explicit synthetic CI only. Migration/issuance runs in a short-lived owner
+# process before any application starts; the backend receives no auth-owner key.
+services:
+  backend:
+    environment:
+      FUSE_MIGRATE: "false"
+      FUSE_MIGRATION_USERNAME: ""
+      FUSE_MIGRATION_PASSWORD: ""
