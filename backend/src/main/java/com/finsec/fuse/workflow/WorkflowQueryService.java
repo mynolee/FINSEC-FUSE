@@ -50,7 +50,7 @@ public class WorkflowQueryService {
                 "results",rows("SELECT id AS result_id,run_id,generation,status,body_json,result_hash,evidence_bundle_hash,created_at FROM agent_result WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "grants",rows("SELECT id AS grant_id,source_agent AS source,target_agent AS target,allowed_action AS action,depth,parent_grant_id AS parent,source_run_id,target_run_id,expires_at,status FROM delegation_grant WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "dependencies",rows("SELECT parent_run_id,child_run_id,parent_result_id,generation FROM run_dependency WHERE workflow_id=? ORDER BY parent_run_id,child_run_id",workflowId),
-                "approvals",rows("SELECT id AS approval_id,generation,actor_id,status,review_snapshot_hash,extra_risk,risk_limit,expires_at,created_at FROM approval WHERE workflow_id=? ORDER BY created_at,id",workflowId),
+                "approvals",rows("SELECT id AS approval_id,generation,actor_id,status,amount_krw,review_snapshot_hash,extra_risk,risk_limit,expires_at,created_at FROM approval WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "riskEvents",rows("SELECT id,stage,event_type,points,generation,action_id,run_id,reservation_id,created_at FROM risk_ledger WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "payments",rows("SELECT id AS payment_id,amount_krw,payout_account_id,generation,approval_id,action_id,receipt_json,created_at FROM mock_payment WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "auditEvents",auditRows(workflowId),
