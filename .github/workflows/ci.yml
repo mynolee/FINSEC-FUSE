@@ -46,6 +46,10 @@ jobs:
         run: python scripts/ci-support-test.py
       - name: Check bounded backend failure identifiers without services
         run: python scripts/ci-test-report-test.py
+      - name: Check safe JUnit identity inventory without services
+        run: python scripts/ci-test-inventory-test.py
+      - name: Check exact-revision JUnit evidence binding without services
+        run: python scripts/ci-test-evidence-test.py
       - name: Check private runtime log capture safeguards without services
         run: python scripts/runtime-log-privacy-test.py
       - name: Check local container-network harness safeguards without services
@@ -69,17 +73,33 @@ jobs:
         with:
           python-version: '3.12.15'
       - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+      - name: Require clean tracked source before backend execution
+        run: |
+          git diff --quiet HEAD --
+          git diff --cached --quiet
       - name: Run both registered test tasks (raw reports remain private)
         run: python scripts/ci-run.py --label backend-build -- ./gradlew --no-daemon --console=plain build
       - name: Require nonzero unit and integration counts with no failures or skips
         if: always()
         run: python scripts/ci-test-report.py
-      - name: Publish aggregate counts and source-allowlisted failure locations only
+      - name: Inventory observed JUnit identities without exporting private reports
         if: always()
+        run: python scripts/ci-test-inventory.py backend/build/test-results --output safe-artifacts/backend-test-inventory.json
+      - name: Bind and verify safe evidence against the checked-out revision and CI run
+        id: backend_evidence
+        if: always()
+        run: |
+          python scripts/ci-test-evidence.py bind --repository "$GITHUB_WORKSPACE" --artifacts safe-artifacts --head "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+          python scripts/ci-test-evidence.py verify --repository "$GITHUB_WORKSPACE" --artifacts safe-artifacts --head "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Publish only validated counts, identity inventory and integrity binding
+        if: always() && steps.backend_evidence.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: backend-test-counts
-          path: safe-artifacts/backend-test-summary.json
+          path: |
+            safe-artifacts/backend-test-summary.json
+            safe-artifacts/backend-test-inventory.json
+            safe-artifacts/backend-test-evidence.json
           if-no-files-found: error
           retention-days: 7
 
