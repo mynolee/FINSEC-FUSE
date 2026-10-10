@@ -1,0 +1,7 @@
+fuse:
+  worker-enabled: false
+  demo-seed: true
+  kyc-mode: replay
+spring:
+  flyway:
+    enabled: true
