@@ -28,6 +28,20 @@ public final class StartupAdmissionHarness {
     private final List<Process> children=new CopyOnWriteArrayList<>(),databases=new CopyOnWriteArrayList<>();
     private final Set<Integer> ports=new HashSet<>();
     private final Map<Process,Path> startupMarkers=new HashMap<>();
+    private enum Stage { DATABASE_START, FIXTURE_SETUP, PREPARE_START, PREPARE_ADMISSION, BASELINE,
+        SUBJECT_START, READINESS_REFUSAL, REFUSAL_INVARIANTS, REPAIR, RECOVERY_READINESS,
+        RECOVERY_CLAIM, VALID_CONTROL, INVALID_EXIT, EXPECTED_FAILURE_CAUSE, INVALID_INVARIANTS, FINAL_INVARIANTS }
+    private enum FailureCategory { NONE, ASSERTION_FAILED, EXECUTION_FAILED }
+    private String currentScenario="NONE";
+    private Stage currentStage=Stage.DATABASE_START;
+    private void checkpoint(Stage stage)throws Exception {
+        currentStage=stage;writeDiagnostic(FailureCategory.NONE);
+    }
+    private void writeDiagnostic(FailureCategory category)throws Exception {
+        Files.writeString(report.resolveSibling("startup-admission-diagnostic.json"),JSON.writeValueAsString(Map.of(
+            "schemaVersion","FUSE-STARTUP-DIAGNOSTIC-1","status",category==FailureCategory.NONE?"RUNNING":"FAIL",
+            "scenario",currentScenario,"stage",currentStage.name(),"failureCategory",category.name()))+"\n");
+    }
     private EmbeddedPostgres pg;
     private HttpServer agent;
     private ExecutorService agentExecutor;
@@ -53,10 +67,13 @@ public final class StartupAdmissionHarness {
         result.put("worker", "Actual @Scheduled JobWorker configured enabled in subject process; never manually invoked");
         result.put("implementedTestFile", "backend/src/test/java/com/finsec/fuse/testing/StartupAdmissionHarness.java");
         var calls=new AtomicInteger();
+        currentScenario=name;
         try {
+            checkpoint(Stage.DATABASE_START);
             pg=database(work.resolve("database"),0);String url=pg.getJdbcUrl("postgres","postgres");
             check("16.15".equals(scalar(url,"show server_version")),"PostgreSQL 16.15 required");
             result.put("postgresVersion","16.15");
+            checkpoint(Stage.FIXTURE_SETUP);
             byte[] key=new byte[32];new SecureRandom().nextBytes(key);
             Path keyFile=work.resolve("ephemeral-signing-key");Files.write(keyFile,key);privateFile(keyFile);Arrays.fill(key,(byte)0);
             String service=DevActorRegistry.generateToken(),reviewer=DevActorRegistry.generateToken(),developer=DevActorRegistry.generateToken();
@@ -82,8 +99,10 @@ public final class StartupAdmissionHarness {
                 "--FUSE_SIGNING_KEY_PATH="+keyFile,"--fuse.auth.reviewer-token="+reviewer));
             int preparePort=freePort();var prepareOptions=new ArrayList<>(base);
             replace(prepareOptions,"fuse.demo-seed","true");replace(prepareOptions,"fuse.worker-enabled","false");
+            checkpoint(Stage.PREPARE_START);
             Process prepare=launch(work,"prepare","NONE",prepareOptions,preparePort);
             awaitHealth(prepare,preparePort,true);
+            checkpoint(Stage.PREPARE_ADMISSION);
             HttpResult queued=post(preparePort,reviewer,UUID.randomUUID(),"102");
             check(queued.status==202 && "ALLOW".equals(queued.body.get("decision")),"Preparation did not create a queued workflow");
             stop(prepare);check(!prepare.isAlive(),"Preparation process did not stop");check(calls.get()==0,"Preparation ran a worker");
@@ -91,6 +110,7 @@ public final class StartupAdmissionHarness {
             boolean missingAgent=name.startsWith("MISSING_") && Set.of("FUSE","KYC","LOAN","PAYMENT").contains(name.substring(8));
             String absent=missingAgent?name.substring(8):"";
             if(missingAgent)sql(url,"DELETE FROM agent_registry WHERE agent_id='"+absent+"'");
+            checkpoint(Stage.BASELINE);
             var before=snapshot(url);result.put("baselineFingerprint",fingerprint(before));
             int databasePort=pg.getPort();
             if(name.equals("DB_UNAVAILABLE")){pg.close();pg=null;check(!portOpen(databasePort),"Database did not stop");}
@@ -106,10 +126,12 @@ public final class StartupAdmissionHarness {
                 }
                 default -> { }
             }
+            checkpoint(Stage.SUBJECT_START);
             int port=freePort();Process subject=launch(work,"subject",name,subjectOptions,port);
             result.put("subjectPid",subject.pid());
             UUID deniedAction=UUID.randomUUID();
             if(missingAgent) {
+                checkpoint(Stage.READINESS_REFUSAL);
                 awaitHealth(subject,port,false);
                 check(get(port,"/actuator/health/liveness").status==200,"Unready process is not live");
                 var denied=post(port,reviewer,deniedAction,"103");
@@ -117,24 +139,29 @@ public final class StartupAdmissionHarness {
                     List.of("DEPENDENCY_UNAVAILABLE").equals(denied.body.get("reasonCodes")),"Fresh admission did not return safe infrastructure refusal");
                 result.put("livenessStatus",200);result.put("readinessStatus",503);result.put("admissionStatus",denied.status);
                 // More than six actual configured 500ms worker periods; compare full durable rows throughout.
+                checkpoint(Stage.REFUSAL_INVARIANTS);
                 long until=System.nanoTime()+Duration.ofMillis(3500).toNanos();int observations=0;
                 do {check(subject.isAlive(),"Unready child exited");check(before.equals(snapshot(url)),"Unready scheduled worker or refused request mutated durable rows");
                     check(calls.get()==0,"Unready scheduler called the KYC endpoint");observations++;Thread.sleep(100);
                 }while(System.nanoTime()<until);
                 result.put("unchangedDatabaseObservations",observations);result.put("noScheduledClaim",true);
                 result.put("refusalFingerprint",fingerprint(snapshot(url)));
+                checkpoint(Stage.REPAIR);
                 String role=switch(absent){case "FUSE"->"FUSE_WORKER";default->absent;};
                 String auth=switch(absent){case "FUSE"->"fuse-worker";case "KYC"->"kyc-service";case "LOAN"->"loan-agent";default->"payment-agent";};
                 sql(url,"INSERT INTO agent_registry(agent_id,version,role,auth_subject,status) VALUES('"+absent+"',1,'"+role+"','"+auth+"','ACTIVE')");
                 result.put("repair","Explicitly restore only the removed registry entry; same process and unchanged config");
-                awaitHealth(subject,port,true);awaitClaim(url,calls,subject);
+                checkpoint(Stage.RECOVERY_READINESS);
+                awaitHealth(subject,port,true);checkpoint(Stage.RECOVERY_CLAIM);awaitClaim(url,calls,subject);
                 check(post(port,reviewer,deniedAction,"103").status==202,"Same previously refused action did not recover");
                 result.put("recovery", "Same-process readiness UP, scheduled KYC claim and previously refused action accepted");
             }else if(name.equals("VALID_REPLAY_NO_MODEL_KEY")) {
+                checkpoint(Stage.VALID_CONTROL);
                 awaitHealth(subject,port,true);check(get(port,"/actuator/health/liveness").status==200,"Valid process not live");
                 awaitClaim(url,calls,subject);result.put("livenessStatus",200);result.put("readinessStatus",200);
                 result.put("control","Queued job consumed by actual scheduler with local synthetic REPLAY and no external model key");
             }else {
+                checkpoint(Stage.INVALID_EXIT);
                 long until=System.nanoTime()+Duration.ofSeconds(65).toNanos();int probes=0;
                 while(subject.isAlive() && System.nanoTime()<until) {
                     check(get(port,"/actuator/health/readiness").status!=200,"Invalid startup became ready");
@@ -142,6 +169,7 @@ public final class StartupAdmissionHarness {
                     check(status<200 || status>=300,"Invalid startup admitted business");probes++;Thread.sleep(100);
                 }
                 check(!subject.isAlive() && subject.exitValue()!=0,"Invalid startup did not exit with failure within bound");
+                checkpoint(Stage.EXPECTED_FAILURE_CAUSE);
                 String log=Files.readString(work.resolve("subject.log"));
                 boolean expectedCause=switch(name){
                     case "MISSING_KEY" -> log.contains("Signing key configuration is required");
@@ -156,6 +184,7 @@ public final class StartupAdmissionHarness {
                 check(expectedCause,"Child failed for an unexpected reason; inspect private local log");
                 check(!Files.exists(startupMarkers.get(subject)),"Invalid configuration completed startup");
                 result.put("expectedFailureCauseVerified",true);
+                checkpoint(Stage.INVALID_INVARIANTS);
                 if(name.equals("DB_UNAVAILABLE")){pg=database(work.resolve("database"),databasePort);}
                 check(before.equals(snapshot(url)),"Rejected startup changed business, queue, audit or action rows");
                 check(calls.get()==0,"Rejected startup performed KYC execution");
@@ -164,12 +193,17 @@ public final class StartupAdmissionHarness {
                 result.put("livenessStatus","Process exited; no live endpoint claimed");result.put("readinessStatus","Never observed ready");
                 // Explicit new process with the original known-valid config. Never edit subjectOptions.
                 result.put("repair","Explicit new process with original valid configuration/resource loader and restored owned database");
+                checkpoint(Stage.RECOVERY_READINESS);
                 int recoveryPort=freePort();Process recovery=launch(work,"recovery","NONE",base,recoveryPort);
-                awaitHealth(recovery,recoveryPort,true);awaitClaim(url,calls,recovery);stop(recovery);
+                awaitHealth(recovery,recoveryPort,true);checkpoint(Stage.RECOVERY_CLAIM);awaitClaim(url,calls,recovery);stop(recovery);
                 result.put("recovery","New valid process ready; queued job reached scheduled KYC execution");
             }
+            checkpoint(Stage.FINAL_INVARIANTS);
             stop(subject);check("0".equals(scalar(url,"SELECT count(*) FROM mock_payment")),"Startup tests unexpectedly paid");
             result.put("kycHttpCallsAfterRecoveryOrControl",calls.get());result.put("verdict","PASS");
+        } catch(Exception | AssertionError failure) {
+            writeDiagnostic(failure instanceof AssertionError?FailureCategory.ASSERTION_FAILED:FailureCategory.EXECUTION_FAILED);
+            throw failure;
         } finally {cleanup();}
     }
 
