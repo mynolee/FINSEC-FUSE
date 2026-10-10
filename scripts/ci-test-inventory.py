@@ -4,6 +4,8 @@
 This independent identity artifact does not replace the aggregate count verdict.
 Only a narrow, unambiguous Java/Jupiter subset is recognized. Unsupported source
 or display-name conventions remain unmapped, including all dynamic-test classes.
+Ordinary project fixture inheritance is allowed only through fully validated
+source ancestors without tests; inherited test methods remain unsupported.
 Indistinguishable unknown nodes are counted, not deduplicated: XML cannot prove
 whether two bare parameter display names are separate methods or duplicate runs.
 complete means all observed testcase identities mapped; it is not source coverage.
@@ -105,14 +107,25 @@ def source_methods(code, stem, relative):
         return None
     # A factory/display generator can assign another method's apparent identity.
     if re.search(r'@(?:[\w.]+\.)?(?:TestFactory|TestTemplate|RepeatedTest|DisplayName|DisplayNameGeneration)\b', code):
-        return classname, {}
+        return classname, None
     if re.search(r'@(?:[\w.]+\.)?ParameterizedTest\s*\(', code):
-        return classname, {}  # A custom display template can impersonate another method.
+        return classname, None  # A custom display template can impersonate another method.
     declaration = re.search(r'\bclass\s+' + re.escape(stem) + r'\b[^{};]*\{', code)
-    if not declaration or '{' in code[:declaration.start()] or re.search(r'\b(?:extends|implements)\b', declaration[0]):
-        return classname, {}
+    if not declaration or '{' in code[:declaration.start()]:
+        return classname, None
+    # Only an ordinary, single superclass is supported. No generic, interface,
+    # anonymous or qualified nested-type inheritance is inferred.
+    header = re.fullmatch(r'class\s+' + re.escape(stem) +
+                          r'\s*(?:extends\s+(' + IDENT + r'))?\s*\{', declaration[0])
+    if not header:
+        return classname, None
+    parent = header[1]
+    if parent and re.search(r'\b(?:class|interface|enum|record)\s+' +
+                            re.escape(parent.rsplit('.', 1)[-1]) + r'\b', code):
+        return classname, None
     if re.search(r'\b(?:class|interface|enum|record)\s+(?:Test|ParameterizedTest)\b', code):
-        return classname, {}
+        return classname, None
+    declared_types = set(re.findall(r'\b(?:class|interface|enum|record)\s+(' + IDENT + r')\b', code))
     imports = set(re.findall(r'\bimport\s+(?!static\b)([\w.*]+)\s*;', code))
     # Unresolved/composed annotations may hide dynamic test factories. Only
     # known framework annotations are trusted as non-composed source metadata.
@@ -135,16 +148,23 @@ def source_methods(code, stem, relative):
     }
     implicit = {'Override', 'SuppressWarnings', 'Deprecated', 'SafeVarargs', 'FunctionalInterface'}
     for annotation in re.findall(r'@([\w.]+)', code):
-        if annotation in implicit:
-            continue
+        # Simple java.lang names can be shadowed by explicit/wildcard imports,
+        # package types, or nested types inherited from another fixture. This
+        # bounded parser does not implement Java's type-resolution precedence.
+        # Even an explicit java.lang import cannot rule out a member shadow.
+        if annotation in implicit or annotation in declared_types:
+            return classname, None
         if '.' in annotation:
-            resolved = [annotation]
+            # Even a qualified annotation may begin with a shadowing type,
+            # including one outside this bounded source tree. Do not guess.
+            return classname, None
         else:
             resolved = [item for item in imports if item.endswith('.' + annotation)]
-            if not resolved:
-                resolved = [item[:-1] + annotation for item in imports if item.endswith('.*')]
-        if not resolved or any(item not in trusted for item in resolved):
-            return classname, {}
+            # Wildcard imports cannot establish absence of a same-package
+            # custom annotation outside the bounded test-source tree.
+            # Require an explicit trusted import.
+        if len(resolved) != 1 or resolved[0] not in trusted:
+            return classname, None
     def known(annotation):
         package_name = 'org.junit.jupiter.params' if annotation == 'ParameterizedTest' else 'org.junit.jupiter.api'
         conflicting = any(x.endswith('.' + annotation) and x != package_name + '.' + annotation for x in imports)
@@ -159,7 +179,7 @@ def source_methods(code, stem, relative):
                 depth += (code[end] == '(') - (code[end] == ')')
                 end += 1
             if depth:
-                return classname, {}
+                return classname, None
             flat[pos:end] = ' ' * (end - pos)
     flat = ''.join(flat)
     depth = 0
@@ -168,9 +188,9 @@ def source_methods(code, stem, relative):
         depths.append(depth)
         depth += (char == '{') - (char == '}')
         if depth < 0:
-            return classname, {}
+            return classname, None
     if depth:
-        return classname, {}
+        return classname, None
     signatures = Counter()
     for match in re.finditer(r'\b(' + IDENT + r')\s*\([^()]*\)\s*(?:throws\s+[\w.,\s]+)?\{', flat):
         if depths[match.start()] == 1:
@@ -199,7 +219,9 @@ def source_methods(code, stem, relative):
         if not valid or (test[0] == 'Test' and types):
             continue
         result[name] = None if test[0] == 'Test' else ', '.join(types)
-    return classname, result
+    return classname, dict(methods=result, parent=parent, imports=imports,
+                           has_member_types=bool(declared_types - {stem}),
+                           has_tests=bool(re.search(r'@(?:[\w.]+\.)?(?:Test|ParameterizedTest)\b', code)))
 
 
 def source_manifest(root):
@@ -228,7 +250,39 @@ def source_manifest(root):
                     if parsed[0] in manifest:
                         raise Invalid()
                     manifest[parsed[0]] = parsed[1]
-    return manifest
+    # Validate the whole chain, including fixtures with no recognized methods.
+    # At most MAX_FILES * MAX_DEPTH nodes are visited; no recursion or graph
+    # ordering can turn an over-depth or cyclic chain into a valid identity.
+    def safe_ancestry(classname):
+        seen = set()
+        for _ in range(MAX_DEPTH):
+            if classname in seen:
+                return False
+            seen.add(classname)
+            info = manifest.get(classname)
+            if info is None:
+                return False
+            parent = info['parent']
+            if not parent:
+                return True
+            candidates = {item for item in info['imports'] if item.endswith('.' + parent)}
+            local = classname.rsplit('.', 1)[0] + '.' + parent
+            if local in manifest:
+                candidates.add(local)
+            # Wildcard imports are not searched: the bounded test-source
+            # tree cannot establish absence of conflicting external types.
+            if len(candidates) != 1:
+                return False
+            classname = next(iter(candidates))
+            base = manifest.get(classname)
+            # Inherited tests need Java override/visibility resolution and
+            # remain unsupported. Ordinary non-test fixture chains suffice.
+            if base is None or base['has_tests'] or base['has_member_types']:
+                return False
+        return False
+
+    return {name: info['methods'] if safe_ancestry(name) else {}
+            for name, info in manifest.items()}
 
 
 def zero():
