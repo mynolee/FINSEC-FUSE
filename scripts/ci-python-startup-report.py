@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Closed, revision-bound evidence for one real Python replay startup test.
 
-Run with python -I -B. Only fixed outcomes and validated CI identities are public.
+Run with python -I -B; default policy or --case service-token. Only fixed outcomes and validated CI identities are public.
 A verified source snapshot avoids untracked modules and stale bytecode. This is
 not an attestation against a compromised Python installation or CI runner.
 """
@@ -20,6 +20,12 @@ import unittest
 
 ROOT = Path(__file__).absolute().parents[1]
 TEST = 'agent.tests.test_startup_process.PythonStartupProcessTest.test_missing_policy_process_refuses_startup_and_new_valid_process_recovers'
+CASES = {
+    'policy': (TEST, 'agent/tests/test_startup_process.py'),
+    'service-token': (
+        'agent.tests.test_startup_process.PythonStartupProcessTest.test_missing_service_token_process_refuses_startup_and_new_valid_process_recovers',
+        'agent/tests/test_startup_process.py'),
+}
 POLICY = 'backend/src/main/resources/config/security_policy.json'
 RUNNER = 'scripts/ci-python-startup-report.py'
 PINS = {'fastapi': '0.136.1', 'pydantic': '2.12.5', 'httpx': '0.28.1',
@@ -35,6 +41,11 @@ class Invalid(ValueError):
 def require(value):
     if not value:
         raise Invalid()
+
+
+def case_details(case):
+    require(type(case) is str and case in CASES)
+    return CASES[case]
 
 
 def safe_read(path):
@@ -83,7 +94,8 @@ def context(env, root):
     return {'checkout': head, 'run': run, 'attempt': attempt}
 
 
-def source(root, head):
+def source(root, head, case='policy'):
+    _, test_path = case_details(case)
     require(git(root, 'rev-parse', '--show-toplevel').strip() == str(root).encode())
     require(git(root, 'rev-parse', '--verify', 'HEAD').strip() == head.encode())
     entries = git(root, 'ls-tree', '-rz', 'HEAD', '--', 'agent', POLICY, RUNNER).split(b'\0')
@@ -103,7 +115,7 @@ def source(root, head):
         total += len(data)
         require(total <= 16 * LIMIT and data == git(root, 'cat-file', 'blob', oid.decode('ascii')))
         files[name] = data
-    require({POLICY, RUNNER, 'agent/__init__.py', 'agent/tests/test_startup_process.py', 'agent/app.py',
+    require({POLICY, RUNNER, 'agent/__init__.py', test_path, 'agent/app.py',
              'agent/security_policy.py', 'agent/requirements.txt', 'agent/requirements-dev.txt'} <= files.keys())
     digest = hashlib.sha256()
     for name, data in sorted(files.items()):
@@ -131,19 +143,21 @@ class Result(unittest.TestResult):
         super().addSuccess(test)
 
 
-def execute(suite):
+def execute(suite, case='policy'):
+    identity, _ = case_details(case)
     require(suite.countTestCases() == 1)
     result = Result()
     suite.run(result)
-    return {'identity': TEST, 'identities': result.identities,
+    return {'identity': identity, 'identities': result.identities,
             'counts': dict(zip(COUNTS, (result.testsRun, result.passed, len(result.failures),
                          len(result.errors), len(result.skipped), len(result.expectedFailures),
                          len(result.unexpectedSuccesses))))}
 
 
-def validate(payload):
+def validate(payload, case='policy'):
+    identity, _ = case_details(case)
     require(type(payload) is dict and set(payload) == {'identity', 'identities', 'counts'})
-    require(payload['identity'] == TEST and payload['identities'] == [TEST])
+    require(payload['identity'] == identity and payload['identities'] == [identity])
     counts = payload['counts']
     require(type(counts) is dict and set(counts) == set(COUNTS))
     require(all(type(counts[k]) is int and 0 <= counts[k] <= 1 for k in COUNTS))
@@ -151,21 +165,23 @@ def validate(payload):
     return {key: counts[key] for key in COUNTS}
 
 
-def worker(snapshot):
+def worker(snapshot, case='policy'):
     # Capture file-descriptor writes as well as Python prints and tracebacks.
     output = os.dup(1)
     with open(os.devnull, 'wb') as private:
         os.dup2(private.fileno(), 1)
         os.dup2(private.fileno(), 2)
     try:
+        identity, test_path = case_details(case)
         require(pinned())
         sys.path.insert(0, str(snapshot))
-        suite = unittest.defaultTestLoader.loadTestsFromName(TEST)
+        suite = unittest.defaultTestLoader.loadTestsFromName(identity)
         require(not unittest.defaultTestLoader.errors)
-        loaded = sys.modules.get('agent.tests.test_startup_process')
+        loaded = sys.modules.get(identity.rsplit('.', 2)[0])
         require(loaded is not None and Path(loaded.__file__).absolute()
-                == snapshot / 'agent/tests/test_startup_process.py')
-        payload = execute(suite)
+                == snapshot / test_path)
+        payload = execute(suite, case)
+        validate(payload, case)
         encoded = json.dumps(payload).encode()
         require(len(encoded) <= 8192)
         os.write(output, encoded)
@@ -176,9 +192,10 @@ def worker(snapshot):
         os.close(output)
 
 
-def run_snapshot(directory):
+def run_snapshot(directory, case='policy'):
+    case_details(case)
     with tempfile.TemporaryFile() as output:
-        process = subprocess.Popen([sys.executable, '-I', '-B', str(directory / RUNNER), '--worker'],
+        process = subprocess.Popen([sys.executable, '-I', '-B', str(directory / RUNNER), '--worker', '--case', case],
                                    cwd=directory, env=environment(), stdin=subprocess.DEVNULL,
                                    stdout=output, stderr=subprocess.DEVNULL, start_new_session=True)
         try:
@@ -198,17 +215,18 @@ def run_snapshot(directory):
                 require(key not in obj)
                 obj[key] = value
             return obj
-        return validate(json.loads(output.read(8193), object_pairs_hook=pairs))
+        return validate(json.loads(output.read(8193), object_pairs_hook=pairs), case)
 
 
-def report(root=ROOT, env=None):
-    result = {'schemaVersion': 'FUSE-PYTHON-STARTUP-EVIDENCE-1', 'identity': TEST,
+def report(root=ROOT, env=None, case='policy'):
+    identity, _ = case_details(case)
+    result = {'schemaVersion': 'FUSE-PYTHON-STARTUP-EVIDENCE-1', 'identity': identity,
               'outcome': 'UNAVAILABLE', 'reason': 'CONTEXT_REJECTED',
               'counts': dict.fromkeys(COUNTS, 0), 'binding': None, 'sourceSha256': None}
     try:
         result['binding'] = context(os.environ if env is None else env, root)
         result['reason'] = 'SOURCE_REJECTED'
-        files, digest = source(root, result['binding']['checkout'])
+        files, digest = source(root, result['binding']['checkout'], case)
         result['sourceSha256'] = digest
         result['reason'] = 'DEPENDENCIES_UNAVAILABLE'
         require(pinned())
@@ -219,9 +237,9 @@ def report(root=ROOT, env=None):
                 target = snapshot / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
-            counts = run_snapshot(snapshot)
+            counts = run_snapshot(snapshot, case)
             result['reason'] = 'SOURCE_CHANGED'
-            require(source(root, result['binding']['checkout'])[1] == digest)
+            require(source(root, result['binding']['checkout'], case)[1] == digest)
             require(all(safe_read(snapshot / name) == data for name, data in files.items()))
         result['counts'] = counts
         result['outcome'] = 'PASS' if counts['passed'] == 1 else 'FAIL'
@@ -231,13 +249,27 @@ def report(root=ROOT, env=None):
     return result
 
 
+def arguments(args):
+    # Exact argument shapes only: never accept a caller-selected module or path.
+    worker_mode = bool(args and args[0] == '--worker')
+    rest = args[1:] if worker_mode else args
+    if not rest:
+        return worker_mode, 'policy'
+    require(len(rest) == 2 and rest[0] == '--case')
+    case_details(rest[1])
+    return worker_mode, rest[1]
+
+
 def main():
-    if sys.argv[1:] == ['--worker']:
-        return worker(ROOT)
-    if sys.argv[1:] or not sys.flags.isolated or not sys.flags.dont_write_bytecode:
+    try:
+        require(sys.flags.isolated and sys.flags.dont_write_bytecode)
+        worker_mode, case = arguments(sys.argv[1:])
+    except (Invalid, TypeError):
         print('PYTHON_STARTUP_ARGUMENTS_REJECTED')
         return 1
-    result = report()
+    if worker_mode:
+        return worker(ROOT, case)
+    result = report(case=case)
     print(json.dumps(result, sort_keys=True))
     return int(result['outcome'] != 'PASS')
 
