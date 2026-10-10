@@ -19,10 +19,19 @@ repositories {
 
 dependencies {
     implementation platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    implementation platform('tools.jackson:jackson-bom:3.1.7')
+    constraints {
+        ['tomcat-embed-core', 'tomcat-embed-el', 'tomcat-embed-websocket'].each { module ->
+            implementation("org.apache.tomcat.embed:${module}:11.0.26") {
+                because 'Security fixes newer than the Spring Boot 4.1.1 managed baseline'
+            }
+        }
+    }
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.apache.httpcomponents.client5:httpclient5'
     implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-database-postgresql'
     runtimeOnly 'org.postgresql:postgresql'
@@ -76,6 +85,7 @@ def integrationPatterns = ['**/IT*.class', '**/*IT.class', '**/*ITCase.class']
 tasks.named('test') {
     description = 'Runs unit tests without starting the integration suite.'
     inputs.file('evaluation/tests/fixtures/metrics-parity.json')
+    inputs.file('evaluation/tests/fixtures/paired-input-canonical.json')
     include '**/Test*.class', '**/*Test.class', '**/*Tests.class', '**/*TestCase.class'
     exclude integrationPatterns
 }
@@ -92,6 +102,14 @@ def integrationTest = tasks.register('integrationTest', Test) {
 
 tasks.named('check') {
     dependsOn integrationTest
+}
+
+tasks.register('demoTokenProvision', JavaExec) {
+    description = 'Runs explicit offline demo token administration against an already migrated database.'
+    group = 'application'
+    dependsOn tasks.named('classes')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.finsec.fuse.auth.DemoTokenProvisioner'
 }
 
 tasks.register('writeTestClasspath') {
@@ -120,4 +138,33 @@ tasks.named('wrapper') {
     distributionType = Wrapper.DistributionType.BIN
     distributionSha256Sum = '7988ed071b2a07900e2ec715fca15c6ab72bce6db433af301fa7fa7e9407bd24'
     networkTimeout = 60000
+}
+
+// Dependency coordinates only: no credentials, repository URLs, or source contents.
+tasks.register('writeDependencyInventory') {
+    description = 'Exports resolved runtime/test package coordinates for local SCA and SBOM.'
+    group = 'verification'
+    def destination = layout.buildDirectory.file('reports/security/dependency-inventory.json')
+    outputs.file(destination)
+    outputs.upToDateWhen { false }
+    doLast {
+        def scopes = [:]
+        ['runtimeClasspath', 'testRuntimeClasspath'].each { scope ->
+            scopes[scope] = configurations.getByName(scope).resolvedConfiguration.resolvedArtifacts
+                .collect { artifact ->
+                    [group: artifact.moduleVersion.id.group,
+                     name: artifact.moduleVersion.id.name,
+                     version: artifact.moduleVersion.id.version]
+                }.unique().sort { a, b ->
+                    (a.group + ':' + a.name + ':' + a.version) <=> (b.group + ':' + b.name + ':' + b.version)
+                }
+        }
+        def output = destination.get().asFile
+        output.parentFile.mkdirs()
+        output.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(
+            [schemaVersion: 'FUSE-DEPENDENCY-INVENTORY-1',
+             buildGradleSha256: java.security.MessageDigest.getInstance('SHA-256').digest(file('build.gradle').bytes).encodeHex().toString(),
+             settingsGradleSha256: java.security.MessageDigest.getInstance('SHA-256').digest(file('settings.gradle').bytes).encodeHex().toString(),
+             configurations: scopes])) + '\n'
+    }
 }
