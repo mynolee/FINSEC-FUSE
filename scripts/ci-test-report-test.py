@@ -19,6 +19,36 @@ SECRET = 'CANARY_PRIVATE_REQUEST_TOKEN_90210'
 
 
 class SafeFailureTests(unittest.TestCase):
+    def setUp(self):
+        # Keep direct parser checks and CLI subprocesses on the same synthetic
+        # source tree, independent of whichever feature sources are checked out.
+        directory = tempfile.TemporaryDirectory(prefix='fuse-report-sources-')
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        self.source_root = root / 'backend/src/test/java'
+        folder = self.source_root / 'com/finsec/fuse/integration'
+        folder.mkdir(parents=True)
+        (folder / 'WorkflowHappyPathIT.java').write_text(
+            'package com.finsec.fuse.integration;\n'
+            'class WorkflowHappyPathIT {\n'
+            ' @Test void ' + METHOD + '() {\n'
+            '  // synthetic body preserves a valid in-method stack line\n'
+            ' }\n}\n')
+        (folder / 'TransactionRetryBoundariesIT.java').write_text(
+            'package com.finsec.fuse.integration;\n'
+            'class TransactionRetryBoundariesIT {\n'
+            ' @ParameterizedTest @ValueSource(ints={1, 2})\n'
+            ' void kycLateWritesRollBackThenSucceedWithinTwoRetries(int retries) {}\n'
+            '}\n')
+        self.report_script = root / 'scripts/ci-test-report.py'
+        self.report_script.parent.mkdir()
+        # Copy unchanged production bytes: the CLI resolves its default source
+        # root relative to this file, without a new production override or flag.
+        self.report_script.write_bytes(Path(report.__file__).read_bytes())
+        source_patch = patch.object(report, 'SOURCE_ROOT', self.source_root)
+        source_patch.start()
+        self.addCleanup(source_patch.stop)
+
     def payload(self, classname=CLASS, name=METHOD + '()', stack=None, count=1):
         suite = ET.Element('testsuite', tests=str(count), failures=str(count), errors='0', skipped='0')
         for _ in range(count):
@@ -35,7 +65,7 @@ class SafeFailureTests(unittest.TestCase):
             (root / 'test').mkdir()
             (root / 'test' / ('TEST-' + SECRET + '.xml')).write_bytes(payload)
             output = root / 'summary.json'
-            run = subprocess.run([sys.executable, str(Path(report.__file__)), '--input', str(root),
+            run = subprocess.run([sys.executable, str(self.report_script), '--input', str(root),
                                   '--output', str(output)], capture_output=True, text=True)
             self.assertNotIn(SECRET, run.stdout + run.stderr + output.read_text())
             self.assertEqual(run.stderr, '')
@@ -44,11 +74,20 @@ class SafeFailureTests(unittest.TestCase):
             self.assertEqual(json.loads(run.stdout), result)
             return result['tasks']['test']
 
-    def test_real_source_id_and_stack_line(self):
+    def test_synthetic_source_id_and_stack_line(self):
         low, high, _ = report.source_manifest()[CLASS][METHOD]
         row = self.run_report(self.payload(stack=f'{SECRET}\n\tat {CLASS}.{METHOD}(WorkflowHappyPathIT.java:{low + 1})\n{SECRET}'))
         self.assertEqual(row['failureIds'], [{'class': CLASS, 'method': METHOD, 'sourceLine': low + 1}])
         self.assertEqual((row['tests'], row['failures'], row['status']), (1, 1, 'FAIL'))
+
+    def test_missing_source_never_admits_report_claimed_identity(self):
+        source = self.source_root / 'com/finsec/fuse/integration/WorkflowHappyPathIT.java'
+        source.unlink()
+        self.assertNotIn(CLASS, report.source_manifest())
+        row = self.run_report(self.payload())
+        self.assertEqual(row['failureIds'], [])
+        self.assertEqual(row['unknownFailureIds'], 1)
+        self.assertEqual(row['status'], 'FAIL')
 
     def test_forged_classes_names_and_parameterized_values_are_unknown(self):
         for classname, name in ((SECRET, METHOD), (CLASS + SECRET, METHOD),
