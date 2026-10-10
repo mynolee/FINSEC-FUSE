@@ -54,6 +54,8 @@ jobs:
         run: python scripts/runtime-log-privacy-test.py
       - name: Check local container-network harness safeguards without services
         run: python scripts/container-network-test.py
+      - name: Check bounded demo polling without services
+        run: python scripts/run_demo_test.py
 
   backend:
     name: Backend unit and PostgreSQL 16.15 integration
