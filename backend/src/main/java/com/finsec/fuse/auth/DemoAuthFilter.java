@@ -1,7 +1,6 @@
 package com.finsec.fuse.auth;
 
 import com.finsec.fuse.common.Json;
-import com.finsec.fuse.config.JsonConfiguration;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -24,11 +22,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public final class DemoAuthFilter extends OncePerRequestFilter {
     private final DevActorRegistry registry;private final AdmissionLimiter limiter;private final Json json;
     @Autowired public DemoAuthFilter(DevActorRegistry registry,AdmissionLimiter limiter,Json json){this.registry=registry;this.limiter=limiter;this.json=json;}
-    public DemoAuthFilter(Environment env,Json json) {
-        this.json=json;
-        try {var policy=new JsonConfiguration().securityPolicy(json.mapper());this.registry=new DevActorRegistry(env,policy);this.limiter=new AdmissionLimiter(policy);}
-        catch(IOException failure){throw new IllegalStateException("Security policy unavailable",failure);}
-    }
     @Override protected boolean shouldNotFilter(HttpServletRequest request){return !request.getRequestURI().startsWith("/api/");}
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain) throws IOException,ServletException {
         if(ambiguous(request,"Authorization")||ambiguous(request,"Idempotency-Key")) {
@@ -36,7 +29,11 @@ public final class DemoAuthFilter extends OncePerRequestFilter {
             PublicErrors.deny(json,response,400,"INVALID_REQUEST","Ambiguous authentication or action header");return;
         }
         String header=request.getHeader("Authorization");
-        Actor actor=header!=null && header.matches("Bearer [A-Za-z0-9_-]+")?registry.resolve(header.substring(7)):null;
+        Actor actor;
+        try { actor=header!=null && header.length()<=263 && header.matches("Bearer [A-Za-z0-9_-]+")?registry.resolve(header.substring(7)):null; }
+        catch(DemoTokenStore.Unavailable unavailable) {
+            PublicErrors.unavailable(json,response,request);return;
+        }
         if(actor==null){
             if(!limiter.anonymous(request.getRemoteAddr())){rate(response);return;}
             PublicErrors.deny(json,response,401,"UNAUTHENTICATED","A valid bearer token is required");return;

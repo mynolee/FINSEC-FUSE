@@ -36,7 +36,15 @@ public final class ExperimentSandbox implements AutoCloseable {
             properties.put("fuse.kyc-mode","replay");
             properties.put("fuse.test-time","2026-10-09T04:00:00Z");properties.put("FUSE_SIGNING_KEY_PATH","");
             properties.put("spring.main.banner-mode","off");properties.put("logging.level.root","ERROR");
-            properties.put("fuse.service-token",com.finsec.fuse.auth.DevActorRegistry.generateToken());
+            String syntheticServiceToken=com.finsec.fuse.auth.DevActorRegistry.generateToken();
+            properties.put("fuse.service-token",syntheticServiceToken);properties.put("FUSE_SERVICE_TOKEN",syntheticServiceToken);
+            properties.put("FUSE_REVIEWER_CUSTOMERS","");properties.put("FUSE_SECURITY_CUSTOMERS","");
+            // Never import the parent process's bearer credentials into a fresh experiment ledger.
+            for(String role:List.of("customer-101","customer-102","customer-103","customer-104","reviewer","security","developer")) {
+                String suffix=role.toUpperCase(Locale.ROOT).replace('-','_');
+                properties.put("fuse.auth."+role+"-token","");
+                properties.put("FUSE_DEV_"+suffix+"_TOKEN","");properties.put("FUSE_"+suffix+"_TOKEN","");
+            }
             var context=new SpringApplicationBuilder(FuseApplication.class).profiles("test").web(WebApplicationType.NONE)
                 .registerShutdownHook(false).initializers(ctx->{
                     ctx.getEnvironment().getPropertySources().addFirst(new MapPropertySource("isolatedExperiment",properties));
@@ -60,6 +68,14 @@ public final class ExperimentSandbox implements AutoCloseable {
                                 ctx.getBean(EnvelopeValidator.class),ctx.getBean(EvidenceValidator.class),ctx.getBean(QuarantineMatcher.class)),b->b.setPrimary(true));
                     }
                 }).run();
+            try (var owner=DriverManager.getConnection(url,database.username(),database.password())) {
+                if(!schema.equals(owner.getSchema()))throw new IllegalStateException("Unexpected experiment fixture schema");
+                com.finsec.fuse.auth.DemoTokenAdministration.initialize(owner,
+                    context.getBean(com.finsec.fuse.auth.DevActorRegistry.class).configuredBindings());
+            } catch(Exception failure) {
+                context.close();
+                throw new IllegalStateException("Isolated experiment auth fixture initialization failed",failure);
+            }
             return new ExperimentSandbox(database,schema,context);
         } catch(RuntimeException error){execute(database,"DROP SCHEMA "+schema+" CASCADE");throw error;}
     }
