@@ -59,6 +59,114 @@ class AuthenticEvidenceRejectionIT extends PaymentFixture {
         assertEquals(t0,clock.now());
     }
 
+    @Test
+    void inventedEvidencePairCommitsDenialWithoutDownstream() {
+        // Synthetic service response only; no retrieval or model invocation is involved.
+        var ids=List.of(UUID.randomUUID(),UUID.randomUUID());
+        assertEquals(2,new HashSet<>(ids).size());
+        for(UUID id:ids)assertEquals(0,queryCount("select count(*) n from trusted_evidence where id=?",id));
+        assertEquals(0,number(db.required("select count(*) n from trusted_evidence where customer_id=?",CUSTOMER),"n"));
+        var registryBefore=db.query("select row_to_json(t)::text body from trusted_evidence t order by id");
+        var sourcesBefore=db.query("select row_to_json(t)::text body from source_document_version t order by document_id,version");
+        Instant unchangedTime=clock.now();
+
+        UUID workflowId=start(CUSTOMER);
+        var prepared=prepareKyc();
+        var i=prepared.input();
+        var w=workflow(workflowId);
+        var run=db.required("select * from agent_run where id=?",i.runId());
+        var job=db.required("select * from workflow_job where id=?",prepared.jobId());
+        assertEquals(workflowId,i.workflowId());assertEquals(CUSTOMER,i.customerId());
+        assertEquals("KYC_PENDING",str(w,"state"));assertEquals(integer(w,"generation"),i.generation());
+        assertEquals("KYC",str(run,"role"));assertEquals("RUNNING",str(run,"status"));
+        assertEquals(workflowId,uuid(run,"workflow_id"));assertEquals(i.generation(),integer(run,"generation"));
+        assertEquals(i.requestId(),uuid(run,"action_id"));
+        assertEquals("KYC",str(job,"phase"));assertEquals("RUNNING",str(job,"state"));
+        assertEquals(workflowId,uuid(job,"workflow_id"));assertEquals(i.generation(),integer(job,"generation"));
+        assertEquals(i.runId(),uuid(job,"run_id"));assertEquals(i.requestId(),uuid(job,"execution_action_id"));
+        assertEquals(prepared.leaseToken(),uuid(job,"lease_token"));
+        assertTrue(clock.now().isBefore(instant(job,"lease_until")));
+        assertEquals(1,queryCount("select count(*) n from agent_run where workflow_id=?",workflowId));
+        assertEquals(1,queryCount("select count(*) n from workflow_job where workflow_id=?",workflowId));
+        assertEquals(0,queryCount("select count(*) n from agent_result where workflow_id=?",workflowId));
+        assertEquals(0,count("quarantine"));
+        assertTrue(i.evidenceFacts().isEmpty());
+        assertEquals(0,queryCount("select count(*) n from run_evidence_use where run_id=?",i.runId()));
+        assertEquals(0,queryCount("select count(*) n from run_dependency where workflow_id=?",workflowId));
+        assertEquals(1,i.documents().size());
+        assertEquals(i.documents().size(),queryCount("select count(*) n from run_source_use where run_id=?",i.runId()));
+        for(var document:i.documents()) {
+            var source=db.required("select u.*,d.content,d.content_hash as current_hash from run_source_use u join source_document_version d on d.document_id=u.document_id and d.version=u.document_version where u.run_id=? and u.document_id=? and u.document_version=?",
+                    i.runId(),document.documentId(),document.documentVersion());
+            assertEquals(document.contentHash(),str(source,"content_hash"));
+            assertEquals(document.contentHash(),str(source,"current_hash"));
+            assertEquals(document.text(),str(source,"content"));
+            assertEquals(document.contentHash(),Json.sha256(document.text().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        }
+        byte[] inputBefore=(byte[])run.get("input_bytes");
+        assertArrayEquals(json.bytes(i.unhashed()),inputBefore);
+        assertEquals(Json.sha256(inputBefore),i.inputSnapshotHash());
+        assertEquals(json.hash(i.unhashed()),i.inputSnapshotHash());
+        assertEquals(i.inputSnapshotHash(),str(run,"input_snapshot_hash"));
+
+        var response=new KycContract.Response(i.requestId(),i.workflowId(),i.generation(),i.runId(),i.inputSnapshotHash(),
+                new KycContract.Proposal(KycContract.ProposalStatus.VERIFIED,ids,"Synthetic nonexistent evidence proposal"),
+                new KycContract.ModelMetadata("synthetic-service-test","KYC-PROMPT-1"));
+        assertTrue(response.boundTo(i));
+        assertEquals(KycContract.ProposalStatus.VERIFIED,response.proposal().status());
+        assertEquals(ids,response.proposal().evidenceIds());
+        var lineageBefore=lineage(i.runId());
+        var riskBefore=rows("risk_ledger",workflowId);
+        var auditBefore=rows("audit_event",workflowId);
+        var stagesBefore=db.query("select row_to_json(t)::text body from workflow_stage t where workflow_id=? order by stage",workflowId);
+        assertRisk(workflowId,10,0);
+        assertEquals(1,riskBefore.size());
+        var charge=db.required("select * from risk_ledger where workflow_id=?",workflowId);
+        assertEquals("KYC",str(charge,"stage"));assertEquals("CHARGE",str(charge,"event_type"));
+        assertEquals(10,integer(charge,"points"));assertEquals(i.runId(),uuid(charge,"run_id"));
+        assertEquals(i.requestId(),uuid(charge,"action_id"));assertEquals(i.generation(),integer(charge,"generation"));
+        var kycStage=db.required("select * from workflow_stage where workflow_id=? and stage='KYC'",workflowId);
+        assertEquals(1,integer(kycStage,"run_count"));assertEquals(10,integer(kycStage,"used_points"));
+        assertEquals(0,integer(kycStage,"reserved_points"));
+        assertEquals(2,queryCount("select count(*) n from workflow_stage where workflow_id=? and stage in ('LOAN','PAYMENT') and run_count=0 and used_points=0 and reserved_points=0",workflowId));
+
+        // The service proxy owns the transaction; all following reads see its committed rows.
+        assertTrue(org.springframework.aop.support.AopUtils.isAopProxy(kyc));
+        assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive());
+        assertDoesNotThrow(()->kyc.apply(prepared,response));
+        assertFalse(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive());
+
+        assertEquals(unchangedTime,clock.now());
+        assertBlocked(workflowId,prepared);
+        assertEquals(1,count("quarantine"));
+        var quarantine=db.required("select * from quarantine where run_id=?",i.runId());
+        assertEquals("fuse-worker",str(quarantine,"actor_id"));
+        assertEquals(i.requestId(),uuid(quarantine,"action_id"));
+        assertEquals(1,queryCount("select count(*) n from quarantine where run_id=? and scope='RUN' and status='ACTIVE' and reason_code='EVIDENCE_INVALID'",i.runId()));
+        assertPreservedProposal(prepared,response,"INVALIDATED");
+        assertEquals(1,queryCount("select count(*) n from agent_result where workflow_id=?",workflowId));
+        assertEquals(1,queryCount("select count(*) n from agent_run where workflow_id=?",workflowId));
+        assertEquals(1,queryCount("select count(*) n from workflow_job where workflow_id=?",workflowId));
+        assertEquals(0,queryCount("select count(*) n from run_dependency where workflow_id=?",workflowId));
+        assertEquals(0,number(db.required("select coalesce(sum(amount_krw),0) n from mock_payment where workflow_id=?",workflowId),"n"));
+        assertEquals(0,count("mock_payment"));
+        assertEquals(lineageBefore,lineage(i.runId()));
+        assertEquals(registryBefore,db.query("select row_to_json(t)::text body from trusted_evidence t order by id"));
+        assertEquals(sourcesBefore,db.query("select row_to_json(t)::text body from source_document_version t order by document_id,version"));
+        for(UUID id:ids)assertEquals(0,queryCount("select count(*) n from trusted_evidence where id=?",id));
+        assertArrayEquals(inputBefore,(byte[])db.required("select input_bytes from agent_run where id=?",i.runId()).get("input_bytes"));
+        assertEquals(i.inputSnapshotHash(),str(db.required("select input_snapshot_hash from agent_run where id=?",i.runId()),"input_snapshot_hash"));
+        assertEquals(riskBefore,rows("risk_ledger",workflowId));
+        assertEquals(stagesBefore,db.query("select row_to_json(t)::text body from workflow_stage t where workflow_id=? order by stage",workflowId));
+        assertTrue(rows("audit_event",workflowId).containsAll(auditBefore),"Prior history remains append-only");
+        assertEquals(1,queryCount("select count(*) n from audit_event where workflow_id=? and event_type='KYC_PROPOSED'",workflowId));
+        assertEquals(1,queryCount("select count(*) n from audit_event where workflow_id=? and event_type='QUARANTINE_APPLIED' and reason_code='EVIDENCE_INVALID'",workflowId));
+        assertEquals(0,queryCount("select count(*) n from audit_event where workflow_id=? and event_type in ('LATE_RESULT_DISCARDED','EVIDENCE_VALIDATED','PAYMENT_COMMITTED')",workflowId));
+        assertEquals(0,queryCount("select count(*) n from workflow_job where workflow_id=? and state in ('PENDING','RUNNING')",workflowId));
+        assertTrue(jobs.claim().isEmpty());
+    }
+
+
     private void assertFalseVerifiedCommitsDenialAndIsolatesCustomer(List<UUID> ids) {
         Instant unchangedTime=clock.now();
         UUID workflowId=start(CUSTOMER);
