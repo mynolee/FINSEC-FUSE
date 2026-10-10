@@ -82,6 +82,7 @@ public class ImpactGraph {
             else if("AGENT_VERSION".equals(str(quarantine,"scope")))potentialOrigins.add(str(db.required("select role from agent_registry where agent_id=? and version=?",str(quarantine,"agent_id"),integer(quarantine,"agent_version")),"role"));
         }
         var potential=potential(potentialOrigins,potentialCustomers);
+        potential.putAll(potentialApplications(affected));
         return Json.ordered("incidentId",quarantineId,"scope",str(quarantine,"scope"),"target",targetView(quarantine),
             "historicalRunIds",affected.historicalRunIds(),"currentAffectedWorkflowIds",affected.currentWorkflowIds(),"policyHeldWorkflowIds",affected.heldWorkflowIds(),"paidBeforeQuarantine",paidBefore,
             "actual",Json.ordered("runCount",runs.size(),"roleCount",roles.size(),"workflowCount",actualWorkflows.size(),"customerCount",customers.size(),"paymentCount",payments.size(),"paidAmountKrw",paidAmount,"atRiskPendingAmountKrw",pendingAmount),
@@ -98,6 +99,28 @@ public class ImpactGraph {
         Set<String> registered=new TreeSet<>();
         for(String customer:customers) if(db.one("select customer_id from application_registry where customer_id=? limit 1",customer).isPresent())registered.add(customer);
         return Json.ordered("roles",reachable,"maxDownstreamDepth",maxDepth,"registeredCustomerCount",registered.size(),"perApplicationLimitKrw",policy.maxAmountKrw(),"missingPolicyFields",List.of());
+    }
+    /**
+     * Monetary potential is limited to existing applications in this incident's recorded impact
+     * or policy-hold scope, using CURRENT workflow state. Registry-only and unrelated applications
+     * of the same customer are deliberately excluded. Retries, generations, runs and holds cannot
+     * multiply an application: both aggregates consume the same distinct application-id rows.
+     */
+    Map<String,Object> potentialApplications(Affected affected) {
+        Set<UUID> workflowIds=new TreeSet<>(Comparator.comparing(UUID::toString));
+        workflowIds.addAll(affected.currentWorkflowIds());
+        workflowIds.addAll(affected.historicalWorkflowIds());
+        workflowIds.addAll(affected.heldWorkflowIds());
+        // A bound PostgreSQL UUID array also supports empty and large scopes without one bind per ID.
+        String scope=workflowIds.stream().map(UUID::toString).collect(java.util.stream.Collectors.joining(",","{","}"));
+        var aggregate=db.required("with eligible_applications as ("+
+            "select distinct a.id,a.amount_krw from loan_application a join workflow w on w.application_id=a.id "+
+            "where w.id=any(cast(? as uuid[])) and w.state in "+
+            "('KYC_PENDING','KYC_VALIDATED','REVIEW_READY','WAIT_APPROVAL','APPROVED','PAYMENT_RESERVED','BLOCKED','ON_HOLD')) "+
+            "select count(*) as application_count,coalesce(sum(amount_krw),0)::text as total_amount_krw from eligible_applications",scope);
+        // PostgreSQL SUM(bigint) is arbitrary-precision numeric; a decimal string preserves it in JS.
+        return Json.ordered("applicationCount",number(aggregate,"application_count"),
+            "totalAmountKrw",str(aggregate,"total_amount_krw"),"currency","KRW");
     }
     public Map<String,Object> targetView(Map<String,Object> target) {
         return switch(str(target,"scope")) {
