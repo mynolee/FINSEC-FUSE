@@ -600,8 +600,11 @@ function TracePanel({ trace }: { trace: Trace }) {
       <div className="two-columns">
         <Panel title="독립 확인 자료" kicker="TRUSTED EVIDENCE">
           <p className="panel-description">
-            실제 제공한 자료입니다. 최신 유효성은 승인과 지급 시 서버가 다시 검사해요.
+            실제 제공한 자료입니다. 시간 상태는 서버 조회 기준 시각의 발급·만료 구간만 나타내요. 기한 내여도
+            전체 검증 통과나 사용·승인 가능을 뜻하지 않습니다. 철회 여부는 저장 상태에서 확인하고, 전체
+            유효성과 권한은 승인과 지급 시 서버가 다시 검사해요.
           </p>
+          <KeyValues items={[['서버 조회 기준 시각 (UTC)', time(trace.evidenceCheckedAt)]]} />
           <RecordTable
             rows={trace.evidenceUses}
             rowDetails
@@ -609,7 +612,20 @@ function TracePanel({ trace }: { trace: Trace }) {
               { label: '자료 ID', key: 'evidenceId', render: (row) => shortId(row.evidenceId) },
               { label: '종류', key: 'evidenceType', render: (row) => text(row, 'evidenceType', 'kind') },
               { label: '결과', key: 'outcome', render: (row) => text(row, 'outcome', 'result') },
-              { label: '상태', key: 'status' },
+              { label: '저장 상태', key: 'status' },
+              {
+                label: '시간 상태',
+                key: 'temporalStatus',
+                render: (row) =>
+                  row.temporalStatus === 'NOT_YET_ISSUED'
+                    ? '발급 전'
+                    : row.temporalStatus === 'WITHIN_PERIOD'
+                      ? '기한 내'
+                      : row.temporalStatus === 'EXPIRED'
+                        ? '기한 경과'
+                        : '미제공',
+              },
+              { label: '발급 (UTC)', key: 'issuedAt', render: (row) => time(row.issuedAt) },
               { label: '만료 (UTC)', key: 'expiresAt', render: (row) => time(row.expiresAt) },
             ]}
           />

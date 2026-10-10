@@ -8,6 +8,12 @@ import com.finsec.fuse.payment.ApprovalService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.util.*;
+import java.time.Instant;
+import com.finsec.fuse.persistence.DatabaseTimeSource;
+import com.finsec.fuse.persistence.Db;
+import com.finsec.fuse.config.FusePolicy;
+import com.finsec.fuse.policy.EvidenceValidator;
+import com.finsec.fuse.policy.QuarantineMatcher;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WorkflowReadIT extends FuseIntegrationTest {
@@ -17,6 +23,9 @@ class WorkflowReadIT extends FuseIntegrationTest {
     @Autowired KycTransactions kyc;
     @Autowired LoanTransactions loans;
     @Autowired ApprovalService approvals;
+    @Autowired FusePolicy policy;
+    @Autowired EvidenceValidator evidence;
+    @Autowired QuarantineMatcher matcher;
     private Actor customer(int id){return new Actor("customer-"+id,"CUSTOMER",Set.of("customer-"+id));}
     private final Actor reviewer=new Actor("staff-01","LOAN_REVIEWER",Set.of("customer-101","customer-102"));
     private UUID start(int id) {
@@ -84,6 +93,80 @@ class WorkflowReadIT extends FuseIntegrationTest {
             new Actor("foreign-security","SECURITY_OPERATOR",Set.of("customer-101"))))
             assertEquals(403,assertThrows(ApiException.class,()->queries.trace(denied,workflowId)).status());
         assertEquals(0L,((Number)db.required("SELECT count(*) AS n FROM mock_payment WHERE workflow_id=?",workflowId).get("n")).longValue());
+    }
+
+    @Test void evidenceTimeBeforeIssuanceRemainsSeparateFromActiveStatus() {
+        assertEvidenceTime(-1,"ACTIVE","NOT_YET_ISSUED");
+    }
+    @Test void evidenceTimeAtIssuanceIsWithinPeriod() {
+        assertEvidenceTime(0,"ACTIVE","WITHIN_PERIOD");
+    }
+    @Test void evidenceTimeBeforeExpiryIsWithinPeriod() {
+        assertEvidenceTime(59,"ACTIVE","WITHIN_PERIOD");
+    }
+    @Test void evidenceTimeAtExpiryIsExpiredWithoutChangingActiveStatus() {
+        assertEvidenceTime(60,"ACTIVE","EXPIRED");
+    }
+    @Test void evidenceTimeAfterExpiryIsExpired() {
+        assertEvidenceTime(61,"ACTIVE","EXPIRED");
+    }
+    @Test void revokedEvidenceCanBeWithinTimePeriodWithoutBecomingUsable() {
+        assertEvidenceTime(30,"REVOKED","WITHIN_PERIOD");
+    }
+    private UUID preparedEvidenceWorkflow() {
+        UUID workflowId=start(102);var lease=jobs.claim().orElseThrow();
+        kyc.prepare(lease.jobId(),lease.token()).orElseThrow();return workflowId;
+    }
+    private void setEvidenceWindow(Instant issued,Instant expires,String status) {
+        tx.executeWithoutResult(txStatus->{db.gate();
+            db.update("UPDATE trusted_evidence SET issued_at=?,expires_at=?,status=?,revoked_at=? WHERE customer_id='customer-102'",
+                issued,expires,status,"REVOKED".equals(status)?issued:null);
+        });
+    }
+    private void assertEvidenceTime(long seconds,String storedStatus,String expected) {
+        UUID workflowId=preparedEvidenceWorkflow();Instant issued=Instant.parse("2026-10-09T04:00:00Z");
+        setEvidenceWindow(issued,issued.plusSeconds(60),storedStatus);clock.set(issued.plusSeconds(seconds));
+        var before=businessSnapshot();
+        for(Actor allowed:List.of(reviewer,new Actor("security-time","SECURITY_OPERATOR",Set.of("customer-102")))) {
+            var trace=queries.trace(allowed,workflowId);assertEquals(clock.now(),trace.get("evidenceCheckedAt"));
+            var rows=(List<?>)trace.get("evidenceUses");assertEquals(2,rows.size());
+            for(Object item:rows) {
+                var row=(Map<?,?>)item;assertEquals(expected,row.get("temporalStatus"));assertEquals(storedStatus,row.get("status"));
+                assertEquals(issued,row.get("issuedAt"));assertEquals(issued.plusSeconds(60),row.get("expiresAt"));
+                assertEquals(Set.of("runId","evidenceId","evidenceType","outcome","status","issuedAt","expiresAt","temporalStatus"),row.keySet());
+            }
+        }
+        for(Actor denied:List.of(customer(102),customer(101),
+            new Actor("foreign-time-reviewer","LOAN_REVIEWER",Set.of("customer-101")),
+            new Actor("foreign-time-security","SECURITY_OPERATOR",Set.of("customer-101"))))
+            assertEquals(403,assertThrows(ApiException.class,()->queries.trace(denied,workflowId)).status());
+        assertEquals(before,businessSnapshot());
+    }
+    @Test void evidenceTimeProjectionUsesRealDatabaseClockInsideGateAndDoesNotWrite() {
+        UUID workflowId=preparedEvidenceWorkflow();
+        Instant databaseNow=Db.instant(db.required("SELECT clock_timestamp() AS now"),"now");
+        setEvidenceWindow(databaseNow.minusSeconds(86400),databaseNow.plusSeconds(86400),"ACTIVE");
+        // Production TimeSource, intentionally distinct from this profile's injected test clock.
+        clock.set(Instant.parse("2000-01-01T00:00:00Z"));
+        var productionClock=new DatabaseTimeSource(db);
+        var productionQuery=new WorkflowQueryService(db,productionClock,json,policy,evidence,matcher);
+        var before=businessSnapshot();
+        Instant lower=Db.instant(db.required("SELECT clock_timestamp() AS now"),"now");
+        var trace=tx.execute(txStatus->productionQuery.trace(reviewer,workflowId));
+        Instant upper=Db.instant(db.required("SELECT clock_timestamp() AS now"),"now");
+        Instant checked=(Instant)trace.get("evidenceCheckedAt");
+        assertFalse(checked.isBefore(lower));assertFalse(checked.isAfter(upper));assertNotEquals(clock.now(),checked);
+        for(Object item:(List<?>)trace.get("evidenceUses"))assertEquals("WITHIN_PERIOD",((Map<?,?>)item).get("temporalStatus"));
+        assertEquals(before,businessSnapshot());
+    }
+    private Map<String,Object> businessSnapshot() {
+        var snapshot=new LinkedHashMap<String,Object>();
+        // Fixed test-owned table names; no input is used to build SQL.
+        for(String table:List.of("execution_gate","workflow","workflow_stage","agent_run","agent_result","run_evidence_use",
+            "trusted_evidence","delegation_grant","risk_ledger","action_request","approval","workflow_job",
+            "mock_payment","quarantine","payment_reservation","audit_event"))
+            snapshot.put(table,db.required("SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb)::text AS rows FROM "+table+" t").get("rows"));
+        return snapshot;
     }
 
 }

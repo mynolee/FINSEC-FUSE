@@ -44,8 +44,8 @@ public class WorkflowQueryService {
     }
     @Transactional
     public Map<String,Object> trace(Actor actor,UUID workflowId) {
-        RoleGuard.require(actor,"LOAN_REVIEWER","SECURITY_OPERATOR");db.gate();var w=accessible(actor,workflowId);
-        return Json.ordered("workflowId",workflowId,"traceId",workflowId,"generation",integer(w,"generation"),
+        RoleGuard.require(actor,"LOAN_REVIEWER","SECURITY_OPERATOR");db.gate();var w=accessible(actor,workflowId);Instant checkedAt=time.now();
+        return Json.ordered("workflowId",workflowId,"traceId",workflowId,"generation",integer(w,"generation"),"evidenceCheckedAt",checkedAt,
                 "runs",rows("SELECT id AS run_id,generation,role,agent_id,agent_version,run_index,status,input_snapshot_hash,started_at,completed_at FROM agent_run WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "results",rows("SELECT id AS result_id,run_id,generation,status,body_json,result_hash,evidence_bundle_hash,created_at FROM agent_result WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "grants",rows("SELECT id AS grant_id,source_agent AS source,target_agent AS target,allowed_action AS action,depth,parent_grant_id AS parent,source_run_id,target_run_id,expires_at,status FROM delegation_grant WHERE workflow_id=? ORDER BY created_at,id",workflowId),
@@ -55,7 +55,18 @@ public class WorkflowQueryService {
                 "payments",rows("SELECT id AS payment_id,amount_krw,payout_account_id,generation,approval_id,action_id,receipt_json,created_at FROM mock_payment WHERE workflow_id=? ORDER BY created_at,id",workflowId),
                 "auditEvents",auditRows(workflowId),
                 "sourceUses",rows("SELECT u.* FROM run_source_use u JOIN agent_run r ON r.id=u.run_id WHERE r.workflow_id=? ORDER BY u.run_id,u.document_id,u.document_version",workflowId),
-                "evidenceUses",rows("SELECT u.run_id,e.id AS evidence_id,e.evidence_type,e.outcome,e.status,e.expires_at FROM run_evidence_use u JOIN agent_run r ON r.id=u.run_id JOIN trusted_evidence e ON e.id=u.evidence_id WHERE r.workflow_id=? ORDER BY u.run_id,e.id",workflowId));
+                "evidenceUses",evidenceRows(workflowId,checkedAt));
+    }
+    /** Time-window information only; never substitutes for EvidenceChecks or execution authority. */
+    private List<Map<String,Object>> evidenceRows(UUID workflowId,Instant checkedAt) {
+        return db.query("SELECT u.run_id,e.id AS evidence_id,e.evidence_type,e.outcome,e.status,e.issued_at,e.expires_at FROM run_evidence_use u JOIN agent_run r ON r.id=u.run_id JOIN trusted_evidence e ON e.id=u.evidence_id WHERE r.workflow_id=? ORDER BY u.run_id,e.id",workflowId)
+            .stream().map(row->{
+                Instant issuedAt=Db.instant(row,"issued_at"),expiresAt=Db.instant(row,"expires_at");
+                var projected=camelRow(row);
+                projected.put("temporalStatus",checkedAt.isBefore(issuedAt)?"NOT_YET_ISSUED":
+                    !checkedAt.isBefore(expiresAt)?"EXPIRED":"WITHIN_PERIOD");
+                return projected;
+            }).toList();
     }
     private Map<String,Object> accessible(Actor actor,UUID workflowId) {
         var w=db.required("SELECT w.*,a.customer_id,a.business_reference,a.amount_krw,a.payout_account_id FROM workflow w JOIN loan_application a ON a.id=w.application_id WHERE w.id=?",workflowId);
