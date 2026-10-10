@@ -50,6 +50,8 @@ jobs:
         run: python scripts/ci-test-inventory-test.py
       - name: Check exact-revision JUnit evidence binding without services
         run: python scripts/ci-test-evidence-test.py
+      - name: Check required payment method evidence without services
+        run: python scripts/ci-required-method-evidence-test.py
       - name: Check private runtime log capture safeguards without services
         run: python scripts/runtime-log-privacy-test.py
       - name: Check local container-network harness safeguards without services

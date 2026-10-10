@@ -6,6 +6,7 @@ expected HEAD/run/attempt independently from their trusted CI context. Never use
 an enclosing workspace repository as the public project checkout.
 """
 import argparse
+from collections import Counter
 import hashlib
 import importlib.util
 import json
@@ -25,6 +26,17 @@ LIMIT = 8 * 1024 * 1024
 TOTAL = 128 * 1024 * 1024
 MAX_FILES = 10000
 SCOPE = 'Current checkout only; counts do not replace Compose/browser or LIVE verification.'
+REQUIRED_CLASS = 'com.finsec.fuse.payment.PaymentAgentAvailabilityIT'
+REQUIRED_SOURCE = 'backend/src/test/java/com/finsec/fuse/payment/PaymentAgentAvailabilityIT.java'
+REQUIRED_METHODS = tuple(sorted((
+    'missingPaymentAgentAfterClaimIsOperationalHold',
+    'deactivatedPaymentAgentAfterClaimIsOperationalHold',
+    'restoredPaymentRegistryRequiresExplicitResumeAndFreshApproval',
+    'activePaymentAgentQuarantineStillRecordsPolicyHold',
+    'quarantinedAndDeactivatedPaymentAgentStillRecordsPolicyHold',
+    'unavailablePinnedPaymentReplacementNeverFallsBack',
+    'healthyPaymentAndHistoricalReplayRemainUnchanged',
+)))
 
 
 class Invalid(ValueError):
@@ -240,6 +252,96 @@ def reports(summary, inventory, root, tracked):
     return complete
 
 
+
+def required_method_evidence(root, inventory, source, run_id, attempt):
+    """One fixed regression contract, independent of global identity completeness.
+
+    Caller has validated the full checkout and sanitized reports. Raw report
+    reconciliation and the target projection share each bounded read; no report
+    names, XML names, diagnostic text or exception messages reach output.
+    """
+    selected = [item for item in source['files'] if item['path'] == REQUIRED_SOURCE]
+    require(len(selected) <= 1)
+    try:
+        target_bytes = read(root / REQUIRED_SOURCE)
+    except FileNotFoundError:
+        # safe_open walks every ancestor with O_NOFOLLOW. Dangling symlinks,
+        # non-directory ancestors and unreadable paths are not absence.
+        require(not selected)
+        require(not any(row['class'] == REQUIRED_CLASS for task in inventory['tasks'].values()
+                        for row in task['rows']))
+        return {'schemaVersion': 'FUSE-REQUIRED-METHODS-1', 'status': 'NOT_APPLICABLE',
+                'reason': 'SOURCE_ABSENT', 'class': REQUIRED_CLASS,
+                'head': source['head'], 'tree': source['tree'],
+                'run': {'id': run_id, 'attempt': attempt}}
+    require(len(selected) == 1)
+    require(selected[0] == {'path': REQUIRED_SOURCE, **digest(target_bytes)})
+    spec = importlib.util.spec_from_file_location('required_inventory', Path(__file__).with_name('ci-test-inventory.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    manifest = module.source_manifest(root / 'backend/src/test/java')
+    require(manifest.get(REQUIRED_CLASS) == dict.fromkeys(REQUIRED_METHODS))
+    observed, report_digests = set(), {}
+    for task in sorted(TASKS):
+        directory = root / 'backend/build/test-results' / task
+        files = [directory / name for name, is_directory in module.entries(directory)
+                 if not is_directory and name.startswith('TEST-') and name.endswith('.xml')]
+        require(0 < len(files) <= module.MAX_FILES)
+        budget, seen_reports, seen_suites, seen_ids = [0], set(), set(), set()
+        counts, mapped, unmapped, rows = module.zero(), module.zero(), module.zero(), Counter()
+        report_records = []
+        for path in files:
+            payload = module.read_bytes(path, budget)
+            fingerprint = hashlib.sha256(payload).digest()
+            try:
+                suite, cases = module.xml_report(payload)
+            except module.ET.ParseError:
+                raise Invalid() from None
+            require(fingerprint not in seen_reports and suite not in seen_suites)
+            seen_reports.add(fingerprint)
+            seen_suites.add(suite)
+            report_records.append(len(payload).to_bytes(8, 'big') + fingerprint)
+            for classname, name, outcome in cases:
+                counts[outcome] += 1
+                require(sum(counts.values()) <= module.MAX_COUNT)
+                resolved = module.identity(classname, name, manifest)
+                if resolved:
+                    require(resolved not in seen_ids)
+                    seen_ids.add(resolved)
+                    canonical_class, method, _ = resolved
+                    mapped[outcome] += 1
+                    rows[(canonical_class, method, outcome)] += 1
+                else:
+                    unmapped[outcome] += 1
+                # A target-named suite may not hide foreign/unknown cases.
+                if suite == REQUIRED_CLASS:
+                    require(classname == REQUIRED_CLASS)
+                if classname == REQUIRED_CLASS:
+                    require(suite == REQUIRED_CLASS and task == 'integrationTest')
+                    require(resolved is not None and resolved[2] == 'single')
+                    require(resolved[1] in REQUIRED_METHODS and outcome == 'passed')
+                    require(resolved[1] not in observed)
+                    observed.add(resolved[1])
+        require(sum(counts.values()) > 0)
+        reconstructed = {'status': 'VALID', 'complete': not sum(unmapped.values()),
+                         'counts': counts, 'mapped': mapped, 'unmapped': unmapped,
+                         'rows': [dict(zip(('class', 'method', 'status', 'count'), (*key, count)))
+                                  for key, count in sorted(rows.items())],
+                         'diagnostics': ['UNMAPPED_IDENTITIES'] if sum(unmapped.values()) else []}
+        # Canonical comparison also distinguishes JSON booleans from integers.
+        require(json.dumps(reconstructed, sort_keys=True) ==
+                json.dumps(inventory['tasks'][task], sort_keys=True))
+        report_digest = hashlib.sha256(b'FUSE-RAW-REPORT-SET-1\0' + len(files).to_bytes(8, 'big') +
+                                       b''.join(sorted(report_records))).hexdigest()
+        report_digests[task] = {'files': len(files), 'sha256': report_digest}
+    require(observed == set(REQUIRED_METHODS))
+    return {'schemaVersion': 'FUSE-REQUIRED-METHODS-1', 'status': 'PASS',
+            'class': REQUIRED_CLASS, 'sourceSha256': digest(target_bytes)['sha256'],
+            'head': source['head'], 'tree': source['tree'],
+            'run': {'id': run_id, 'attempt': attempt}, 'rawReportSets': report_digests,
+            'methods': [{'method': method, 'status': 'passed', 'count': 1} for method in REQUIRED_METHODS]}
+
+
 def execute(command, root, artifacts, head, run_id, attempt):
     require(type(head) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head))
     require(all(type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item) for item in (run_id, attempt)))
@@ -258,7 +360,9 @@ def execute(command, root, artifacts, head, run_id, attempt):
     tracked = {item['path'] for item in source['files']}
     require(not any(artifacts == (root / path).parent or artifacts in (root / path).parents for path in tracked))
     payloads = {name: read(artifacts / name) for name in PAYLOADS}
-    complete = reports(parse(payloads[PAYLOADS[1]]), parse(payloads[PAYLOADS[0]]), root, tracked)
+    inventory = parse(payloads[PAYLOADS[0]])
+    complete = reports(parse(payloads[PAYLOADS[1]]), inventory, root, tracked)
+    required = required_method_evidence(root, inventory, source, run_id, attempt)
     expected = {'schemaVersion': SCHEMA, 'revision': source, 'run': {'id': run_id, 'attempt': attempt},
                 'artifacts': {name: digest(data) for name, data in payloads.items()}, 'complete': complete}
     if command == 'verify':
@@ -266,6 +370,7 @@ def execute(command, root, artifacts, head, run_id, attempt):
         require(actual == expected)
         # Python equates booleans with integers; canonical JSON does not.
         require(json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True))
+        print(json.dumps(required, sort_keys=True))
     else:
         output = (json.dumps(expected, sort_keys=True, indent=2) + '\n').encode()
         require(len(output) <= LIMIT)
