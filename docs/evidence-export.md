@@ -166,3 +166,81 @@ prefixed values, are neutralized; null, zero and false remain distinct.
 npm --prefix frontend test -- --run src/experimentExport.test.tsx
 npm --prefix frontend run build
 ```
+
+## Backend JUnit evidence
+
+Backend CI also produces a separate, privacy-safe three-file evidence set:
+
+- `backend-test-summary.json`: existing independently calculated unit and
+  integration aggregate counts and bounded source-allowlisted failure locations.
+- `backend-test-inventory.json`: observed JUnit case outcomes grouped by
+  conservative checkout-derived class/method identities. Unknown identities are
+  counted separately; raw XML names, display/parameter values, failures and
+  stdout/stderr are never copied into the inventory.
+- `backend-test-evidence.json`: exact-byte SHA-256/size bindings for both safe
+  JSON inputs, checked-out Git HEAD and tree, and the supplied CI run ID/attempt.
+
+These files are generated in `safe-artifacts/`. The backend artifact upload
+explicitly names only these three JSON files, never the directory, raw Gradle
+XML, process stdout/stderr or private originals. Upload runs after binding and
+verification succeed, even if the backend tests or aggregate gate failed.
+Malformed or inconsistent evidence is not uploaded. Build and aggregate failures
+remain failures; missing reports, zero-test tasks, failures and skips cannot be
+turned into passing backend verification by successfully exporting evidence.
+
+CI first checks that tracked source is clean before backend execution. After the
+run, binding and verification compare the working source against committed blobs
+and require the expected checkout revision. The expected revision is
+`GITHUB_SHA`, which can be GitHub's synthetic merge commit on a pull-request run;
+it must not be replaced with the pull request's head revision. CI supplies the
+actual `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT`, rather than fabricated local IDs.
+
+The commands used by CI, from the repository root, are:
+
+```sh
+python scripts/ci-test-report.py
+python scripts/ci-test-inventory.py backend/build/test-results \
+  --output safe-artifacts/backend-test-inventory.json
+python scripts/ci-test-evidence.py bind \
+  --repository "$GITHUB_WORKSPACE" --artifacts safe-artifacts \
+  --head "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
+  --run-attempt "$GITHUB_RUN_ATTEMPT"
+python scripts/ci-test-evidence.py verify \
+  --repository "$GITHUB_WORKSPACE" --artifacts safe-artifacts \
+  --head "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
+  --run-attempt "$GITHUB_RUN_ATTEMPT"
+```
+
+CI runs the inventory and binding steps even when preceding test steps fail;
+this is not a shell recipe for suppressing a failed command. The inventory's
+output parent must already exist (the summary exporter creates it). Binding
+requires exactly the two input JSON files, creates a new evidence file without
+overwriting an existing one, and verification requires exactly all three files.
+Use a fresh dedicated directory for a new run.
+
+`complete` refers only to whether every observed JUnit testcase identity could
+be mapped safely. Dynamic, generated, inherited, custom-display or ambiguous
+identities remain explicitly unknown when the conservative parser cannot prove
+the mapping. Partial mapping yields `complete=false` and
+`EVIDENCE_INCOMPLETE`; it does not reduce or rewrite independently verified
+aggregate test counts. The inventory's identity parser is deliberately stricter
+than the existing summary's failure-location parser. If a summary failure ID has
+no corresponding mapped failed/error inventory row, the binder rejects the
+inconsistent pair and withholds the upload; it does not silently discard that
+failure ID or downgrade the mismatch to partial evidence.
+Even `EVIDENCE_COMPLETE` is not source coverage, a test
+pass verdict, full acceptance, Compose/browser verification or LIVE robustness.
+
+This is an integrity binding, not execution attestation, a digital signature or
+proof that these sources actually produced the reports. A pre-run clean check
+and post-run committed-blob comparison do not prove source was immutable
+throughout execution, prevent malicious temporary edit-and-restore, authenticate
+a hand-written report, or establish the origin of locally supplied run IDs.
+Independent trusted execution records remain necessary for those claims.
+
+Standalone safeguards can be checked without services or provider calls:
+
+```sh
+python scripts/ci-test-inventory-test.py
+python scripts/ci-test-evidence-test.py
+```
