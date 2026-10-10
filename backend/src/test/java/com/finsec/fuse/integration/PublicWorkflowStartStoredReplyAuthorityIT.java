@@ -23,9 +23,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -125,9 +124,17 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         return id;
     }
 
-    @ParameterizedTest
-    @ValueSource(strings={"CUSTOMER","LOAN_REVIEWER"}) @Timeout(60)
-    void savedStartAllowChecksBothAllowedRolesCurrentScopeAndActionOwnership(String role) throws Exception {
+    @Test @Timeout(60)
+    void savedStartAllowRequiresCurrentAuthorityForCustomer() throws Exception {
+        savedStartAllowChecksBothAllowedRolesCurrentScopeAndActionOwnership("CUSTOMER");
+    }
+
+    @Test @Timeout(60)
+    void savedStartAllowRequiresCurrentAuthorityForLoanReviewer() throws Exception {
+        savedStartAllowChecksBothAllowedRolesCurrentScopeAndActionOwnership("LOAN_REVIEWER");
+    }
+
+    private void savedStartAllowChecksBothAllowedRolesCurrentScopeAndActionOwnership(String role) throws Exception {
         UUID independent=populatedIndependentWorkflow();
         var saved=saveInitialStart(identity(role));
         finishEvaluation(saved.workflowId(),"WAIT_APPROVAL");
@@ -137,9 +144,17 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         assertCreationActor(saved);
     }
 
-    @ParameterizedTest
-    @ValueSource(strings={"CUSTOMER","LOAN_REVIEWER"}) @Timeout(60)
-    void savedStartBusinessDenyChecksBothAllowedRolesCurrentScopeAndActionOwnership(String role) throws Exception {
+    @Test @Timeout(60)
+    void savedStartBusinessDenyRequiresCurrentAuthorityForCustomer() throws Exception {
+        savedStartBusinessDenyChecksBothAllowedRolesCurrentScopeAndActionOwnership("CUSTOMER");
+    }
+
+    @Test @Timeout(60)
+    void savedStartBusinessDenyRequiresCurrentAuthorityForLoanReviewer() throws Exception {
+        savedStartBusinessDenyChecksBothAllowedRolesCurrentScopeAndActionOwnership("LOAN_REVIEWER");
+    }
+
+    private void savedStartBusinessDenyChecksBothAllowedRolesCurrentScopeAndActionOwnership(String role) throws Exception {
         UUID independent=populatedIndependentWorkflow();
         var owner=identity(role);
         var original=saveInitialStart(owner);
