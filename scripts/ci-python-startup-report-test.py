@@ -255,7 +255,7 @@ class HarnessTests(unittest.TestCase):
     def test_snapshot_mutation_rejected(self):
         root = Path('/synthetic')
         files = {'agent/fixture.py': b'x'}
-        def mutate(snapshot):
+        def mutate(snapshot, case):
             (snapshot / 'agent/fixture.py').write_text(SECRET)
             return M.validate(self.payload())
         with patch.object(M, 'source', return_value=(files, 'b' * 64)), \
@@ -265,6 +265,92 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'UNAVAILABLE')
         self.assertEqual(result['reason'], 'SOURCE_CHANGED')
         self.assertNotIn(SECRET, json.dumps(result))
+
+    def test_closed_case_cli_and_default_compatibility(self):
+        self.assertEqual(M.arguments([]), (False, 'policy'))
+        self.assertEqual(M.arguments(['--case', 'policy']), (False, 'policy'))
+        self.assertEqual(M.arguments(['--case', 'service-token']), (False, 'service-token'))
+        self.assertEqual(M.arguments(['--worker', '--case', 'service-token']), (True, 'service-token'))
+        root = Path('/synthetic')
+        self.assertEqual(M.report(root, {}), M.report(root, {}, 'policy'))
+        self.assertEqual(M.report(root, {})['identity'], M.TEST)
+        for args in (['--case'], ['--case', SECRET], ['--case=service-token'],
+                     ['--case', M.TEST], ['--case', 'service-token', SECRET],
+                     ['--case', 'policy', '--case', 'service-token'],
+                     ['--worker', '--worker'], ['--path', SECRET]):
+            with self.subTest(args=args):
+                result = subprocess.run([sys.executable, '-I', '-B', M.__file__, *args],
+                                        capture_output=True, timeout=10)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, b'PYTHON_STARTUP_ARGUMENTS_REJECTED\n')
+                self.assertEqual(result.stderr, b'')
+
+    def test_service_token_rejects_policy_identity_and_invalid_counts(self):
+        payload = self.payload()
+        with self.assertRaises(M.Invalid):
+            M.validate(payload, 'service-token')
+        identity = M.CASES['service-token'][0]
+        payload['identity'] = identity
+        payload['identities'] = [identity]
+        self.assertEqual(M.validate(payload, 'service-token')['passed'], 1)
+        with self.assertRaises(M.Invalid):
+            M.validate(payload, 'policy')
+        for executed in (0, 2, True):
+            payload['counts']['executed'] = executed
+            with self.assertRaises(M.Invalid):
+                M.validate(payload, 'service-token')
+
+    def test_service_token_actual_worker_counts_and_privacy(self):
+        case = 'service-token'
+        identity, path = M.CASES[case]
+        method = identity.rsplit('.', 1)[1]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'agent/tests').mkdir(parents=True)
+            (root / 'agent/__init__.py').write_text('')
+            (root / 'agent/tests/__init__.py').write_text('')
+            script = root / M.RUNNER
+            script.parent.mkdir()
+            script.write_text('import importlib.util\nfrom pathlib import Path\n'
+                + 's = importlib.util.spec_from_file_location("runner", ' + repr(M.__file__) + ')\n'
+                + 'm = importlib.util.module_from_spec(s)\ns.loader.exec_module(m)\n'
+                + 'm.pinned = lambda: True\nraise SystemExit(m.worker(Path('
+                + repr(str(root)) + '), "service-token"))\n')
+            for body, field in [('pass', 'passed'), ('self.skipTest(' + repr(SECRET) + ')', 'skips'),
+                                ('self.fail(' + repr(SECRET) + ')', 'failures'),
+                                ('raise RuntimeError(' + repr(SECRET) + ')', 'errors')]:
+                (root / path).write_text('import unittest, os\n'
+                    + 'os.write(1, ' + repr(SECRET.encode()) + ')\n'
+                    + 'os.write(2, ' + repr(SECRET.encode()) + ')\n'
+                    + 'class PythonStartupProcessTest(unittest.TestCase):\n'
+                    + '    def ' + method + '(self):\n        ' + body + '\n')
+                counts = M.run_snapshot(root, case)
+                self.assertEqual(counts['executed'], 1)
+                self.assertEqual(counts[field], 1)
+                self.assertEqual(sum(counts[k] for k in M.COUNTS[1:]), 1)
+                self.assertNotIn(SECRET, json.dumps(counts))
+                if field == 'passed':
+                    with self.assertRaises(M.Invalid):
+                        M.run_snapshot(root, 'policy')
+
+    def test_service_token_source_and_binding_fail_closed(self):
+        root = Path('/synthetic')
+        case = 'service-token'
+        identity, _ = M.CASES[case]
+        with patch.object(M, 'source', side_effect=RuntimeError(SECRET)) as source:
+            result = M.report(root, self.env(root), case)
+        source.assert_called_once_with(root, 'a' * 40, case)
+        self.assertEqual(result['identity'], identity)
+        self.assertEqual(result['outcome'], 'UNAVAILABLE')
+        self.assertEqual(result['reason'], 'SOURCE_REJECTED')
+        self.assertNotIn(SECRET, json.dumps(result))
+        with patch.object(M, 'source') as source:
+            result = M.report(root, {}, case)
+        source.assert_not_called()
+        self.assertIsNone(result['binding'])
+        self.assertEqual(result['counts']['executed'], 0)
+        with self.assertRaises(M.Invalid):
+            M.source(root, 'a' * 40, SECRET)
 
     def test_invalid_arguments_do_not_echo(self):
         result = subprocess.run([sys.executable, '-I', '-B', str(Path(M.__file__)), SECRET],

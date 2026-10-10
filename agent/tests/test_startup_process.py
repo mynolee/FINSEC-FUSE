@@ -1,6 +1,6 @@
 """Standalone Python startup proof, using real bounded Uvicorn child processes.
 
-Missing Python security policy is distinct from Java demo-policy/key admission.
+Missing Python policy/token cases are distinct from Java demo-policy/key admission.
 These checks establish neither Java durable invariants nor whole-stack egress
 assurance. Only synthetic replay is configured; no provider credentials exist.
 """
@@ -46,13 +46,17 @@ def request_body():
     return body
 
 
-def child_environment(policy):
+def child_environment(policy, *, missing_service_token=False):
     # Allowlist from literals only. Never inherit real credentials, Python hooks,
     # proxy settings, Uvicorn options, provider configuration, or test-runner env.
-    return {"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "PYTHONPATH": str(ROOT),
+    environment = {"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "PYTHONPATH": str(ROOT),
             "PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1",
             "FUSE_SERVICE_TOKEN": TOKEN, "FUSE_KYC_MODE": "replay",
             "FUSE_SECURITY_POLICY_PATH": str(policy)}
+    if missing_service_token:
+        # Omit the required setting entirely; no blank, inherited or fake fallback.
+        del environment["FUSE_SERVICE_TOKEN"]
+    return environment
 
 
 def probe(port, path, body=None):
@@ -75,7 +79,7 @@ def probe(port, path, body=None):
 
 class PythonStartupProcessTest(unittest.TestCase):
     @contextmanager
-    def child(self, policy):
+    def child(self, policy, *, missing_service_token=False):
         if os.name != "posix":
             self.skipTest("NOT_RUN: inherited loopback socket fixture requires POSIX")
         # Reserve and inherit the same bound descriptor: no free-port close/rebind
@@ -97,7 +101,8 @@ class PythonStartupProcessTest(unittest.TestCase):
                     [sys.executable, "-m", "uvicorn", "agent.app:app", "--fd", str(reserved.fileno()),
                      "--host", "127.0.0.1", "--workers", "1", "--loop", "asyncio", "--http", "h11",
                      "--lifespan", "on", "--no-access-log", "--no-server-header"],
-                    cwd=ROOT, env=child_environment(policy), stdin=subprocess.DEVNULL,
+                    cwd=ROOT, env=child_environment(policy, missing_service_token=missing_service_token),
+                    stdin=subprocess.DEVNULL,
                     stdout=log, stderr=subprocess.STDOUT, pass_fds=(reserved.fileno(),))
                 # Child owns the descriptor until it exits. The context's second
                 # close is harmless, and the parent never listens on this port.
@@ -125,6 +130,57 @@ class PythonStartupProcessTest(unittest.TestCase):
         for path, payload in [("/health", None), ("/ready", None), (BUSINESS, body)]:
             self.assertIsNone(probe(port, path, payload), "Invalid startup served an HTTP response")
 
+    def assert_valid_new_process_recovers(self, body):
+        # Explicit new process, original valid policy and synthetic service token,
+        # no in-process reload or substitution of application/lifespan behavior.
+        with self.child(POLICY) as (process, port, log):
+            deadline = time.monotonic() + STARTUP_SECONDS
+            while True:
+                self.assertIsNone(process.poll(), "Valid recovery child exited before readiness")
+                health, ready = probe(port, "/health"), probe(port, "/ready")
+                if health is not None and ready is not None and health[0] == ready[0] == 200:
+                    break
+                self.assertLess(time.monotonic(), deadline, "Valid recovery child did not become ready")
+                time.sleep(0.05)
+            self.assertTrue(json.loads(health[1]) == {"status": "ok"}, "Recovery health payload was unexpected")
+            self.assertTrue(json.loads(ready[1]) == {"ready": True}, "Recovery readiness payload was unexpected")
+            response = probe(port, BUSINESS, body)
+            self.assertTrue(response is not None and response[0] == 200, "Recovery did not accept synthetic replay")
+            result = json.loads(response[1])
+            self.assertTrue(result.get("modelMetadata") == {"model": "replay", "promptVersion": "KYC-PROMPT-1"},
+                            "Recovery did not use the replay adapter")
+            self.assertTrue(result.get("proposal", {}).get("status") == "VERIFIED", "Synthetic replay result was unexpected")
+            for field in ("requestId", "workflowId", "generation", "runId", "inputSnapshotHash"):
+                self.assertTrue(result.get(field) == body[field], "Replay context binding changed")
+            self.private_log(log)
+        self.assert_not_serving(port, body)
+
+    def test_missing_service_token_process_refuses_startup_and_new_valid_process_recovers(self):
+        self.assertTrue(POLICY.is_file(), "Original security policy fixture is missing")
+        policy_before = POLICY.read_bytes()
+        body = request_body()
+        self.assertTrue("FUSE_SERVICE_TOKEN" not in child_environment(POLICY, missing_service_token=True),
+                        "Missing-token fixture supplied a service token")
+        with self.child(POLICY, missing_service_token=True) as (process, port, log):
+            deadline = time.monotonic() + STARTUP_SECONDS
+            while True:
+                self.assert_not_serving(port, body)
+                if process.poll() is not None:
+                    break
+                self.assertLess(time.monotonic(), deadline, "Missing-token child did not exit within bound")
+                time.sleep(0.05)
+            self.assertGreater(process.returncode, 0, "Missing-token child did not exit with explicit startup failure")
+            private = self.private_log(log)
+            expected = ("RuntimeError: internal service token is missing or invalid" in private
+                        and "app.py" in private and "lifespan" in private
+                        and "Application startup failed. Exiting." in private
+                        and "Application startup complete." not in private)
+            self.assertTrue(expected, "Child exit was not the expected missing-token lifespan failure")
+            self.assert_not_serving(port, body)
+        self.assert_not_serving(port, body)
+        self.assert_valid_new_process_recovers(body)
+        self.assertTrue(POLICY.read_bytes() == policy_before, "Startup test changed the original policy")
+
     def test_missing_policy_process_refuses_startup_and_new_valid_process_recovers(self):
         self.assertTrue(POLICY.is_file(), "Original security policy fixture is missing")
         policy_before = POLICY.read_bytes()
@@ -150,29 +206,7 @@ class PythonStartupProcessTest(unittest.TestCase):
                 self.assert_not_serving(port, body)
             self.assertFalse(missing.exists(), "Failed startup created its missing policy")
 
-            # Explicit new process, original valid policy, no in-process reload or
-            # policy substitution. Exercise the actual Uvicorn lifespan and routes.
-            with self.child(POLICY) as (process, port, log):
-                deadline = time.monotonic() + STARTUP_SECONDS
-                while True:
-                    self.assertIsNone(process.poll(), "Valid recovery child exited before readiness")
-                    health, ready = probe(port, "/health"), probe(port, "/ready")
-                    if health is not None and ready is not None and health[0] == ready[0] == 200:
-                        break
-                    self.assertLess(time.monotonic(), deadline, "Valid recovery child did not become ready")
-                    time.sleep(0.05)
-                self.assertTrue(json.loads(health[1]) == {"status": "ok"}, "Recovery health payload was unexpected")
-                self.assertTrue(json.loads(ready[1]) == {"ready": True}, "Recovery readiness payload was unexpected")
-                response = probe(port, BUSINESS, body)
-                self.assertTrue(response is not None and response[0] == 200, "Recovery did not accept synthetic replay")
-                result = json.loads(response[1])
-                self.assertTrue(result.get("modelMetadata") == {"model": "replay", "promptVersion": "KYC-PROMPT-1"},
-                                "Recovery did not use the replay adapter")
-                self.assertTrue(result.get("proposal", {}).get("status") == "VERIFIED", "Synthetic replay result was unexpected")
-                for field in ("requestId", "workflowId", "generation", "runId", "inputSnapshotHash"):
-                    self.assertTrue(result.get(field) == body[field], "Replay context binding changed")
-                self.private_log(log)
-            self.assert_not_serving(port, body)
+            self.assert_valid_new_process_recovers(body)
         self.assertTrue(POLICY.read_bytes() == policy_before, "Startup test changed the original policy")
 
 

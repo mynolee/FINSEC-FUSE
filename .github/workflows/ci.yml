@@ -199,6 +199,9 @@ jobs:
       - name: Record one pinned Python startup execution without private diagnostics
         if: always()
         run: python -I -B scripts/ci-python-startup-report.py
+      - name: Record pinned Python missing-token startup execution
+        if: always()
+        run: python -I -B scripts/ci-python-startup-report.py --case service-token
       - name: Validate fixture plan separately from executed outcomes
         run: python -m evaluation.scenario_runner validate-fixtures
 
