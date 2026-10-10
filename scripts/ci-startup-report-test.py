@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import ModuleType
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +17,26 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 spec = importlib.util.spec_from_file_location('startup_report', ROOT / 'scripts/ci-startup-report.py')
 reporter = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(reporter)
-import test_startup_admission as runner
+# Load the real orchestration code, but never import or execute service helpers.
+# The tooling branch intentionally lacks test_process_recovery.py. These are
+# explicit unit-test doubles on every tree, not a production import fallback.
+helpers = ModuleType('test_process_recovery')
+for name in ('execute', 'java_executable', 'positive'):
+    setattr(helpers, name, mock.Mock(side_effect=AssertionError('Unexpected service helper call')))
+helpers.isolated_env = mock.Mock(return_value={})
+spec = importlib.util.spec_from_file_location('startup_runner_under_test', ROOT / 'scripts/test_startup_admission.py')
+runner = importlib.util.module_from_spec(spec)
+with mock.patch.dict(sys.modules, {'test_process_recovery': helpers}):
+    spec.loader.exec_module(runner)
+
+# Fixed diagnostic contract fixture, independent of feature-branch Java sources.
+JAVA_ENUM_CONTRACT = {
+    'Stage': {'DATABASE_START', 'FIXTURE_SETUP', 'PREPARE_START', 'PREPARE_ADMISSION',
+              'BASELINE', 'SUBJECT_START', 'READINESS_REFUSAL', 'REFUSAL_INVARIANTS',
+              'REPAIR', 'RECOVERY_READINESS', 'RECOVERY_CLAIM', 'VALID_CONTROL',
+              'INVALID_EXIT', 'EXPECTED_FAILURE_CAUSE', 'INVALID_INVARIANTS', 'FINAL_INVARIANTS'},
+    'FailureCategory': {'NONE', 'ASSERTION_FAILED', 'EXECUTION_FAILED'},
+}
 
 
 class StartupDiagnosticTests(unittest.TestCase):
@@ -89,11 +109,43 @@ class StartupDiagnosticTests(unittest.TestCase):
             self.assertEqual('EXECUTION_FAILED', diag['failureCategory'])
             self.assertNotIn('CANARY', json.dumps(diag))
 
-    def test_java_closed_enums_match_reporter(self):
-        source = (ROOT/'backend/src/test/java/com/finsec/fuse/testing/StartupAdmissionHarness.java').read_text()
+    def test_java_enum_fixture_matches_reporter(self):
+        for enum, allowed in [('Stage', reporter.STAGES), ('FailureCategory', reporter.CATEGORIES)]:
+            self.assertTrue(JAVA_ENUM_CONTRACT[enum].issubset(allowed))
+
+    def check_java_source_contract(self, root):
+        harness = root/'backend/src/test/java/com/finsec/fuse/testing/StartupAdmissionHarness.java'
+        if not harness.exists():
+            # Only a genuine partial tooling tree can lack the Java harness.
+            # Missing source in a service/combined tree is a failure, not a skip.
+            self.assertFalse((root/'scripts/test_process_recovery.py').exists())
+            self.assertFalse((root/'backend/src/main').exists())
+            self.skipTest('NOT_APPLICABLE: partial tooling tree has no service helpers or backend main sources; actual Java contract NOT_RUN')
+        source = harness.read_text()
         for enum, allowed in [('Stage', reporter.STAGES), ('FailureCategory', reporter.CATEGORIES)]:
             values = re.search(r'private enum '+enum+r' \{([^}]+)\}', source)[1]
-            self.assertTrue(set(re.findall('[A-Z][A-Z_]+', values)).issubset(allowed))
+            actual = set(re.findall('[A-Z][A-Z_]+', values))
+            self.assertEqual(JAVA_ENUM_CONTRACT[enum], actual)
+            self.assertTrue(actual.issubset(allowed))
+
+    def test_java_closed_enums_match_reporter(self):
+        self.check_java_source_contract(ROOT)
+
+    def test_partial_classification_cannot_mask_missing_full_tree_harness(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(unittest.SkipTest, 'actual Java contract NOT_RUN'):
+                self.check_java_source_contract(root)
+            main = root/'backend/src/main'
+            main.mkdir(parents=True)
+            with self.assertRaises(AssertionError):
+                self.check_java_source_contract(root)
+            main.rmdir()
+            helper = root/'scripts/test_process_recovery.py'
+            helper.parent.mkdir()
+            helper.write_text('# synthetic presence marker\n')
+            with self.assertRaises(AssertionError):
+                self.check_java_source_contract(root)
 
     def test_runner_failed_harness_and_timeout_preserve_checkpoint(self):
         for timeout in (False, True):
