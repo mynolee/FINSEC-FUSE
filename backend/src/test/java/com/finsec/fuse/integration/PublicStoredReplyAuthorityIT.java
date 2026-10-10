@@ -32,6 +32,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** Saved success and business DENY replies require current authority AND original action ownership. */
 @SpringBootTest(classes=FuseApplication.class,webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT)
 class PublicStoredReplyAuthorityIT extends PaymentFixture {
+    private static final String RESUME_REASON="Request further evaluation / synthetic dependency recovered";
     @Value("${local.server.port}") int port;
     @Autowired DevActorRegistry registry;
     @Autowired FusePolicy policy;
@@ -39,6 +40,7 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
     private record Identity(String token,Actor actor) {}
     private record Saved(UUID workflowId,UUID actionId,String path,String body,int status,
                          Map<String,Object> reply,Identity owner) {}
+    private record StoredDeny(Saved saved,String receiptJson,byte[] replayBody,Map<String,List<String>> rows) {}
 
     private Identity identity(String role) {
         String token=DevActorRegistry.generateToken();
@@ -48,12 +50,15 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
         return new Identity(token,actor);
     }
     private HttpResponse<String> post(Saved saved,Identity caller) throws Exception {
-        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+saved.path()))
+        return client.send(request(saved,caller),HttpResponse.BodyHandlers.ofString());
+    }
+    private HttpRequest request(Saved saved,Identity caller) {
+        return HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+saved.path()))
             .timeout(Duration.ofSeconds(10))
             .header("Authorization","Bearer "+caller.token())
             .header("Idempotency-Key",saved.actionId().toString())
             .header("Content-Type","application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(saved.body())).build(),HttpResponse.BodyHandlers.ofString());
+            .POST(HttpRequest.BodyPublishers.ofString(saved.body())).build();
     }
     private Saved save(UUID workflowId,String route,Object request,int status,Identity owner,String decision,
                        List<String> reasons,String actionType,String auditType) throws Exception {
@@ -88,7 +93,7 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
         return id;
     }
 
-    @Test @Timeout(60)
+    @Timeout(60) @Test
     void savedApprovalSuccessChecksCurrentAuthorityAndActionOwnershipBeforeReturningHistory() throws Exception {
         UUID independent=populatedIndependentWorkflow(),target=ready102();
         var owner=identity("LOAN_REVIEWER");
@@ -107,10 +112,15 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
         assertEquals(1,count("approval"));assertEquals(1,count("mock_payment"));assertEquals(1,events("CONSUME"));
     }
 
-    @Test @Timeout(60)
+    @Timeout(60) @Test
     void savedExhaustedResumeDenyChecksCurrentAuthorityAndActionOwnershipBeforeReturningHistory() throws Exception {
-        UUID independent=populatedIndependentWorkflow(),target=start("customer-102");
-        var owner=identity("LOAN_REVIEWER");
+        UUID independent=populatedIndependentWorkflow();
+        var saved=exhaustedResumeDeny(identity("LOAN_REVIEWER"),"Request further evaluation");
+        exerciseAuthorityMatrix(saved,independent);
+    }
+
+    private Saved exhaustedResumeDeny(Identity owner,String reason) throws Exception {
+        UUID target=start("customer-102");
         // Exhaust the real run allowance through production prepare/reap/resume, never forged counters/receipts.
         for(int generation=1;generation<=policy.maxRunsPerStage();generation++) {
             var prepared=prepareKyc();assertEquals(target,prepared.input().workflowId());
@@ -124,7 +134,7 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
                 assertEquals("ALLOW",resumed.get("decision"));assertEquals("KYC_PENDING",resumed.get("state"));
             }
         }
-        var saved=save(target,"/resume",new ResumeRequest(policy.maxRunsPerStage(),"Request further evaluation"),
+        var saved=save(target,"/resume",new ResumeRequest(policy.maxRunsPerStage(),reason),
             202,owner,"DENY",List.of("MANUAL_REVIEW_REQUIRED"),"WORKFLOW_RESUME","MANUAL_REVIEW_REQUIRED");
         assertEquals("ON_HOLD",saved.reply().get("state"));
         assertEquals("MANUAL_REVIEW_REQUIRED",workflow(target).get("last_reason_code"));
@@ -132,7 +142,90 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
             "SELECT * FROM workflow_stage WHERE workflow_id=? AND stage='KYC'",target),"run_count"));
         assertRisk(target,policy.kycRisk(),0);
         assertEquals(0,count("approval"));assertEquals(0,count("payment_reservation"));assertEquals(0,count("mock_payment"));
-        exerciseAuthorityMatrix(saved,independent);
+        return saved;
+    }
+
+    @Timeout(60) @Test
+    void parsedEquivalentJsonReplaysStoredResumeDenyWithoutAnyDurableMutation() throws Exception {
+        UUID independent=populatedIndependentWorkflow();
+        var original=storedResumeDeny();var saved=original.saved();
+        resumeDenyReplay(original,saved.body());
+        String reordered="{\"reason\":"+json.write(RESUME_REASON)+",\"expectedGeneration\":"+policy.maxRunsPerStage()+"}";
+        String spaced=" { \n \"expectedGeneration\" : "+policy.maxRunsPerStage()
+            +" , \"reason\" : "+json.write(RESUME_REASON)+" \n } \t";
+        // Construct the JSON escape at runtime; the source inventory rejects Java Unicode escapes.
+        String escaped=saved.body().replace("Request","\\"+"u0052equest").replace(" / "," \\/ ");
+        for(String body:List.of(reordered,spaced,escaped)) {
+            assertNotEquals(saved.body(),body,"Each normalization control must change the actual request bytes");
+            assertEquals(json.map(saved.body()),json.map(body));
+            assertEquals(json.read(saved.body(),ResumeRequest.class),json.read(body,ResumeRequest.class));
+            resumeDenyReplay(original,body);
+        }
+        // Normalization must not let another actor, forbidden role, withdrawn scope or revoked token see history.
+        exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        assertStoredDenyUnchanged(original);
+    }
+
+    @Timeout(60) @Test
+    void changedResumeReasonAndGenerationConflictWithoutPoisoningStoredDeny() throws Exception {
+        UUID independent=populatedIndependentWorkflow();
+        var original=storedResumeDeny();
+        resumeDenyReplay(original,original.saved().body());
+        resumeDenyConflict(original,new ResumeRequest(policy.maxRunsPerStage(),"Different synthetic recovery reason"));
+        // Value whitespace is meaningful even though whitespace between JSON tokens is not.
+        resumeDenyConflict(original,new ResumeRequest(policy.maxRunsPerStage(),RESUME_REASON+" "));
+        resumeDenyConflict(original,new ResumeRequest(policy.maxRunsPerStage()+1,RESUME_REASON));
+        assertEquals("REJECTED",workflow(independent).get("state"));
+        assertStoredDenyUnchanged(original);
+    }
+
+    private StoredDeny storedResumeDeny() throws Exception {
+        var saved=exhaustedResumeDeny(identity("LOAN_REVIEWER"),RESUME_REASON);
+        assertTrue(jobs.claim().isEmpty(),"No asynchronous work may race the committed-row oracle");
+        var receipt=db.required("SELECT * FROM action_request WHERE action_id=?",saved.actionId());
+        assertNotNull(receipt.get("completed_at"));
+        String receiptJson=receipt.get("result_json").toString();
+        var replay=json.map(receiptJson);assertEquals(saved.reply(),replay);
+        replay.put("replayed",true);
+        return new StoredDeny(saved,receiptJson,json.bytes(replay),durableRows());
+    }
+    private Saved withBody(Saved saved,String body) {
+        return new Saved(saved.workflowId(),saved.actionId(),saved.path(),body,saved.status(),saved.reply(),saved.owner());
+    }
+    private void resumeDenyReplay(StoredDeny original,String body) throws Exception {
+        clock.set(clock.now().plusSeconds(1));
+        var saved=withBody(original.saved(),body);
+        var response=client.send(request(saved,saved.owner()),HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(202,response.statusCode());assertEquals(saved.status(),response.statusCode());
+        var expected=new LinkedHashMap<>(saved.reply());expected.put("replayed",true);
+        assertEquals(expected,json.map(response.body()),"Only replayed may change in the original business DENY reply");
+        assertArrayEquals(original.replayBody(),response.body(),"Return the encoded stored reply with only replayed changed");
+        assertStoredDenyUnchanged(original);
+    }
+    private void resumeDenyConflict(StoredDeny original,ResumeRequest changed) throws Exception {
+        var saved=original.saved();String body=json.write(changed);
+        assertNotEquals(json.read(saved.body(),ResumeRequest.class),changed);
+        assertNotEquals(json.map(saved.body()),json.map(body));
+        clock.set(clock.now().plusSeconds(1));
+        var response=post(withBody(saved,body),saved.owner());assertEquals(409,response.statusCode(),response.body());
+        var error=json.map(response.body());
+        assertEquals(Set.of("requestId","workflowId","generation","state","decision","reasonCodes","message","replayed"),
+            error.keySet(),"Conflict must not disclose the saved DENY receipt");
+        assertEquals(saved.actionId().toString(),error.get("requestId"));
+        assertEquals("DENY",error.get("decision"));assertEquals(List.of("REPLAY_CONFLICT"),error.get("reasonCodes"));
+        assertEquals(false,error.get("replayed"));
+        for(String field:List.of("workflowId","generation","state"))assertNull(error.get(field));
+        assertNotEquals(saved.reply().get("message"),error.get("message"));
+        assertFalse(response.body().contains(saved.workflowId().toString()));
+        assertFalse(response.body().contains("MANUAL_REVIEW_REQUIRED"));
+        assertStoredDenyUnchanged(original);
+        resumeDenyReplay(original,saved.body()); // Each conflict leaves the original action replayable.
+    }
+    private void assertStoredDenyUnchanged(StoredDeny original) {
+        var receipt=db.required("SELECT * FROM action_request WHERE action_id=?",original.saved().actionId());
+        assertEquals(original.receiptJson(),receipt.get("result_json").toString(),"Stored JSON bytes must remain untouched");
+        assertEquals("SUCCEEDED",receipt.get("status"));assertEquals("DENY",receipt.get("decision"));
+        assertEquals(original.rows(),durableRows(),"Preserve every committed row and timestamp, including the independent workflow");
     }
 
     private void exerciseAuthorityMatrix(Saved saved,UUID independent) throws Exception {
