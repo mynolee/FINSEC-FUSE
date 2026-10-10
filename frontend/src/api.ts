@@ -19,11 +19,168 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 }
+const ACTION_FIELDS = [
+  'requestId',
+  'workflowId',
+  'generation',
+  'state',
+  'decision',
+  'reasonCodes',
+  'message',
+  'replayed',
+];
+const WORKFLOW_STATES = [
+  'KYC_PENDING',
+  'KYC_VALIDATED',
+  'REVIEW_READY',
+  'WAIT_APPROVAL',
+  'APPROVED',
+  'PAYMENT_RESERVED',
+  'PAID',
+  'REJECTED',
+  'BLOCKED',
+  'ON_HOLD',
+];
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+function closedFields(value: Record<string, unknown>, required: string[]) {
+  return (
+    required.every((key) => Object.hasOwn(value, key)) &&
+    Object.keys(value).every((key) => required.includes(key))
+  );
+}
+function uuid(value: unknown): value is string {
+  return (
+    typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
+  );
+}
+function integer(value: unknown, minimum = 0): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= 2147483647;
+}
+function quarantineTarget(scope: unknown, target: unknown) {
+  if (!record(target)) return false;
+  switch (scope) {
+    case 'RUN':
+      return closedFields(target, ['runId']) && uuid(target.runId);
+    case 'RESULT':
+      return closedFields(target, ['resultId']) && uuid(target.resultId);
+    case 'WORKFLOW':
+      return closedFields(target, ['workflowId']) && uuid(target.workflowId);
+    case 'SOURCE_VERSION':
+      return (
+        closedFields(target, ['documentId', 'documentVersion']) &&
+        uuid(target.documentId) &&
+        integer(target.documentVersion, 1)
+      );
+    case 'AGENT_VERSION':
+      return (
+        closedFields(target, ['agentId', 'agentVersion']) &&
+        typeof target.agentId === 'string' &&
+        target.agentId.length > 0 &&
+        target.agentId.length <= 64 &&
+        integer(target.agentVersion, 1)
+      );
+    default:
+      return false;
+  }
+}
+/** Validate the public producers' stored receipts, not a guess about current workflow state. */
+function actionReceipt(data: unknown, path: string, actionId: string): data is DecisionResponse {
+  if (
+    !record(data) ||
+    !uuid(data.requestId) ||
+    data.requestId !== actionId ||
+    !(data.workflowId === null || uuid(data.workflowId)) ||
+    !(data.generation === null || integer(data.generation, 1)) ||
+    typeof data.state !== 'string' ||
+    typeof data.decision !== 'string' ||
+    !['ALLOW', 'WAIT_APPROVAL', 'DENY', 'ERROR'].includes(data.decision) ||
+    !Array.isArray(data.reasonCodes) ||
+    !data.reasonCodes.every((code) => typeof code === 'string') ||
+    typeof data.message !== 'string' ||
+    typeof data.replayed !== 'boolean'
+  )
+    return false;
+
+  if (path === '/workflows')
+    return (
+      closedFields(data, ACTION_FIELDS) &&
+      uuid(data.workflowId) &&
+      integer(data.generation, 1) &&
+      WORKFLOW_STATES.includes(data.state)
+    );
+
+  const workflow = /^\/workflows\/([^/]+)\/(approvals|resume)$/.exec(path);
+  if (workflow) {
+    if (data.workflowId !== workflow[1] || !integer(data.generation, 1)) return false;
+    if (workflow[2] === 'approvals')
+      return (
+        closedFields(data, [
+          ...ACTION_FIELDS,
+          'approvalId',
+          'extraRiskLimit',
+          'riskLimit',
+          'expiresAt',
+          'payJobId',
+        ]) &&
+        uuid(data.approvalId) &&
+        integer(data.extraRiskLimit) &&
+        integer(data.riskLimit) &&
+        typeof data.expiresAt === 'string' &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(data.expiresAt) &&
+        Number.isFinite(Date.parse(data.expiresAt)) &&
+        new Date(data.expiresAt).toISOString().slice(0, 19) === data.expiresAt.slice(0, 19) &&
+        data.decision === 'ALLOW' &&
+        ((data.state === 'APPROVED' && uuid(data.payJobId)) ||
+          (data.state === 'REJECTED' && data.payJobId === null))
+      );
+    // The saved run-limit denial has no new KYC job and retains its old generation.
+    return data.decision === 'DENY'
+      ? closedFields(data, ACTION_FIELDS) && data.state === 'ON_HOLD'
+      : closedFields(data, [...ACTION_FIELDS, 'kycJobId']) &&
+          data.decision === 'ALLOW' &&
+          data.state === 'KYC_PENDING' &&
+          uuid(data.kycJobId);
+  }
+
+  if (path === '/experiments')
+    return (
+      closedFields(data, [...ACTION_FIELDS, 'experimentId', 'status', 'totalRuns']) &&
+      data.workflowId === null &&
+      data.generation === null &&
+      uuid(data.experimentId) &&
+      data.state === 'PENDING' &&
+      data.status === 'PENDING' &&
+      data.decision === 'ALLOW' &&
+      integer(data.totalRuns, 1)
+    );
+
+  const release = /^\/quarantines\/([^/]+)\/release$/.exec(path);
+  if (path === '/quarantines' || release)
+    return (
+      closedFields(data, [...ACTION_FIELDS, 'quarantineId', 'scope', 'target']) &&
+      uuid(data.quarantineId) &&
+      (!release || data.quarantineId === release[1]) &&
+      data.generation === null &&
+      data.state === (release ? 'RELEASED' : 'ACTIVE') &&
+      data.decision === 'ALLOW' &&
+      quarantineTarget(data.scope, data.target) &&
+      (data.scope === 'WORKFLOW'
+        ? data.workflowId === (data.target as Record<string, unknown>).workflowId
+        : data.workflowId === null)
+    );
+  return false;
+}
+
+interface PendingMutation {
+  fingerprint: string;
+  actionId: string;
+  inFlight?: Promise<DecisionResponse>;
+}
+
 export class FuseApi {
-  private readonly uncertainRequests = new Map<
-    string,
-    { body: unknown; fingerprint: string; actionId: string }
-  >();
+  private readonly uncertainRequests = new Map<string, PendingMutation>();
   unresolved(path: string) {
     const pending = this.uncertainRequests.get(path);
     return pending ? { path, body: JSON.parse(pending.fingerprint), actionId: pending.actionId } : undefined;
@@ -37,6 +194,7 @@ export class FuseApi {
     options: { signal?: AbortSignal; body?: unknown; actionId?: string } = {},
   ): Promise<T> {
     const mutation = options.body !== undefined;
+    const actionId = mutation ? (options.actionId ?? crypto.randomUUID()) : undefined;
     let response: Response;
     try {
       // Native browser fetch requires its global receiver, not this FuseApi instance.
@@ -50,7 +208,7 @@ export class FuseApi {
           ...(mutation
             ? {
                 'Content-Type': 'application/json',
-                'Idempotency-Key': options.actionId ?? crypto.randomUUID(),
+                'Idempotency-Key': actionId!,
               }
             : {}),
         },
@@ -103,6 +261,14 @@ export class FuseApi {
         mutation && response.status >= 500,
       );
     }
+    if (mutation && (![200, 201, 202].includes(response.status) || !actionReceipt(data, path, actionId!))) {
+      throw new ApiError(
+        '서버 응답에서 원래 요청의 처리 결과를 확인하지 못했어요. 같은 요청 번호로 다시 확인하세요.',
+        response.status,
+        ['INVALID_RESPONSE'],
+        true,
+      );
+    }
     return data as T;
   }
   workflows(state = '', page = 0, signal?: AbortSignal) {
@@ -138,17 +304,30 @@ export class FuseApi {
         true,
       );
     }
-    const stableId = unresolved?.actionId ?? actionId;
-    const snapshot = JSON.parse(fingerprint);
-    this.uncertainRequests.set(path, { body: snapshot, fingerprint, actionId: stableId });
+    // Remounted forms share an active send; no concurrent duplicate can clear a later action.
+    if (unresolved?.inFlight) return unresolved.inFlight;
+    const pending = unresolved ?? { fingerprint, actionId };
+    this.uncertainRequests.set(path, pending);
+    const attempt = this.request<DecisionResponse>(path, {
+      body: JSON.parse(pending.fingerprint),
+      actionId: pending.actionId,
+    });
+    pending.inFlight = attempt;
     try {
-      const result = await this.request<DecisionResponse>(path, { body: snapshot, actionId: stableId });
-      this.uncertainRequests.delete(path);
+      const result = await attempt;
+      if (this.uncertainRequests.get(path) === pending) this.uncertainRequests.delete(path);
       return result;
     } catch (error) {
       // A later authentication/admission failure cannot resolve an earlier unknown commit.
-      if (!unresolved && !(error instanceof ApiError && error.uncertain)) this.uncertainRequests.delete(path);
+      if (
+        !unresolved &&
+        !(error instanceof ApiError && error.uncertain) &&
+        this.uncertainRequests.get(path) === pending
+      )
+        this.uncertainRequests.delete(path);
       throw error;
+    } finally {
+      if (pending.inFlight === attempt) pending.inFlight = undefined;
     }
   }
 }

@@ -137,22 +137,34 @@ describe('operator console', () => {
   });
   it('requires review confirmation and posts only the original server snapshot', async () => {
     window.location.hash = `/workflows/${ID}`;
-    const fetcher = vi
-      .fn()
-      .mockImplementation((url: string, options: RequestInit) =>
-        Promise.resolve(
-          options.method === 'POST'
-            ? response(
-                { requestId: ID, state: 'APPROVED', decision: 'ALLOW', reasonCodes: [], replayed: false },
-                201,
-              )
-            : url.endsWith('/approval-preview')
-              ? response(preview)
-              : url.endsWith('/trace')
-                ? response(trace)
-                : response(workflow),
-        ),
-      );
+    const fetcher = vi.fn().mockImplementation((url: string, options: RequestInit) =>
+      Promise.resolve(
+        options.method === 'POST'
+          ? response(
+              {
+                requestId: new Headers(options.headers).get('Idempotency-Key'),
+                workflowId: ID,
+                generation: 1,
+                state: 'APPROVED',
+                decision: 'ALLOW',
+                reasonCodes: [],
+                message: 'Review approved; mock payment is queued.',
+                replayed: false,
+                approvalId: ID,
+                extraRiskLimit: 50,
+                riskLimit: 100,
+                expiresAt: '2026-10-10T16:00:00Z',
+                payJobId: ID,
+              },
+              201,
+            )
+          : url.endsWith('/approval-preview')
+            ? response(preview)
+            : url.endsWith('/trace')
+              ? response(trace)
+              : response(workflow),
+      ),
+    );
     vi.stubGlobal('fetch', fetcher);
     render(<App />);
     await login();
