@@ -43,6 +43,7 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
     private final HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private record Identity(String token,Actor actor) {}
     private record Saved(UUID workflowId,UUID actionId,String body,Map<String,Object> reply,Identity owner) {}
+    private record StoredStartDeny(Saved saved,String receiptJson,byte[] replayBody,Map<String,List<String>> rows) {}
     private enum Rejection {
         OWNER(403,"FORBIDDEN","Action receipt is outside the current actor's access",false),
         ROLE(403,"FORBIDDEN","This role cannot perform the requested action",false),
@@ -124,12 +125,12 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         return id;
     }
 
-    @Test @Timeout(60)
+    @Timeout(60) @Test
     void savedStartAllowRequiresCurrentAuthorityForCustomer() throws Exception {
         savedStartAllowChecksBothAllowedRolesCurrentScopeAndActionOwnership("CUSTOMER");
     }
 
-    @Test @Timeout(60)
+    @Timeout(60) @Test
     void savedStartAllowRequiresCurrentAuthorityForLoanReviewer() throws Exception {
         savedStartAllowChecksBothAllowedRolesCurrentScopeAndActionOwnership("LOAN_REVIEWER");
     }
@@ -144,12 +145,12 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         assertCreationActor(saved);
     }
 
-    @Test @Timeout(60)
+    @Timeout(60) @Test
     void savedStartBusinessDenyRequiresCurrentAuthorityForCustomer() throws Exception {
         savedStartBusinessDenyChecksBothAllowedRolesCurrentScopeAndActionOwnership("CUSTOMER");
     }
 
-    @Test @Timeout(60)
+    @Timeout(60) @Test
     void savedStartBusinessDenyRequiresCurrentAuthorityForLoanReviewer() throws Exception {
         savedStartBusinessDenyChecksBothAllowedRolesCurrentScopeAndActionOwnership("LOAN_REVIEWER");
     }
@@ -188,6 +189,138 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         assertEquals(2,integer(workflow(saved.workflowId()),"generation"));
         assertEquals("WAIT_APPROVAL",workflow(saved.workflowId()).get("state"));
         assertCreationActor(original);
+    }
+
+    @Timeout(60) @Test
+    void parsedEquivalentJsonReplaysStoredStartDenyWithoutAnyDurableMutation() throws Exception {
+        UUID independent=populatedIndependentWorkflow();
+        var original=storedStartDeny();var saved=original.saved();
+        startDenyReplay(original,saved.body());
+        var request=json.read(saved.body(),StartWorkflowRequest.class);
+        String reordered="{\"payoutAccountId\":"+json.write(request.payoutAccountId())
+            +",\"amountKrw\":"+request.amountKrw()+",\"customerId\":"+json.write(request.customerId())
+            +",\"businessReference\":"+json.write(request.businessReference())+"}";
+        String spaced=" { \n \"businessReference\" : "+json.write(request.businessReference())
+            +" , \"customerId\" : "+json.write(request.customerId())+" , \n \"amountKrw\" : "+request.amountKrw()
+            +" , \"payoutAccountId\" : "+json.write(request.payoutAccountId())+" \n } \t";
+        // Decode both a member name and a string value; construct the JSON escapes at runtime.
+        String escaped=saved.body().replace("customerId","customer"+"\\"+"u0049d")
+            .replace("APP-DEMO","\\"+"u0041PP-DEMO");
+        for(String body:List.of(reordered,spaced,escaped)) {
+            assertNotEquals(saved.body(),body,"Each normalization control must change the actual request bytes");
+            assertEquals(json.map(saved.body()),json.map(body));
+            assertEquals(request,json.read(body,StartWorkflowRequest.class));
+            startDenyReplay(original,body);
+        }
+        // Equivalent wire forms still require current authority and the original action's owner.
+        exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        assertStoredStartDenyUnchanged(original);
+    }
+
+    @Timeout(60) @Test
+    void changedStartBusinessFieldsConflictWithoutPoisoningStoredDeny() throws Exception {
+        UUID independent=populatedIndependentWorkflow();
+        var original=storedStartDeny();var saved=original.saved();
+        var request=json.read(saved.body(),StartWorkflowRequest.class);
+        startDenyReplay(original,saved.body());
+        startDenyConflict(original,new StartWorkflowRequest("APP-DEMO-102-CHANGED",request.customerId(),
+            request.amountKrw(),request.payoutAccountId()));
+        // Value whitespace remains meaningful even though whitespace between JSON tokens does not.
+        startDenyConflict(original,new StartWorkflowRequest(request.businessReference()+" ",request.customerId(),
+            request.amountKrw(),request.payoutAccountId()));
+        startDenyConflict(original,new StartWorkflowRequest(request.businessReference(),request.customerId(),
+            request.amountKrw()+1,request.payoutAccountId()));
+        startDenyConflict(original,new StartWorkflowRequest(request.businessReference(),request.customerId(),
+            request.amountKrw(),UUID.fromString("00000000-0000-4000-8000-000000000103")));
+        // The changed customer must also be authorized, so this control reaches fingerprint comparison.
+        registry.updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER,INDEPENDENT_CUSTOMER));
+        assertEquals(Set.of(CUSTOMER,INDEPENDENT_CUSTOMER),registry.resolve(saved.owner().token()).customerIds());
+        startDenyConflict(original,new StartWorkflowRequest(request.businessReference(),INDEPENDENT_CUSTOMER,
+            request.amountKrw(),request.payoutAccountId()));
+        registry.updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER));
+        assertEquals(saved.owner().actor(),registry.resolve(saved.owner().token()));
+        startDenyReplay(original,saved.body());
+        assertEquals("REJECTED",workflow(independent).get("state"));
+        assertStoredStartDenyUnchanged(original);
+    }
+
+    private StoredStartDeny storedStartDeny() throws Exception {
+        var owner=identity("CUSTOMER");
+        var original=saveInitialStart(owner);
+        finishEvaluation(original.workflowId(),"WAIT_APPROVAL");
+        var request=new QuarantineRequest(QuarantineRequest.Scope.WORKFLOW,null,null,original.workflowId(),
+            null,null,null,null,QuarantineRequest.Reason.SECURITY_INVESTIGATION,"Synthetic workflow investigation");
+        UUID incident=(UUID)quarantines.apply(SECURITY,UUID.randomUUID(),request).get("quarantineId");
+        assertEquals("BLOCKED",workflow(original.workflowId()).get("state"));
+        assertEquals("DENY",workflow(original.workflowId()).get("last_decision"));
+        var beforeSave=durableRows();
+        // Store a real duplicate-application business DENY through the public start route.
+        var saved=saveStart(owner,"BLOCKED","DENY",List.of("SECURITY_INVESTIGATION"));
+        assertNotEquals(original.actionId(),saved.actionId());assertEquals(original.workflowId(),saved.workflowId());
+        assertRowsAdded(beforeSave,durableRows(),Map.of("action_request",1));
+        assertTrue(db.query("SELECT * FROM audit_event WHERE action_id=?",saved.actionId()).isEmpty());
+        var evidenceIds=db.jdbc().queryForList("SELECT id FROM trusted_evidence "
+            +"WHERE customer_id=? AND status='ACTIVE' AND outcome='PASS' ORDER BY id",UUID.class,CUSTOMER);
+        assertFalse(evidenceIds.isEmpty());
+        var release=new ReleaseRequest(new ReleaseRequest.Remediation(DOCUMENT,1,evidenceIds,null,null,
+            "Reviewed synthetic remediation"));
+        quarantines.release(SECURITY,incident,UUID.randomUUID(),release);
+        assertEquals("RELEASED",db.required("SELECT * FROM quarantine WHERE id=?",incident).get("status"));
+        var resumed=recovery.resume(REVIEWER,saved.workflowId(),UUID.randomUUID(),
+            new ResumeRequest(1,"Resume after synthetic remediation"));
+        assertEquals("ALLOW",resumed.get("decision"));assertEquals(2,((Number)resumed.get("generation")).intValue());
+        finishEvaluation(saved.workflowId(),"WAIT_APPROVAL");
+        assertCreationActor(original);
+        var receipt=db.required("SELECT * FROM action_request WHERE action_id=?",saved.actionId());
+        assertNotNull(receipt.get("completed_at"));
+        String receiptJson=receipt.get("result_json").toString();
+        var replay=json.map(receiptJson);assertEquals(saved.reply(),replay);
+        replay.put("replayed",true);
+        return new StoredStartDeny(saved,receiptJson,json.bytes(replay),durableRows());
+    }
+    private Saved withBody(Saved saved,String body) {
+        return new Saved(saved.workflowId(),saved.actionId(),body,saved.reply(),saved.owner());
+    }
+    private void startDenyReplay(StoredStartDeny original,String body) throws Exception {
+        clock.set(clock.now().plusSeconds(1));
+        var saved=original.saved();
+        var response=client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/workflows"))
+            .timeout(Duration.ofSeconds(10)).header("Authorization","Bearer "+saved.owner().token())
+            .header("Idempotency-Key",saved.actionId().toString()).header("Content-Type","application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(202,response.statusCode(),"Preserve the original accepted business DENY HTTP status");
+        assertEquals("no-store",response.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals("nosniff",response.headers().firstValue("X-Content-Type-Options").orElseThrow());
+        var expected=new LinkedHashMap<>(saved.reply());expected.put("replayed",true);
+        assertEquals(expected,json.map(response.body()),"Only replayed may change in the original business DENY reply");
+        assertArrayEquals(original.replayBody(),response.body(),"Return the encoded stored reply with only replayed changed");
+        assertStoredStartDenyUnchanged(original);
+    }
+    private void startDenyConflict(StoredStartDeny original,StartWorkflowRequest changed) throws Exception {
+        var saved=original.saved();String body=json.write(changed);
+        assertNotEquals(json.read(saved.body(),StartWorkflowRequest.class),changed);
+        assertNotEquals(json.map(saved.body()),json.map(body));
+        clock.set(clock.now().plusSeconds(1));
+        var response=post(saved.actionId(),body,saved.owner());assertEquals(409,response.statusCode(),response.body());
+        assertSafeHeaders(response);
+        var expected=Json.ordered("requestId",saved.actionId().toString(),"workflowId",null,"generation",null,
+            "state",null,"decision","DENY","reasonCodes",List.of("REPLAY_CONFLICT"),
+            "message","Idempotency key was already used for a different request","replayed",false);
+        assertEquals(expected,json.map(response.body()),"Conflict must return only the exact safe public envelope");
+        assertFalse(response.body().contains(saved.workflowId().toString()));
+        assertFalse(response.body().contains("SECURITY_INVESTIGATION"));
+        assertStoredStartDenyUnchanged(original);
+        startDenyReplay(original,saved.body()); // Each conflict leaves the original action replayable.
+    }
+    private void assertStoredStartDenyUnchanged(StoredStartDeny original) {
+        var saved=original.saved();
+        var receipt=db.required("SELECT * FROM action_request WHERE action_id=?",saved.actionId());
+        assertEquals(original.receiptJson(),receipt.get("result_json").toString(),"Stored JSON bytes must remain untouched");
+        assertEquals("SUCCEEDED",receipt.get("status"));assertEquals("DENY",receipt.get("decision"));
+        assertEquals(2,integer(workflow(saved.workflowId()),"generation"));
+        assertEquals("WAIT_APPROVAL",workflow(saved.workflowId()).get("state"));
+        assertEquals(0,count("approval"));assertEquals(0,count("payment_reservation"));assertEquals(0,count("mock_payment"));
+        assertEquals(original.rows(),durableRows(),"Preserve every committed row and timestamp, including the independent workflow");
     }
 
     private void exerciseAuthorityMatrix(Saved saved,UUID independent) throws Exception {
