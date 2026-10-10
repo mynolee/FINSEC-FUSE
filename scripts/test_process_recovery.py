@@ -21,6 +21,8 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CREDENTIAL_KEYS = ('token', 'customer-101', 'customer-102', 'customer-103', 'customer-104',
+                   'reviewer', 'security', 'developer')
 
 
 def java_executable() -> str:
@@ -91,18 +93,23 @@ def source_digest() -> str:
 
 
 def retain_logs(work: Path, destination: Path) -> None:
-    # Private temporary configs/keys/data never leave work; preserve sanitized logs only.
-    secrets = []
+    # Logs remain private. Redact known credential literals, not arbitrary sensitive content.
+    # Temporary configs/keys/data never leave work.
+    secrets = set()
     for config in work.rglob("*-config.json"):
         try:
-            secrets.append(json.loads(config.read_text())["token"])
-        except (OSError, KeyError, ValueError):
+            data = json.loads(config.read_text())
+            if isinstance(data, dict):
+                secrets.update(data[key] for key in CREDENTIAL_KEYS
+                               if isinstance(data.get(key), str) and data[key])
+        except (OSError, ValueError):
             pass
+    ordered_secrets = sorted(secrets, key=len, reverse=True)
     for log in work.rglob("*.log"):
         if "database" in log.relative_to(work).parts:
             continue
         content = log.read_text(errors="replace")
-        for secret in secrets:
+        for secret in ordered_secrets:
             content = content.replace(secret, "[REDACTED]")
         output = destination / "logs" / log.relative_to(work)
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -153,7 +160,7 @@ def run(args: argparse.Namespace) -> None:
                 output["status"] = "SOURCE_CHANGED_DURING_RUN"
             report.write_text(json.dumps(output, indent=2) + "\n")
             if code or output.get("status") != "PASS":
-                raise RuntimeError(f"Process recovery verification failed; inspect {report} and sanitized logs.")
+                raise RuntimeError(f"Process recovery verification failed; inspect {report} and private logs.")
             print("PROCESS_RECOVERY_PASS: 5/5 scenarios; cleanup verified; synthetic replay, real PostgreSQL 16.15")
             print(f"Evidence: {report}")
         finally:
