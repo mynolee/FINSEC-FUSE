@@ -125,7 +125,7 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         return id;
     }
 
-    @ParameterizedTest(name="stored start ALLOW requires current authority for {0}")
+    @ParameterizedTest
     @ValueSource(strings={"CUSTOMER","LOAN_REVIEWER"}) @Timeout(60)
     void savedStartAllowChecksBothAllowedRolesCurrentScopeAndActionOwnership(String role) throws Exception {
         UUID independent=populatedIndependentWorkflow();
@@ -137,7 +137,7 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         assertCreationActor(saved);
     }
 
-    @ParameterizedTest(name="stored start business DENY requires current authority for {0}")
+    @ParameterizedTest
     @ValueSource(strings={"CUSTOMER","LOAN_REVIEWER"}) @Timeout(60)
     void savedStartBusinessDenyChecksBothAllowedRolesCurrentScopeAndActionOwnership(String role) throws Exception {
         UUID independent=populatedIndependentWorkflow();
