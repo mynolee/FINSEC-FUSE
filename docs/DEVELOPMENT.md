@@ -66,7 +66,7 @@ and exclusion reason. Environment failure is not a successful policy block.
 
 ## Revision-bound CI evidence
 
-A historical fully successful checkpoint confirmed on 2026-10-10 UTC is
+A historical fully successful checkpoint confirmed on 2026-10-10 KST is
 [1cb6c620e64f61fc70303f44993c6fdfcb899d6c](https://github.com/mynolee/FINSEC-FUSE/commit/1cb6c620e64f61fc70303f44993c6fdfcb899d6c),
 [run 38049375800](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38049375800):
 all seven jobs passed, including real Compose/browser verification and
@@ -79,12 +79,12 @@ passed seven of eight jobs; startup admission failed with the bounded diagnostic
 MISSING_KEY / RECOVERY_CLAIM / EXECUTION_FAILED. This does not establish the
 remaining startup scenarios or identify every underlying cause.
 
-The current fully successful checkpoint is the query-fix head
+A subsequent historical fully successful checkpoint is the query-fix head
 [0c18b4544207c3147a16a44127de00f4d0a29aa3](https://github.com/mynolee/FINSEC-FUSE/commit/0c18b4544207c3147a16a44127de00f4d0a29aa3),
 tree 3d253f6cce5464754fb7a487e9fe1a3fb863ccbb.
 [Push run 38051952319](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38051952319)
 and [PR run 38051955035](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38051955035)
-both completed with eight of eight jobs successful on 2026-10-10 UTC. Push
+both completed with eight of eight jobs successful on 2026-10-10 KST. Push
 checked out the exact head; PR checked out synthetic merge
 32537f6ebe84d52ad149300e57a994de78b8380c with the same tree. All 363 source
 files were bound to the frozen source manifest and each run's evidence.
@@ -95,6 +95,35 @@ scenarios. The two new startup claim integration methods have named passing
 execution evidence. Aggregate success still does not establish every original
 requirement: source-safe identity mapping remains partial (99/278 unit and
 111/267 integration), REPLAY is synthetic, and full T12 acceptance is not claimed.
-The previous startup failure remains historical evidence, not the current result.
-These checks predate this documentation edit and do not verify later source.
+The previous startup failure and the scenarios not run at that time remain
+historical evidence; later success does not reclassify them.
+
+### Pinned verified checkpoint, checked 2026-10-11 01:48 KST
+
+This checkpoint is explicitly pinned to
+[6162b060361261872a040414d03d1d6a36a9c8fd](https://github.com/mynolee/FINSEC-FUSE/commit/6162b060361261872a040414d03d1d6a36a9c8fd),
+tree 12abb3ea79d0183a7201c61039028bc10d973f6f.
+[Push run 38068597161](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38068597161)
+and [PR run 38068601047](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38068601047)
+finished with all eight jobs successful at 2026-10-11 01:46:12 and 01:44:32 KST,
+respectively. Push checked out the exact head; PR checked out synthetic merge
+39d1a636b060ec1ceb00288626e7f5da2de00654 with the same tree. All 369 source
+files were bound to the frozen source manifest and each run's evidence.
+
+Both runs passed 278 unit tests, 285 PostgreSQL integration tests and 258
+frontend component/API/hook tests across 12 files. The frontend count includes
+the new mutation-receipt validation and uncertain-response recovery scenarios.
+The 11 passing Chromium browser checks are existing checks, not browser
+execution evidence for those new receipt scenarios. Both runs also passed
+all 11 startup scenarios and five process-recovery scenarios. The targeted
+Python policy/service-token startup refusal and recovery cases have named
+passing execution evidence.
+
+Source-safe backend identity mapping remains partial (99/278 unit and 129/285
+integration); all previously mapped identities were retained. Unmapped passing
+tests do not prove particular original acceptance branches. Real-browser
+execution of the new receipt scenarios and local native-browser verification
+remain unverified. REPLAY is synthetic; full T12, full v2.1 acceptance and
+production readiness are not claimed. These checks predate this documentation
+edit and do not verify a future commit containing it or later source changes.
 See [verification scope and historical results](VERIFICATION.md).
