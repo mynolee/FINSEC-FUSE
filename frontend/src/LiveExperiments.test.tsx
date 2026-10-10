@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -7,7 +7,20 @@ import { describeExperimentIssue, MVP_CASES } from './components/Experiments';
 const ID = '00000000-0000-4000-8000-000000000301';
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-const receipt = { requestId: ID, decision: 'ALLOW', state: 'PENDING', reasonCodes: [], replayed: false };
+const receipt = (options: RequestInit) => ({
+  requestId: new Headers(options.headers).get('Idempotency-Key'),
+  workflowId: null,
+  generation: null,
+  decision: 'ALLOW',
+  state: 'PENDING',
+  reasonCodes: [],
+  message: 'Experiment queued',
+  replayed: false,
+  experimentId: ID,
+  status: 'PENDING',
+  totalRuns:
+    JSON.parse(options.body as string).caseIds.length * 2 * JSON.parse(options.body as string).repeatCount,
+});
 async function login() {
   await userEvent.type(screen.getByLabelText('개발용 인증 토큰'), 'live-ui-test-token');
   await userEvent.click(screen.getByRole('button', { name: /연결하고 업무 조회/ }));
@@ -29,7 +42,19 @@ beforeEach(() => {
 
 describe('optional LIVE experiment UI, mocked requests only', () => {
   it('defaults to REPLAY once and does not ask to approve external model costs', async () => {
-    const fetcher = vi.fn().mockImplementation(() => Promise.resolve(response(receipt)));
+    const fetcher = vi.fn().mockImplementation((_url, options) =>
+      Promise.resolve(
+        options.method === 'POST'
+          ? response(receipt(options), 202)
+          : response({
+              experimentId: ID,
+              status: 'PENDING',
+              modelMode: 'REPLAY',
+              progress: { completed: 0, total: 12 },
+              caseOutputs: [],
+            }),
+      ),
+    );
     vi.stubGlobal('fetch', fetcher);
     const dialog = await openForm();
     expect(within(dialog).getByLabelText('모델 모드')).toHaveValue('REPLAY');
@@ -39,7 +64,7 @@ describe('optional LIVE experiment UI, mocked requests only', () => {
     ).not.toBeInTheDocument();
     await userEvent.click(mockCheckbox(dialog));
     await userEvent.click(within(dialog).getByRole('button', { name: '비교 실험 접수' }));
-    await within(dialog).findByRole('status');
+    await waitFor(() => expect(window.location.hash).toBe(`#/experiments/${ID}`));
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
       fixtureSetId: 'mvp-security-v1',
       caseIds: MVP_CASES,
@@ -64,15 +89,28 @@ describe('optional LIVE experiment UI, mocked requests only', () => {
     expect(within(dialog).getByRole('button', { name: '비용 확인 후 LIVE 실험 접수' })).toBeEnabled();
   });
   it('sends LIVE paired repeatCount 3 only after both confirmations and only to Spring', async () => {
-    const fetcher = vi.fn().mockImplementation(() => Promise.resolve(response(receipt)));
+    const fetcher = vi.fn().mockImplementation((_url, options) =>
+      Promise.resolve(
+        options.method === 'POST'
+          ? response(receipt(options), 202)
+          : response({
+              experimentId: ID,
+              status: 'PENDING',
+              modelMode: 'LIVE',
+              progress: { completed: 0, total: 36 },
+              caseOutputs: [],
+            }),
+      ),
+    );
     vi.stubGlobal('fetch', fetcher);
     const dialog = await openForm();
     await userEvent.selectOptions(within(dialog).getByLabelText('모델 모드'), 'LIVE');
     await userEvent.click(mockCheckbox(dialog));
     await userEvent.click(costCheckbox(dialog));
     await userEvent.click(within(dialog).getByRole('button', { name: '비용 확인 후 LIVE 실험 접수' }));
-    await within(dialog).findByRole('status');
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(window.location.hash).toBe(`#/experiments/${ID}`));
+    expect(fetcher.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
+    expect(fetcher.mock.calls.every(([url]) => url.startsWith('/api/v1/experiments'))).toBe(true);
     expect(fetcher.mock.calls[0][0]).toBe('/api/v1/experiments');
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
       fixtureSetId: 'mvp-security-v1',

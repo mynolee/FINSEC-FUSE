@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -42,15 +42,26 @@ beforeEach(() => {
 
 describe('security operations and evaluation views', () => {
   it('sends only fields for the selected quarantine scope and an integer version', async () => {
-    const fetcher = vi.fn().mockImplementation(() =>
+    const fetcher = vi.fn().mockImplementation((_url: string, options: RequestInit) =>
       Promise.resolve(
-        response({
-          requestId: ID,
-          decision: 'DENY',
-          reasonCodes: ['FORBIDDEN'],
-          state: 'BLOCKED',
-          replayed: false,
-        }),
+        options.method === 'POST'
+          ? response(
+              {
+                requestId: new Headers(options.headers).get('Idempotency-Key'),
+                workflowId: null,
+                generation: null,
+                decision: 'ALLOW',
+                reasonCodes: [],
+                message: 'Quarantine applied',
+                state: 'ACTIVE',
+                replayed: false,
+                quarantineId: ID,
+                scope: 'AGENT_VERSION',
+                target: { agentId: 'kyc-agent', agentVersion: 2 },
+              },
+              201,
+            )
+          : response(impact),
       ),
     );
     vi.stubGlobal('fetch', fetcher);
@@ -65,7 +76,8 @@ describe('security operations and evaluation views', () => {
     await userEvent.type(within(dialog).getByLabelText('조사 내용'), '등록된 버전을 조사함');
     await userEvent.click(within(dialog).getByRole('checkbox'));
     await userEvent.click(within(dialog).getByRole('button', { name: '선택한 범위 격리' }));
-    await within(dialog).findByRole('status');
+    await waitFor(() => expect(window.location.hash).toBe(`#/quarantine/${ID}`));
+    expect(fetcher.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
     const post = fetcher.mock.calls.find(([, options]) => options.method === 'POST')!;
     expect(JSON.parse(post[1].body)).toEqual({
       scope: 'AGENT_VERSION',
@@ -95,11 +107,17 @@ describe('security operations and evaluation views', () => {
       Promise.resolve(
         options.method === 'POST'
           ? response({
-              requestId: ID,
+              requestId: new Headers(options.headers).get('Idempotency-Key'),
+              workflowId: null,
+              generation: null,
               decision: 'ALLOW',
               state: 'RELEASED',
               reasonCodes: [],
+              message: 'Quarantine released. A separate explicit resume is required.',
               replayed: false,
+              quarantineId: ID,
+              scope: 'AGENT_VERSION',
+              target: { agentId: 'kyc-agent', agentVersion: 1 },
             })
           : response(impact),
       ),
