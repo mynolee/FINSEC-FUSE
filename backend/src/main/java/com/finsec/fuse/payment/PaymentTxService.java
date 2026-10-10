@@ -8,6 +8,7 @@ import com.finsec.fuse.observation.QuarantineObservation;
 import com.finsec.fuse.persistence.*;
 import com.finsec.fuse.policy.DelegationService;
 import com.finsec.fuse.policy.PolicyException;
+import com.finsec.fuse.policy.QuarantineMatcher;
 import com.finsec.fuse.quarantine.QuarantineService;
 import java.time.Instant;
 import java.util.*;
@@ -23,9 +24,10 @@ public class PaymentTxService {
     private final Db db; private final Json json; private final TimeSource time; private final FusePolicy policy;
     private final ActionRequests actions; private final PaymentSupport support; private final PaymentRiskService risk;
     private final DelegationService grants; private final ObjectProvider<PaymentTestHooks> hooks; private final QuarantineService quarantine;
+    private final QuarantineMatcher matcher;
     public PaymentTxService(Db db,Json json,TimeSource time,FusePolicy policy,ActionRequests actions,
-        PaymentSupport support,PaymentRiskService risk,DelegationService grants,ObjectProvider<PaymentTestHooks> hooks,QuarantineService quarantine) {
-        this.db=db;this.json=json;this.time=time;this.policy=policy;this.actions=actions;this.support=support;this.risk=risk;this.grants=grants;this.hooks=hooks;this.quarantine=quarantine;
+        PaymentSupport support,PaymentRiskService risk,DelegationService grants,ObjectProvider<PaymentTestHooks> hooks,QuarantineService quarantine,QuarantineMatcher matcher) {
+        this.db=db;this.json=json;this.time=time;this.policy=policy;this.actions=actions;this.support=support;this.risk=risk;this.grants=grants;this.hooks=hooks;this.quarantine=quarantine;this.matcher=matcher;
     }
     @Transactional
     public Map<String,Object> reserve(UUID jobId,UUID leaseToken) {
@@ -59,8 +61,16 @@ public class PaymentTxService {
         var loan=db.required("select * from agent_result where id=?",uuid(workflow,"current_loan_result_id"));
         UUID loanRunId=uuid(loan,"run_id");
         var parentGrant=db.required("select * from delegation_grant where target_run_id=?",loanRunId);
-        Map<String,Object> agent;
-        try {agent=paymentAgent(workflow);} catch(PolicyException unavailable) {quarantine.recordAgentHold(workflowId,"PAYMENT");return stop(workflow,job,unavailable.reasonCode(),"BLOCKED","DENY",now);}
+        var selectedAgent=paymentAgent(workflow);
+        if(selectedAgent.isEmpty()) {
+            // Absence is an operational hold unless an actual quarantine applies. This branch
+            // precedes any payment run, grant or reservation; database failures still propagate.
+            quarantine.recordAgentHold(workflowId,"PAYMENT");
+            boolean quarantined=matcher.workflowQuarantined(workflowId);
+            return stop(workflow,job,quarantined?"QUARANTINED":"DEPENDENCY_UNAVAILABLE",
+                quarantined?"BLOCKED":"ON_HOLD",quarantined?"DENY":"ERROR",now);
+        }
+        var agent=selectedAgent.get();
         var stage=db.required("select * from workflow_stage where workflow_id=? and stage='PAYMENT'",workflowId);
         UUID runId=UUID.randomUUID(); int runIndex=integer(stage,"run_count")+1;
         db.update("update workflow_stage set run_count=? where workflow_id=? and stage='PAYMENT'",runIndex,workflowId);
@@ -182,7 +192,7 @@ public class PaymentTxService {
         db.update("update workflow_job set state='FAILED',last_error=?,completed_at=? where id=? and state in ('PENDING','RUNNING')",reason,now,uuid(job,"id"));
         db.update("update agent_run set status='FAILED',completed_at=? where id=? and status in ('QUEUED','RUNNING')",now,uuid(job,"run_id"));
         support.state(workflowId,state,decision,reason,now);
-        support.audit(actionId,workflowId,uuid(job,"run_id"),null,WORKER,"DENY".equals(decision)?"POLICY_DENIED":"APPROVAL_WAITING",reason,Json.ordered("jobId",uuid(job,"id")),now);
+        support.audit(actionId,workflowId,uuid(job,"run_id"),null,WORKER,"ERROR".equals(decision)?"SYSTEM_ERROR":"DENY".equals(decision)?"POLICY_DENIED":"APPROVAL_WAITING",reason,Json.ordered("jobId",uuid(job,"id")),now);
         return support.response(actionId,workflow,state,decision,reason,"Mock payment was not executed.");
     }
     private Map<String,Object> late(Map<String,Object> workflow,Map<String,Object> job,UUID leaseToken,Instant now) {
@@ -207,7 +217,7 @@ public class PaymentTxService {
     private boolean isSecurityDenial(String reason) {
         return Set.of("SIGNATURE_INVALID","CONTEXT_MISMATCH","SCOPE_EXCEEDED","EVIDENCE_MISSING","EVIDENCE_INVALID").contains(reason);
     }
-    private Map<String,Object> paymentAgent(Map<String,Object> workflow) {
+    private Optional<Map<String,Object>> paymentAgent(Map<String,Object> workflow) {
         String recoveryAgent=str(workflow,"recovery_agent_id");
         Integer recoveryVersion=(Integer)workflow.get("recovery_agent_version");
         boolean paymentReplacement=recoveryAgent!=null && db.one("select agent_id from agent_registry where agent_id=? and version=? and role='PAYMENT'",recoveryAgent,recoveryVersion).isPresent();
@@ -215,9 +225,9 @@ public class PaymentTxService {
             String agent=str(candidate,"agent_id");int version=integer(candidate,"version");
             if(paymentReplacement && (!agent.equals(recoveryAgent) || version!=recoveryVersion))continue;
             if(!policy.safeAgentVersions().contains(agent+":"+version))continue;
-            if(db.one("select id from quarantine where scope='AGENT_VERSION' and agent_id=? and agent_version=? and status='ACTIVE'",agent,version).isEmpty())return candidate;
+            if(db.one("select id from quarantine where scope='AGENT_VERSION' and agent_id=? and agent_version=? and status='ACTIVE'",agent,version).isEmpty())return Optional.of(candidate);
         }
-        throw new PolicyException("QUARANTINED");
+        return Optional.empty();
     }
     private void ledger(Map<String,Object> workflow,UUID reservationId,UUID runId,UUID actionId,String event,int points,Instant now) {
         db.update("insert into risk_ledger(id,workflow_id,generation,stage,event_type,points,action_id,run_id,reservation_id,created_at) values(?,?,?,'PAYMENT',?,?,?,?,?,?)",
