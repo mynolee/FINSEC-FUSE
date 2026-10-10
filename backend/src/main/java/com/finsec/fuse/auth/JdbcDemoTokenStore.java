@@ -9,7 +9,7 @@ import org.springframework.jdbc.datasource.DataSourceUtils;
 
 /** No admission cache or writes; a separate READ COMMITTED statement supplies time and all bindings. */
 @Repository
-public final class JdbcDemoTokenStore implements DemoTokenStore {
+public class JdbcDemoTokenStore implements DemoTokenStore {
     private final javax.sql.DataSource source;
     public JdbcDemoTokenStore(JdbcTemplate jdbc) { source=Objects.requireNonNull(jdbc.getDataSource()); }
     @Override public Snapshot lookup(String fingerprint,List<Binding> configured) {

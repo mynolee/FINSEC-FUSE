@@ -78,9 +78,11 @@ public final class StartupAdmissionHarness {
             Path keyFile=work.resolve("ephemeral-signing-key");Files.write(keyFile,key);privateFile(keyFile);Arrays.fill(key,(byte)0);
             String service=DevActorRegistry.generateToken(),reviewer=DevActorRegistry.generateToken(),developer=DevActorRegistry.generateToken();
             // Fresh scenario setup only; prepare, subject and recovery reuse the unchanged ledger.
-            org.flywaydb.core.Flyway.configure().dataSource(pg.getPostgresDatabase())
+            // Keep the connection URL identical to the owned URL checked by the fixture.
+            var owner=new org.springframework.jdbc.datasource.DriverManagerDataSource(url,"postgres","");
+            org.flywaydb.core.Flyway.configure().dataSource(owner)
                 .locations("classpath:db/migration").load().migrate();
-            DemoTokenTestFixture.initializeOwned(pg.getPostgresDatabase(),url,
+            DemoTokenTestFixture.initializeOwned(owner,url,
                 Map.of("kyc-service",service,"reviewer",reviewer));
             var originalAuth=snapshot(url);
             agent=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
