@@ -619,6 +619,29 @@ class RegistryDiagnosticsTest(unittest.TestCase):
 
 
 class StructuredDiagnosticsTest(unittest.TestCase):
+    FRONTEND_TEST_FILES = (
+        'frontend/src/App.test.tsx', 'frontend/src/LiveExperiments.test.tsx',
+        'frontend/src/Operations.test.tsx', 'frontend/src/PotentialImpact.test.tsx',
+        'frontend/src/api.test.ts', 'frontend/src/browserSecurity.test.tsx',
+        'frontend/src/experimentExport.test.tsx', 'frontend/src/format.test.ts',
+        'frontend/src/hooks.test.tsx', 'frontend/src/safeReporter.test.ts',
+    )
+    SOURCE_LINES = 20
+
+    def setUp(self):
+        # Tooling-only branches do not contain the feature's frontend sources.
+        # Exercise real source-line validation against synthetic files instead.
+        directory = tempfile.TemporaryDirectory(prefix='fuse-test-sources-')
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        for filename in self.FRONTEND_TEST_FILES:
+            path = root / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('// synthetic test source\n' * self.SOURCE_LINES)
+        root_patch = patch.object(diagnostics, 'ROOT', root)
+        root_patch.start()
+        self.addCleanup(root_patch.stop)
+
     def report(self, status='passed'):
         return {'success': status == 'passed', 'numTotalTests': 1,
                 'numPassedTests': int(status == 'passed'), 'numFailedTests': int(status == 'failed'),
@@ -645,13 +668,7 @@ class StructuredDiagnosticsTest(unittest.TestCase):
         self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
 
     def test_potential_impact_report_joins_all_reviewed_frontend_suites(self):
-        files = (
-            'frontend/src/App.test.tsx', 'frontend/src/LiveExperiments.test.tsx',
-            'frontend/src/Operations.test.tsx', 'frontend/src/PotentialImpact.test.tsx',
-            'frontend/src/api.test.ts', 'frontend/src/browserSecurity.test.tsx',
-            'frontend/src/experimentExport.test.tsx', 'frontend/src/format.test.ts',
-            'frontend/src/hooks.test.tsx', 'frontend/src/safeReporter.test.ts',
-        )
+        files = self.FRONTEND_TEST_FILES
         report = self.report()
         report['testResults'] = []
         for filename in files:
@@ -725,6 +742,32 @@ class StructuredDiagnosticsTest(unittest.TestCase):
             result = diagnostics.frontend_summary(report, 1)
             self.assertIsNone(result['failedTests'][0]['line'])
             self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
+
+    def test_failure_lines_are_bounded_by_actual_source_length(self):
+        for line, expected in ((1, 1), (self.SOURCE_LINES, self.SOURCE_LINES),
+                               (self.SOURCE_LINES + 1, None)):
+            with self.subTest(line=line):
+                report = self.report('failed')
+                report['testResults'][0]['assertionResults'][0]['location']['line'] = line
+                result, summary = self.frontend_invoke(report, 1)
+                self.assertEqual(result, 1)
+                self.assertEqual(summary['reportState'], 'PARSED')
+                self.assertEqual(summary['failedTests'][0]['line'], expected)
+                self.assertNotIn('PRIVATE_MARKER', json.dumps(summary))
+
+    def test_allowlisted_but_missing_source_remains_fail_closed(self):
+        for filename in ('frontend/src/api.test.ts', 'frontend/src/PotentialImpact.test.tsx'):
+            with self.subTest(filename=filename):
+                (diagnostics.ROOT / filename).unlink()
+                report = self.report()
+                report['testResults'][0]['name'] = filename
+                with self.assertRaises(OSError):
+                    diagnostics.frontend_summary(report, 0)
+                result, summary = self.frontend_invoke(report, 0)
+                self.assertEqual(result, 1)
+                self.assertEqual(summary['reportState'], 'INVALID')
+                self.assertEqual(summary['status'], 'FAIL')
+                self.assertNotIn('PRIVATE_MARKER', json.dumps(summary))
 
     def test_inconsistent_counts_unknown_status_and_empty_reports_fail(self):
         for key, value in (('numTotalTests', 2), ('numPassedTests', True), ('numFailedTests', -1)):
@@ -818,7 +861,8 @@ class StructuredDiagnosticsTest(unittest.TestCase):
             self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
 
     def test_workflow_preserves_build_start_once_and_existing_timeouts(self):
-        workflow = (diagnostics.ROOT / '.github/workflows/ci.yml').read_text()
+        # Workflow checks must inspect the checkout, not the synthetic source root.
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
         self.assertEqual(workflow.count('run: python scripts/ci-verify.py prepare'), 1)
         self.assertEqual(workflow.count('-- docker compose build'), 1)
         self.assertEqual(workflow.count('-- docker compose up --no-build --detach --wait --wait-timeout 240'), 1)
