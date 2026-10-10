@@ -50,7 +50,9 @@ Release `remediation` includes safeDocumentId/safeDocumentVersion/checkEvidenceI
 
 Optional `policyHeldWorkflowIds` marks workflows held before any actual source consumption or run. The current affected list labels these separately and never fabricates graph execution.
 
-Actual impact fields: runCount/roleCount/workflowCount/customerCount/paymentCount/paidAmountKrw/atRiskPendingAmountKrw. Potential fields: roles/maxDownstreamDepth/registeredCustomerCount/perApplicationLimitKrw/missingPolicyFields. Null does not become zero. paidBeforeQuarantine can be an array of payment bindings.
+Actual impact fields: runCount/roleCount/workflowCount/customerCount/paymentCount/paidAmountKrw/atRiskPendingAmountKrw. Potential fields: roles/maxDownstreamDepth/registeredCustomerCount/perApplicationLimitKrw/missingPolicyFields/applicationCount/totalAmountKrw/currency. Null does not become zero. paidBeforeQuarantine can be an array of payment bindings.
+
+Potential `applicationCount` is an integer; `totalAmountKrw` is an exact nonnegative decimal integer **string**, and `currency` is `KRW`. An empty eligible population returns 0/"0"/"KRW". The UI labels the amount **잠재 영향 금액**, explained as **영향받을 수 있는 신청 금액의 합계**. See the [incident impact API contract](../docs/incident-impact-api.md) for included current states, incident scope, application-ID deduplication, and aggregation rules.
 
 ## Experiments
 

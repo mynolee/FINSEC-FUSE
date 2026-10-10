@@ -98,6 +98,9 @@ export interface Impact extends Row {
     atRiskPendingAmountKrw: number;
   };
   potential: {
+    applicationCount?: number | null;
+    totalAmountKrw?: string | null;
+    currency?: string | null;
     roles: string[];
     maxDownstreamDepth: number | null;
     registeredCustomerCount: number | null;

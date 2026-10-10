@@ -222,6 +222,12 @@ test('real browser quarantine impact, safe release and explicit recovery preserv
     1, 1, 0,
   ]);
   expect(impact.actual.atRiskPendingAmountKrw).toBe(1000000);
+  expect(impact.potential.applicationCount).toBe(1);
+  expect(impact.potential.totalAmountKrw).toBe('1000000');
+  expect(impact.potential.currency).toBe('KRW');
+  const potentialSummary = page.getByRole('group', { name: '동일 범위의 잠재 영향 금액과 대상 신청 수' });
+  await expect(potentialSummary.getByText('1,000,000원', { exact: true })).toBeVisible();
+  await expect(potentialSummary.getByText('1건', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: id, exact: true })).toBeVisible();
 
   checkpoint('QUARANTINE_RELEASE');

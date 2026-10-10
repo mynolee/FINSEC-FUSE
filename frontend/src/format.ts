@@ -48,6 +48,16 @@ export function currency(amount: unknown): string {
     ? `${new Intl.NumberFormat('ko-KR').format(amount)}원`
     : '미제공';
 }
+/** Detail API money is an exact integer string; never coerce it through Number. */
+export function integerKrw(amount: unknown, currencyCode: unknown): string {
+  if (currencyCode !== 'KRW' || typeof amount !== 'string' || !/^(0|[1-9]\d*)$/.test(amount)) return '미제공';
+  return `${new Intl.NumberFormat('ko-KR').format(BigInt(amount))}원`;
+}
+export function applicationCount(count: unknown): string {
+  return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0
+    ? `${new Intl.NumberFormat('ko-KR').format(count)}건`
+    : '미제공';
+}
 export function time(iso: unknown): string {
   if (typeof iso !== 'string' || !Number.isFinite(Date.parse(iso))) return formatValue(iso);
   return (
