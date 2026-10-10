@@ -22,15 +22,17 @@ public class RecoveryService {
     private final PaymentSupport support;private final PaymentRiskService risk;private final QuarantineMatcher matcher;
     private final QuarantineService quarantines;private final EvidenceValidator evidence;
     private final com.finsec.fuse.workflow.WorkflowJournal journal;
+    private final com.finsec.fuse.config.FuseReadinessHealthIndicator readiness;
     public RecoveryService(Db db,TimeSource time,FusePolicy policy,ActionRequests actions,PaymentSupport support,
-        PaymentRiskService risk,QuarantineMatcher matcher,QuarantineService quarantines,EvidenceValidator evidence,com.finsec.fuse.workflow.WorkflowJournal journal) {
-        this.db=db;this.time=time;this.policy=policy;this.actions=actions;this.support=support;this.risk=risk;this.matcher=matcher;this.quarantines=quarantines;this.evidence=evidence;this.journal=journal;
+        PaymentRiskService risk,QuarantineMatcher matcher,QuarantineService quarantines,EvidenceValidator evidence,com.finsec.fuse.workflow.WorkflowJournal journal,com.finsec.fuse.config.FuseReadinessHealthIndicator readiness) {
+        this.db=db;this.time=time;this.policy=policy;this.actions=actions;this.support=support;this.risk=risk;this.matcher=matcher;this.quarantines=quarantines;this.evidence=evidence;this.journal=journal;this.readiness=readiness;
     }
     @Transactional
     public Map<String,Object> resume(Actor actor,UUID workflowId,UUID actionId,ResumeRequest request) {
         RoleGuard.require(actor,"LOAN_REVIEWER");db.gate();var workflow=db.lockWorkflow(workflowId);var now=time.now();
         var app=support.application(workflow);RoleGuard.requireCustomer(actor,str(app,"customer_id"));
         var replay=actions.replay(actionId,actor.actorId(),"WORKFLOW_RESUME",workflowId,request);if(replay.isPresent())return replay.get();
+        readiness.requireReady();
         if(integer(workflow,"generation")!=request.expectedGeneration())throw new ApiException(409,"WORKFLOW_CHANGED","The workflow generation changed.");
         if(!Set.of("BLOCKED","ON_HOLD").contains(str(workflow,"state")) || db.one("select id from mock_payment where workflow_id=?",workflowId).isPresent())
             throw new ApiException(409,"INVALID_STATE","Only blocked or held unpaid workflows can resume.");
