@@ -46,7 +46,10 @@ public final class ExperimentPairRunner {
             else try {output=new LinkedHashMap<>(arms.run(pairedFixture,hash,repeat,baseline));}
             catch(Exception failure){output=error(fixture,hash,repeat,baseline,"ENVIRONMENT_ERROR:"+failure.getClass().getSimpleName(),live);}
             if(capture!=null)stamp(output,capture);
-            if(exclusion==null && (!ExperimentPairedInput.VERSION.equals(output.get("pairedInputVersion")) ||
+            // Technical failures have no completed arm digest; preserve their root-cause exclusion.
+            if(exclusion==null && !"ERROR".equals(output.get("status")) && !"ERROR".equals(output.get("decision")) &&
+                    Objects.toString(output.get("exclusionReason"),"").isEmpty() &&
+                    (!ExperimentPairedInput.VERSION.equals(output.get("pairedInputVersion")) ||
                     !Objects.equals(pairedHash,output.get("pairedInputHash")))) {
                 output.put("exclusionReason","UNPAIRED_INPUT");
             }
