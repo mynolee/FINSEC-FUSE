@@ -285,4 +285,167 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
             return rows;
         });
     }
+
+    private static final String REJECTION_COMMENT="Reviewed synthetic application / rejected";
+    private record StoredRejection(Saved saved,String reviewHash,String receiptJson,byte[] replayBody,
+                                   Map<String,List<String>> rows) {}
+
+    @Timeout(60) @Test
+    void parsedEquivalentJsonReplaysStoredApprovalRejectionWithoutAnyDurableMutation() throws Exception {
+        UUID independent=populatedIndependentWorkflow();
+        var original=storedApprovalRejection();var saved=original.saved();
+        approvalRejectionReplay(original,saved.body());
+        String reordered="{\"comment\":"+json.write(REJECTION_COMMENT)+",\"reviewSnapshotHash\":"
+            +json.write(original.reviewHash())+",\"decision\":\"REJECT\"}";
+        String spaced=" { \n \"decision\" : \"REJECT\" , \"reviewSnapshotHash\" : "
+            +json.write(original.reviewHash())+" , \"comment\" : "+json.write(REJECTION_COMMENT)+" \n } \t";
+        // Construct JSON escapes at runtime without changing the conservative source identity parser.
+        String escaped=saved.body().replace("\"decision\"","\""+"\\"+"u0064ecision\"")
+            .replace("\"REJECT\"","\""+"\\"+"u0052EJECT\"")
+            .replace("Reviewed","\\"+"u0052eviewed").replace(" / "," \\/ ");
+        for(String body:List.of(reordered,spaced,escaped)) {
+            assertNotEquals(saved.body(),body,"Each normalization control must change the actual request bytes");
+            assertEquals(json.map(saved.body()),json.map(body));
+            assertEquals(json.read(saved.body(),ApprovalRequest.class),json.read(body,ApprovalRequest.class));
+            approvalRejectionReplay(original,body);
+        }
+        // Equivalent representations cannot bypass present authority or original action ownership.
+        exerciseRejectionAuthorityMatrix(original,escaped,independent);
+        assertStoredRejectionUnchanged(original);
+    }
+
+    @Timeout(60) @Test
+    void changedApprovalRejectionFieldsConflictWithoutPoisoningStoredReceipt() throws Exception {
+        UUID independent=populatedIndependentWorkflow();
+        var original=storedApprovalRejection();
+        approvalRejectionReplay(original,original.saved().body());
+        approvalRejectionConflict(original,new ApprovalRequest(ApprovalRequest.Decision.APPROVE,
+            original.reviewHash(),REJECTION_COMMENT));
+        String changedHash=(original.reviewHash().charAt(0)=='0'?"1":"0")+original.reviewHash().substring(1);
+        assertTrue(changedHash.matches("[0-9a-f]{64}"));assertNotEquals(original.reviewHash(),changedHash);
+        approvalRejectionConflict(original,new ApprovalRequest(ApprovalRequest.Decision.REJECT,
+            changedHash,REJECTION_COMMENT));
+        approvalRejectionConflict(original,new ApprovalRequest(ApprovalRequest.Decision.REJECT,
+            original.reviewHash(),"Different synthetic rejection reason"));
+        // Whitespace inside a comment is meaningful, unlike whitespace between JSON tokens.
+        approvalRejectionConflict(original,new ApprovalRequest(ApprovalRequest.Decision.REJECT,
+            original.reviewHash(),REJECTION_COMMENT+" "));
+        assertEquals("REJECTED",workflow(independent).get("state"));
+        assertStoredRejectionUnchanged(original);
+    }
+
+    private StoredRejection storedApprovalRejection() throws Exception {
+        UUID target=ready102();var owner=identity("LOAN_REVIEWER");
+        String hash=(String)approvals.preview(owner.actor(),target).get("reviewSnapshotHash");
+        var saved=save(target,"/approvals",new ApprovalRequest(ApprovalRequest.Decision.REJECT,hash,
+            REJECTION_COMMENT),201,owner,"ALLOW",List.of("REVIEWER_REJECTED"),"APPROVAL","LOAN_REVIEWER_REJECTED");
+        assertEquals("REJECTED",saved.reply().get("state"));
+        assertEquals(1,((Number)saved.reply().get("generation")).intValue());
+        assertNotNull(saved.reply().get("approvalId"));assertNull(saved.reply().get("payJobId"));
+        assertEquals(0,((Number)saved.reply().get("extraRiskLimit")).intValue());
+        assertEquals(policy.automaticRiskLimit(),((Number)saved.reply().get("riskLimit")).intValue());
+        var approval=db.required("SELECT * FROM approval WHERE id=?",
+            UUID.fromString(saved.reply().get("approvalId").toString()));
+        assertEquals(target,approval.get("workflow_id"));assertEquals(owner.actor().actorId(),approval.get("actor_id"));
+        assertEquals("REJECTED",approval.get("status"));assertEquals(hash,approval.get("review_snapshot_hash"));
+        assertEquals(REJECTION_COMMENT,approval.get("comment"));assertEquals(0,integer(approval,"extra_risk"));
+        assertEquals(policy.automaticRiskLimit(),integer(approval,"risk_limit"));
+        assertEquals(instant(approval,"expires_at"),java.time.Instant.parse(saved.reply().get("expiresAt").toString()));
+        assertEquals("REJECTED",workflow(target).get("state"));
+        assertEquals("REVIEWER_REJECTED",workflow(target).get("last_reason_code"));
+        assertRisk(target,policy.kycRisk()+policy.loanRisk(),0);
+        assertEquals(1,count("approval"));assertEquals(0,count("payment_reservation"));
+        assertEquals(0,count("mock_payment"));assertEquals(0,events("CONSUME"));
+        assertTrue(db.query("SELECT id FROM workflow_job WHERE phase='PAY'").isEmpty());
+        assertTrue(jobs.claim().isEmpty(),"No asynchronous work may race the committed-row oracle");
+        var receipt=db.required("SELECT * FROM action_request WHERE action_id=?",saved.actionId());
+        assertNotNull(receipt.get("completed_at"));
+        String receiptJson=receipt.get("result_json").toString();
+        var replay=json.map(receiptJson);assertEquals(saved.reply(),replay);replay.put("replayed",true);
+        return new StoredRejection(saved,hash,receiptJson,json.bytes(replay),durableRows());
+    }
+
+    private void approvalRejectionReplay(StoredRejection original,String body) throws Exception {
+        clock.set(clock.now().plusSeconds(1));
+        var saved=withBody(original.saved(),body);
+        var response=client.send(request(saved,saved.owner()),HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(201,response.statusCode());assertEquals(saved.status(),response.statusCode());
+        var expected=new LinkedHashMap<>(saved.reply());expected.put("replayed",true);
+        assertEquals(expected,json.map(response.body()),"Only replayed may change in the original reviewer rejection");
+        assertArrayEquals(original.replayBody(),response.body(),"Return the encoded stored reply with only replayed changed");
+        assertStoredRejectionUnchanged(original);
+    }
+
+    private void approvalRejectionConflict(StoredRejection original,ApprovalRequest changed) throws Exception {
+        var saved=original.saved();String body=json.write(changed);
+        assertNotEquals(json.read(saved.body(),ApprovalRequest.class),changed);
+        assertNotEquals(json.map(saved.body()),json.map(body));
+        clock.set(clock.now().plusSeconds(1));
+        var response=post(withBody(saved,body),saved.owner());assertEquals(409,response.statusCode(),response.body());
+        var error=json.map(response.body());
+        assertEquals(Set.of("requestId","workflowId","generation","state","decision","reasonCodes","message","replayed"),
+            error.keySet(),"Conflict must not disclose the saved reviewer-rejection receipt");
+        assertEquals(saved.actionId().toString(),error.get("requestId"));
+        assertEquals("DENY",error.get("decision"));assertEquals(List.of("REPLAY_CONFLICT"),error.get("reasonCodes"));
+        assertEquals(false,error.get("replayed"));
+        for(String field:List.of("workflowId","generation","state"))assertNull(error.get(field));
+        assertNotEquals(saved.reply().get("message"),error.get("message"));
+        assertRejectionReceiptHidden(original,response.body());
+        assertRejectionReceiptHidden(original,String.valueOf(error));
+        assertStoredRejectionUnchanged(original);
+        approvalRejectionReplay(original,saved.body()); // Each conflict leaves the original action replayable.
+    }
+
+    private void assertStoredRejectionUnchanged(StoredRejection original) {
+        var receipt=db.required("SELECT * FROM action_request WHERE action_id=?",original.saved().actionId());
+        assertEquals(original.receiptJson(),receipt.get("result_json").toString(),"Stored JSON bytes must remain untouched");
+        assertEquals("SUCCEEDED",receipt.get("status"));assertEquals("ALLOW",receipt.get("decision"));
+        assertEquals(original.rows(),durableRows(),"Preserve every committed row and timestamp, including the independent workflow");
+    }
+
+    private void exerciseRejectionAuthorityMatrix(StoredRejection original,String body,UUID independent) throws Exception {
+        var saved=original.saved();
+        assertTrue(jobs.claim().isEmpty(),"No asynchronous work may race the committed-row oracle");
+        approvalRejectionReplay(original,body);
+        approvalRejectionDenied(original,body,identity("LOAN_REVIEWER"),403,"FORBIDDEN");
+        for(String role:List.of("CUSTOMER","SECURITY_OPERATOR","DEVELOPER","FUSE_WORKER","KYC_SERVICE"))
+            approvalRejectionDenied(original,body,identity(role),403,"FORBIDDEN");
+        registry.updateScope(saved.owner().actor().actorId(),Set.of("customer-103"));
+        assertEquals(Set.of("customer-103"),registry.resolve(saved.owner().token()).customerIds());
+        approvalRejectionDenied(original,body,saved.owner(),403,"FORBIDDEN");
+        registry.updateScope(saved.owner().actor().actorId(),Set.of("customer-102"));
+        assertEquals(saved.owner().actor(),registry.resolve(saved.owner().token()));
+        approvalRejectionReplay(original,body);
+        registry.revoke(saved.owner().actor().actorId());assertNull(registry.resolve(saved.owner().token()));
+        approvalRejectionDenied(original,body,saved.owner(),401,"UNAUTHENTICATED");
+        assertEquals("REJECTED",workflow(independent).get("state"));
+        assertStoredRejectionUnchanged(original);
+    }
+
+    private void approvalRejectionDenied(StoredRejection original,String body,Identity caller,int status,String reason)
+        throws Exception {
+        clock.set(clock.now().plusSeconds(1));
+        var saved=withBody(original.saved(),body);
+        var response=post(saved,caller);assertEquals(status,response.statusCode(),caller.actor().role()+": "+response.body());
+        var error=json.map(response.body());
+        assertEquals(Set.of("requestId","workflowId","generation","state","decision","reasonCodes","message","replayed"),
+            error.keySet(),"No saved receipt fields may escape in the public authorization envelope");
+        assertEquals("DENY",error.get("decision"));assertEquals(List.of(reason),error.get("reasonCodes"));
+        assertEquals(false,error.get("replayed"));
+        for(String field:List.of("workflowId","generation","state","approvalId","payJobId","kycJobId","reviewSnapshotHash"))
+            assertNull(error.get(field),"Authorization error must not disclose historical "+field);
+        assertNotEquals(saved.reply().get("message"),error.get("message"));
+        assertRejectionReceiptHidden(original,response.body());
+        assertRejectionReceiptHidden(original,String.valueOf(error));
+        assertStoredRejectionUnchanged(original);
+    }
+
+    private void assertRejectionReceiptHidden(StoredRejection original,String responseBody) {
+        var saved=original.saved();
+        assertFalse(responseBody.contains(saved.workflowId().toString()));
+        assertFalse(responseBody.contains(saved.reply().get("approvalId").toString()));
+        assertFalse(responseBody.contains(original.reviewHash()));
+        assertFalse(responseBody.contains(REJECTION_COMMENT));
+        assertFalse(responseBody.contains("REVIEWER_REJECTED"));
+    }
 }
