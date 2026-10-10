@@ -8,6 +8,7 @@ import com.finsec.fuse.policy.EvidenceRecord;
 import com.finsec.fuse.workflow.KycContract;
 import java.time.Instant;
 import java.util.*;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -31,12 +32,42 @@ class AuthenticEvidenceRejectionIT extends PaymentFixture {
         assertPairValid(ids,clock.now());
         mutateAuthenticEvidence(kind,defect);
         assertOnlySelectedPredicateFails(ids,kind,defect);
+        assertFalseVerifiedCommitsDenialAndIsolatesCustomer(ids);
+    }
+
+    @Test
+    void bothAuthenticPassEvidenceExpiredBeforePreparationCommitDenial() {
+        var ids=issueEvidence101();
+        Instant t0=clock.now();
+        assertPairValid(ids,t0);
+        for(String kind:List.of("ID_DOC","FACE_MATCH"))mutateAuthenticEvidence(kind,"EXPIRED");
+        var records=registry();
+        assertEquals(2,ids.size());assertEquals(2,Set.copyOf(ids).size());
+        assertEquals(Set.copyOf(ids),records.keySet());
+        assertEquals(Set.of("ID_DOC","FACE_MATCH"),new HashSet<>(records.values().stream().map(EvidenceRecord::evidenceType).toList()));
+        for(var e:records.values()) {
+            assertEquals("PASS",e.outcome());
+            assertEquals(t0.minusSeconds(1),e.expiresAt());
+            assertFalse(t0.isBefore(e.issuedAt()));
+        }
+        // Both records are authentic apart from expiry; no clock advance or lease expiry is involved.
+        assertPairValid(ids,t0.minusSeconds(2));
+        var denied=checks().evaluate("VERIFIED",ids,Set.copyOf(ids),records,CUSTOMER,t0);
+        assertEquals("EVIDENCE_INVALID",denied.reasonCode());assertTrue(denied.securityViolation());
+        assertEquals(t0,clock.now());
+        assertFalseVerifiedCommitsDenialAndIsolatesCustomer(ids);
+        assertEquals(t0,clock.now());
+    }
+
+    private void assertFalseVerifiedCommitsDenialAndIsolatesCustomer(List<UUID> ids) {
         Instant unchangedTime=clock.now();
         UUID workflowId=start(CUSTOMER);
         var prepared=prepareKyc();
         assertReachableBoundInput(prepared,ids);
         var response=verified(prepared);
         assertTrue(response.boundTo(prepared.input()));
+        assertEquals(KycContract.ProposalStatus.VERIFIED,response.proposal().status());
+        assertEquals(Set.copyOf(ids),Set.copyOf(response.proposal().evidenceIds()));
         var lineageBefore=lineage(prepared.input().runId());
         var riskBefore=rows("risk_ledger",workflowId);
         var auditBefore=rows("audit_event",workflowId);
@@ -48,6 +79,7 @@ class AuthenticEvidenceRejectionIT extends PaymentFixture {
 
         assertEquals(unchangedTime,clock.now(),"Evidence was expired before preparation; no job clock advance");
         assertBlocked(workflowId,prepared);
+        assertEquals(1,count("quarantine"));
         assertEquals(lineageBefore,lineage(prepared.input().runId()));
         assertEquals(prepared.input().inputSnapshotHash(),str(db.required("select input_snapshot_hash from agent_run where id=?",prepared.input().runId()),"input_snapshot_hash"));
         assertPreservedProposal(prepared,response,"INVALIDATED");
@@ -62,6 +94,7 @@ class AuthenticEvidenceRejectionIT extends PaymentFixture {
 
         // A RUN quarantine must not prevent another customer's complete mock workflow.
         var blockedHistory=rows("audit_event",workflowId);
+        var blockedWorkflow=workflow(workflowId);
         UUID normal=ready102();
         var pay=approve(normal);
         paymentAgent.execute(pay.jobId(),pay.token());
@@ -71,6 +104,10 @@ class AuthenticEvidenceRejectionIT extends PaymentFixture {
         assertEquals(1,count("mock_payment"));
         assertEquals(1,count("quarantine"));
         assertEquals(blockedHistory,rows("audit_event",workflowId));
+        assertEquals(blockedWorkflow,workflow(workflowId));
+        assertEquals(riskBefore,rows("risk_ledger",workflowId));
+        assertArrayEquals(inputBefore,(byte[])db.required("select input_bytes from agent_run where id=?",prepared.input().runId()).get("input_bytes"));
+        assertEquals(evidenceBefore,db.query("select row_to_json(t)::text body from trusted_evidence t where customer_id=? order by id",CUSTOMER));
         assertBlocked(workflowId,prepared);
         assertEquals(lineageBefore,lineage(prepared.input().runId()));
         assertEquals(prepared.input().inputSnapshotHash(),str(db.required("select input_snapshot_hash from agent_run where id=?",prepared.input().runId()),"input_snapshot_hash"));
