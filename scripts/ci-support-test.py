@@ -644,6 +644,60 @@ class StructuredDiagnosticsTest(unittest.TestCase):
         self.assertEqual(result['counts'], {'total': 1, 'passed': 1, 'failed': 0, 'skipped': 0, 'todo': 0})
         self.assertNotIn('PRIVATE_MARKER', json.dumps(result))
 
+    def test_potential_impact_report_joins_all_reviewed_frontend_suites(self):
+        files = (
+            'frontend/src/App.test.tsx', 'frontend/src/LiveExperiments.test.tsx',
+            'frontend/src/Operations.test.tsx', 'frontend/src/PotentialImpact.test.tsx',
+            'frontend/src/api.test.ts', 'frontend/src/browserSecurity.test.tsx',
+            'frontend/src/experimentExport.test.tsx', 'frontend/src/format.test.ts',
+            'frontend/src/hooks.test.tsx', 'frontend/src/safeReporter.test.ts',
+        )
+        report = self.report()
+        report['testResults'] = []
+        for filename in files:
+            suite = self.report()['testResults'][0]
+            suite['name'] = str(diagnostics.ROOT / filename)
+            report['testResults'].append(suite)
+        report['numTotalTests'] = report['numPassedTests'] = len(files)
+        result, summary = self.frontend_invoke(report, 0)
+        self.assertEqual(result, 0)
+        self.assertEqual(summary['reportState'], 'PARSED')
+        self.assertEqual(summary['status'], 'PASS')
+        self.assertEqual(summary['files'], 10)
+        self.assertEqual(summary['counts'], {'total': 10, 'passed': 10, 'failed': 0, 'skipped': 0, 'todo': 0})
+        self.assertNotIn('PRIVATE_MARKER', json.dumps(summary))
+
+    def test_potential_impact_failure_preserves_redacted_source_location(self):
+        report = self.report('failed')
+        report['testResults'][0]['name'] = 'frontend/src/PotentialImpact.test.tsx'
+        result, summary = self.frontend_invoke(report, 1)
+        self.assertEqual(result, 1)
+        self.assertEqual(summary['reportState'], 'PARSED')
+        self.assertEqual(summary['status'], 'FAIL')
+        self.assertEqual(summary['failedTests'], [{
+            'file': 'frontend/src/PotentialImpact.test.tsx',
+            'testOrdinal': 1, 'line': 15, 'code': 'ASSERTION_FAILED',
+        }])
+        self.assertNotIn('PRIVATE_MARKER', json.dumps(summary))
+
+    def test_potential_impact_allowlist_does_not_admit_lookalike_paths(self):
+        for filename in ('frontend/src/PotentialImpact.test.tsx.private',
+                         'frontend/src/PotentialImpactExtra.test.tsx',
+                         'frontend/src/PotentialImpact.test.tsx/../PRIVATE_MARKER'):
+            report = self.report()
+            report['testResults'][0]['name'] = filename
+            result, summary = self.frontend_invoke(report, 0)
+            self.assertEqual(result, 1)
+            self.assertEqual(summary['reportState'], 'INVALID')
+            self.assertEqual(summary['status'], 'FAIL')
+            self.assertNotIn('PRIVATE_MARKER', json.dumps(summary))
+
+    def test_suite_count_remains_bounded_by_explicit_allowlist(self):
+        report = self.report()
+        report['testResults'] *= len(diagnostics.TEST_FILES) + 1
+        with self.assertRaisesRegex(ValueError, 'Invalid suite list'):
+            diagnostics.frontend_summary(report, 0)
+
     def test_failure_only_emits_allowlisted_file_line_and_fixed_code(self):
         result = diagnostics.frontend_summary(self.report('failed'), 1)
         self.assertEqual(result['status'], 'FAIL')
