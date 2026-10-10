@@ -14,12 +14,21 @@ import os
 from pathlib import Path
 import shlex
 import signal
+import subprocess
 import tempfile
 import time
 
 from test_process_recovery import execute, isolated_env, java_executable, positive
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def diagnostic(destination: Path, stage: str, category: str = "NONE", status: str = "RUNNING") -> None:
+    # Call sites supply closed constants only. Never include exception text or command output.
+    target = destination / "startup-admission-diagnostic.json"
+    target.write_text(json.dumps({"schemaVersion": "FUSE-STARTUP-DIAGNOSTIC-1",
+        "status": status, "scenario": "NONE", "stage": stage, "failureCategory": category}) + "\n")
+    target.chmod(0o600)
 
 
 def source_digest() -> str:
@@ -59,9 +68,14 @@ def run(args: argparse.Namespace) -> None:
                "reason": "Prerequisites and compilation not yet verified", "plannedScenarioCount": 11,
                "passedScenarioCount": 0, "syntheticModelOutputs": True, "liveRobustnessMeasured": False}
     report.write_text(json.dumps(initial, indent=2) + "\n")
-    before = source_digest()
+    stage = "SOURCE_DIGEST"
+    diagnostic(destination, stage)
+    before = ""
     started = time.monotonic()
     try:
+        before = source_digest()
+        stage = "PREREQUISITES"
+        diagnostic(destination, stage)
         java = java_executable()
         env = isolated_env()
         env = {k: v for k, v in env.items() if not k.endswith("_API_KEY")
@@ -71,6 +85,8 @@ def run(args: argparse.Namespace) -> None:
             try:
                 # Always compile this source tree. A caller-supplied stale classpath
                 # cannot establish current-source startup acceptance.
+                stage = "COMPILATION"
+                diagnostic(destination, stage)
                 classpath_file = work / "classpath.txt"
                 gradle = shlex.split(args.gradle) if args.gradle else [str(ROOT / "gradlew")]
                 code = execute(gradle + ["--no-daemon", "--console=plain", "writeTestClasspath",
@@ -78,6 +94,8 @@ def run(args: argparse.Namespace) -> None:
                                work / "gradle.log", env, args.build_timeout)
                 if code:
                     raise RuntimeError(f"Compilation failed with exit code {code}; runtime cases NOT_RUN")
+                stage = "CLASSPATH"
+                diagnostic(destination, stage)
                 classpath = classpath_file.read_text().strip()
                 if not classpath:
                     raise RuntimeError("Test runtime classpath is empty")
@@ -85,9 +103,14 @@ def run(args: argparse.Namespace) -> None:
                 scenarios.mkdir()
                 java_tmp = work / "java-tmp"
                 java_tmp.mkdir()
+                stage = "HARNESS"
+                diagnostic(destination, stage)
                 code = execute([java, f"-Djava.io.tmpdir={java_tmp}", "-cp", classpath,
                                 "com.finsec.fuse.testing.StartupAdmissionHarness", str(scenarios), str(report)],
                                work / "startup-admission.log", env, args.timeout)
+                stage = "REPORT_VALIDATION" if code == 0 else "HARNESS"
+                if code == 0:
+                    diagnostic(destination, stage)
                 output = json.loads(report.read_text())
                 after = source_digest()
                 output.update(exitCode=code, sourceHashBefore=before, sourceHashAfter=after,
@@ -99,15 +122,42 @@ def run(args: argparse.Namespace) -> None:
                 report.write_text(json.dumps(output, indent=2) + "\n")
                 if code or output.get("status") != "PASS" or output.get("passedScenarioCount") != 11:
                     raise RuntimeError(f"Startup acceptance failed or incomplete; inspect {report}")
+                diagnostic(destination, "COMPLETE", status="PASS")
                 print(f"STARTUP_ADMISSION_PASS: 11/11; real PostgreSQL 16.15, child JVMs, synthetic replay. Evidence: {report}")
             finally:
-                retain_logs(work, destination)
+                try:
+                    retain_logs(work, destination)
+                except Exception:
+                    stage = "LOG_RETENTION"
+                    raise
     except BaseException as failure:
+        category = ("TIMEOUT" if isinstance(failure, subprocess.TimeoutExpired) else
+                    "INTERRUPTED" if isinstance(failure, KeyboardInterrupt) else "EXECUTION_FAILED")
+        if stage == "HARNESS":
+            # Preserve the child's last fixed stage/scenario. A timeout still gets its own category.
+            try:
+                value = json.loads((destination / "startup-admission-diagnostic.json").read_text())
+                value["status"] = "FAIL"
+                if category != "EXECUTION_FAILED" or value.get("failureCategory") == "NONE":
+                    value["failureCategory"] = category
+                (destination / "startup-admission-diagnostic.json").write_text(json.dumps(value) + "\n")
+            except (OSError, ValueError, TypeError):
+                diagnostic(destination, stage, category, "FAIL")
+        else:
+            diagnostic(destination, stage, category, "FAIL")
         output = json.loads(report.read_text())
         if output.get("status") not in ("NOT_RUN", "SOURCE_CHANGED_DURING_RUN"):
             output["status"] = "INCOMPLETE_OR_FAILED"
+        # Invalidate terminal success before trying another fallible source read.
+        # An unreadable source tree must not preserve a child-written PASS report.
         output.update(reason=type(failure).__name__ + ": " + str(failure), sourceHashBefore=before,
-                      sourceHashAfter=source_digest(), elapsedSeconds=round(time.monotonic() - started, 3))
+                      sourceHashAfter="", sourceUnchangedDuringRun=False,
+                      elapsedSeconds=round(time.monotonic() - started, 3))
+        report.write_text(json.dumps(output, indent=2) + "\n")
+        try:
+            output["sourceHashAfter"] = source_digest()
+        except Exception:
+            pass
         report.write_text(json.dumps(output, indent=2) + "\n")
         raise
 

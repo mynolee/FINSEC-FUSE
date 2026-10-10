@@ -56,6 +56,8 @@ jobs:
         run: python scripts/container-network-test.py
       - name: Check bounded demo polling without services
         run: python scripts/run_demo_test.py
+      - name: Check startup diagnostic redaction without services
+        run: python scripts/ci-startup-report-test.py
 
   backend:
     name: Backend unit and PostgreSQL 16.15 integration
@@ -125,6 +127,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
       - name: Verify isolated startup refusal and explicit recovery
         run: python scripts/ci-run.py --label startup-admission -- python scripts/test_startup_admission.py
+      - name: Report only bounded startup failure identifiers
+        if: always()
+        run: python scripts/ci-startup-report.py
       - name: Confirm all eleven current-source scenarios and cleanup
         run: |
           python - <<'PYTHON'
