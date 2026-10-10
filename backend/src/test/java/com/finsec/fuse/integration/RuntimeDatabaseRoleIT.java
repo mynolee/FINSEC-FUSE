@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.finsec.fuse.FuseApplication;
 import com.finsec.fuse.auth.Actor;
+import com.finsec.fuse.auth.DemoTokenAdministration;
+import com.finsec.fuse.auth.DemoTokenStore;
+import com.finsec.fuse.auth.DevActorRegistry;
+import com.finsec.fuse.config.FuseReadinessHealthIndicator;
 import com.finsec.fuse.payment.ApprovalRequest;
 import com.finsec.fuse.payment.ApprovalService;
 import com.finsec.fuse.payment.PaymentAgentService;
@@ -16,10 +20,15 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.ByteArrayResource;
@@ -33,6 +42,7 @@ import org.springframework.test.context.DynamicPropertySource;
 @SpringBootTest(classes=FuseApplication.class, webEnvironment=SpringBootTest.WebEnvironment.MOCK)
 @ActiveProfiles("test")
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RuntimeDatabaseRoleIT {
     // All roles, passwords and databases belong only to PostgresSupport's disposable local process.
     // This class deliberately does not inherit FuseIntegrationTest's superuser schema-reset harness.
@@ -49,8 +59,43 @@ class RuntimeDatabaseRoleIT {
     @Autowired LoanTransactions loans;
     @Autowired ApprovalService approvals;
     @Autowired PaymentAgentService payments;
+    @Autowired DevActorRegistry tokens;
+    @Autowired FuseReadinessHealthIndicator readiness;
+    private Map<String,List<String>> authenticationBaseline;
 
     private record Database(String url,String owner,String runtime,String experimentUrl,String experimentOwner) {}
+
+    @BeforeAll void initializeAuthenticationThroughSeparateOwnerConnection() throws Exception {
+        // Spring has completed Flyway. Only this fixture's separately connected owner may issue credentials.
+        if(!DATABASE.runtime().matches("it_runtime_[a-f0-9]{32}"))
+            throw new IllegalStateException("Unexpected isolated runtime role identifier");
+        try(var owner=DriverManager.getConnection(DATABASE.url(),DATABASE.owner(),TEST_PASSWORD);
+            var statement=owner.createStatement()) {
+            assertEquals(DATABASE.url(),owner.getMetaData().getURL());
+            assertEquals(DATABASE.owner(),value(owner,"SELECT current_user"));
+            assertEquals(DATABASE.owner(),value(owner,"SELECT session_user"));
+            // V6 handles the standard fuse_runtime name. This randomized fixture follows the documented
+            // custom-role privilege review; the standard-role migration remains covered separately.
+            String runtime="\""+DATABASE.runtime()+"\"";
+            statement.execute("REVOKE ALL ON demo_auth_registry,demo_token FROM "+runtime);
+            statement.execute("GRANT SELECT ON demo_auth_registry,demo_token TO "+runtime);
+            assertEquals(0L,count("demo_auth_registry"));
+            assertEquals(0L,count("demo_token"));
+            var empty=authenticationSnapshot();
+            assertThrows(DemoTokenStore.Unavailable.class,tokens::requireReady);
+            assertTrue(empty.equals(authenticationSnapshot()),"Readiness must not initialize authentication");
+            assertFalse(tokens.configuredBindings().isEmpty(),"The fixture must use its configured synthetic bindings");
+            DemoTokenAdministration.initialize(owner,tokens.configuredBindings());
+        }
+        assertEquals(1L,count("demo_auth_registry"));
+        assertEquals((long)tokens.configuredBindings().size(),count("demo_token"));
+        authenticationBaseline=authenticationSnapshot();
+    }
+
+    @AfterEach void authenticationHistoryRemainsUnchanged() {
+        assertTrue(authenticationBaseline.equals(authenticationSnapshot()),
+            "Runtime reads, denied mutations and mock payments must preserve the full authentication ledger");
+    }
 
     @DynamicPropertySource static void runtimeDatabase(DynamicPropertyRegistry registry) {
         PostgresSupport.properties(registry);
@@ -145,6 +190,28 @@ class RuntimeDatabaseRoleIT {
         assertDenied("TRUNCATE runtime_sequence_probe","42501");
     }
 
+    @Test void runtimeReadsReadyAuthenticationButCannotAdministerItsLedger() throws Exception {
+        try(var connection=dataSource.getConnection()) {
+            assertEquals(DATABASE.runtime(),value(connection,"SELECT current_user"));
+            for(String table:List.of("demo_auth_registry","demo_token")) {
+                assertEquals("true",value(connection,"SELECT has_table_privilege(current_user,'"+table+"','SELECT')::text"));
+                for(String privilege:List.of("INSERT","UPDATE","DELETE","TRUNCATE","REFERENCES","TRIGGER"))
+                    assertEquals("false",value(connection,"SELECT has_table_privilege(current_user,'"+table+"','"+privilege+"')::text"),table+" "+privilege);
+            }
+        }
+        assertDoesNotThrow(tokens::requireReady);
+        assertDoesNotThrow(readiness::requireReady);
+        for(String sql:List.of(
+            "INSERT INTO demo_auth_registry SELECT * FROM demo_auth_registry",
+            "INSERT INTO demo_token SELECT * FROM demo_token",
+            "UPDATE demo_auth_registry SET format_version=1",
+            "UPDATE demo_token SET current_scope=ARRAY[]::text[],revision=revision+1",
+            "DELETE FROM demo_auth_registry","DELETE FROM demo_token",
+            "TRUNCATE demo_auth_registry CASCADE","TRUNCATE demo_token",
+            "SELECT * FROM demo_auth_registry FOR UPDATE","SELECT * FROM demo_token FOR UPDATE"
+        )) assertDenied(sql,"42501");
+    }
+
     @Test void runtimeCompletesMockPaymentButCannotRewriteAppendOnlyHistory() throws Exception {
         UUID workflow=(UUID)workflows.start(CUSTOMER,UUID.randomUUID(),new StartWorkflowRequest(
             "APP-DEMO-102-001","customer-102",1_000_000L,UUID.fromString("00000000-0000-4000-8000-000000000102"))).get("workflowId");
@@ -190,6 +257,11 @@ class RuntimeDatabaseRoleIT {
         assertEquals("42501",experiment.getSQLState());
     }
 
+    private Map<String,List<String>> authenticationSnapshot() {
+        return Map.of(
+            "registry",db.jdbc().queryForList("SELECT to_jsonb(t)::text FROM demo_auth_registry t ORDER BY id",String.class),
+            "tokens",db.jdbc().queryForList("SELECT to_jsonb(t)::text FROM demo_token t ORDER BY fingerprint",String.class));
+    }
     private long count(String table) {return db.number(db.required("SELECT count(*) n FROM "+table),"n");}
     private void assertDenied(String sql,String expectedState) {
         SQLException error=assertThrows(SQLException.class,()->{
