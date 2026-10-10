@@ -105,6 +105,40 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  startup-admission:
+    name: Real process startup prerequisites and scheduled admission
+    needs: prerequisites
+    if: needs.prerequisites.outputs.process_recovery == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12.15'
+      - uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+      - name: Verify isolated startup refusal and explicit recovery
+        run: python scripts/ci-run.py --label startup-admission -- python scripts/test_startup_admission.py
+      - name: Confirm all eleven current-source scenarios and cleanup
+        run: |
+          python - <<'PYTHON'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('backend/build/reports/startup-admission/startup-admission-report.json').read_text())
+          assert r['schemaVersion'] == 'FUSE-STARTUP-ADMISSION-1'
+          assert r['status'] == 'PASS' and r['plannedScenarioCount'] == r['passedScenarioCount'] == 11
+          assert r['cleanupVerified'] is True and r['sourceUnchangedDuringRun'] is True
+          assert r['sourceHashBefore'] == r['sourceHashAfter'] and r['exitCode'] == 0
+          assert len(r['scenarios']) == 11 and all(x['verdict'] == 'PASS' for x in r['scenarios'])
+          print('STARTUP_ADMISSION_VERIFIED: 11/11; isolated synthetic replay; source unchanged; cleanup verified')
+          PYTHON
+
   process-recovery:
     name: Real process crashes and PostgreSQL outage recovery
     needs: prerequisites
