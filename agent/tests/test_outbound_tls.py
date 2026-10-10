@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import httpx
 
-from agent.outbound import AnyIOBackend, model_transport
+from agent.outbound import AnyIOBackend, BoundedResolver, model_transport
 
 
 class ModelTLSHandshakeTest(unittest.TestCase):
@@ -101,19 +101,20 @@ class ModelTLSHandshakeTest(unittest.TestCase):
                 return await original_connect(backend, "127.0.0.1", port,
                                               timeout, local_address, socket_options)
 
-            async def synthetic_dns(host, requested_port, *args, **kwargs):
+            def synthetic_dns(host, requested_port, *args, **kwargs):
                 self.assertEqual((host, requested_port), ("api.openai.com", 443))
                 return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
                          "", ("93.184.216.34", 443))]
 
-            transport = model_transport()
+            resolver = BoundedResolver()
+            transport = model_transport(resolver=resolver)
             context = transport._pool._ssl_context
             self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
             self.assertTrue(context.check_hostname)
             if trust_fixture:
                 context.load_verify_locations(cafile=self.root / "ca.pem")
             try:
-                with patch.object(asyncio.get_running_loop(), "getaddrinfo", synthetic_dns), \
+                with patch.object(socket, "getaddrinfo", synthetic_dns), \
                         patch.object(AnyIOBackend, "connect_tcp", local_socket):
                     async with httpx.AsyncClient(transport=transport, trust_env=False, timeout=2) as client:
                         if expected_error is None:
@@ -127,6 +128,7 @@ class ModelTLSHandshakeTest(unittest.TestCase):
             finally:
                 server.close()
                 await server.wait_closed()
+                resolver.close(wait=True)
             self.assertEqual(server_names, ["api.openai.com"])
             self.assertEqual(destinations, [("127.0.0.1", port)])
             self.assertEqual(len(requests), int(expected_error is None))

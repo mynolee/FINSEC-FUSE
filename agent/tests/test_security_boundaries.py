@@ -3,7 +3,7 @@ import asyncio
 import hashlib
 import json
 import socket
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpcore
 import httpx
@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from agent.app import create_app
 from agent.dto import KycRequest, strict_json_loads
 from agent.llm_adapter import LiveAdapter, ModelOutputInvalid
-from agent.outbound import PublicModelBackend
+from agent.outbound import PublicModelBackend, BoundedResolver
 from agent.prompt import PromptConfigurationError, load_system_prompt
 from agent.settings import Settings
 from agent.tests.test_agent import HEADERS, TOKEN, PATH, request_body, rehash
@@ -94,22 +94,29 @@ def test_private_file_limits_symlinks_parent_links_and_traversal(tmp_path):
 @pytest.mark.parametrize("address", ["127.0.0.1","169.254.169.254","10.0.0.1","::1","fc00::1","::ffff:127.0.0.1"])
 def test_model_dns_rejects_private_at_connection_without_socket(monkeypatch,address):
     async def run():
-        loop=asyncio.get_running_loop()
-        monkeypatch.setattr(loop,"getaddrinfo",AsyncMock(return_value=[(socket.AF_INET,socket.SOCK_STREAM,6,"",(address,443))]))
+        monkeypatch.setattr(socket,"getaddrinfo",Mock(return_value=[(socket.AF_INET,socket.SOCK_STREAM,6,"",(address,443))]))
         monkeypatch.setattr('agent.outbound.AnyIOBackend.connect_tcp',AsyncMock(side_effect=AssertionError("socket must not open")))
-        with pytest.raises(httpcore.ConnectError): await PublicModelBackend().connect_tcp("api.openai.com",443,2)
+        owner = BoundedResolver()
+        try:
+            with pytest.raises(httpcore.ConnectError): await PublicModelBackend(owner).connect_tcp("api.openai.com",443,2)
+        finally:
+            owner.close(wait=True)
     asyncio.run(run())
 
 
 def test_dns_pin_is_passed_to_socket_and_no_reinterpretation(monkeypatch):
     async def run():
-        resolver=AsyncMock(side_effect=[[(socket.AF_INET,socket.SOCK_STREAM,6,"",("8.8.8.8",443))],AssertionError("second DNS lookup")])
-        monkeypatch.setattr(asyncio.get_running_loop(),"getaddrinfo",resolver)
+        resolver=Mock(side_effect=[[(socket.AF_INET,socket.SOCK_STREAM,6,"",("8.8.8.8",443))],AssertionError("second DNS lookup")])
+        monkeypatch.setattr(socket,"getaddrinfo",resolver)
         connect=AsyncMock(return_value='fake-stream')
         monkeypatch.setattr('agent.outbound.AnyIOBackend.connect_tcp',connect)
-        assert await PublicModelBackend().connect_tcp("api.openai.com",443,2) == 'fake-stream'
+        owner = BoundedResolver()
+        try:
+            assert await PublicModelBackend(owner).connect_tcp("api.openai.com",443,2) == 'fake-stream'
+        finally:
+            owner.close(wait=True)
         assert connect.call_args.args[0] == '8.8.8.8'
-        assert resolver.await_count == 1
+        assert resolver.call_count == 1
     asyncio.run(run())
 
 
