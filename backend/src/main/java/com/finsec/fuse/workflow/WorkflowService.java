@@ -14,8 +14,9 @@ import static com.finsec.fuse.workflow.WorkflowValues.*;
 public class WorkflowService {
     private final Db db;private final TimeSource time;private final FusePolicy policy;
     private final ActionRequests actions;private final WorkflowJournal journal;
-    public WorkflowService(Db db,TimeSource time,FusePolicy policy,ActionRequests actions,WorkflowJournal journal) {
-        this.db=db;this.time=time;this.policy=policy;this.actions=actions;this.journal=journal;
+    private final com.finsec.fuse.config.FuseReadinessHealthIndicator readiness;
+    public WorkflowService(Db db,TimeSource time,FusePolicy policy,ActionRequests actions,WorkflowJournal journal,com.finsec.fuse.config.FuseReadinessHealthIndicator readiness) {
+        this.db=db;this.time=time;this.policy=policy;this.actions=actions;this.journal=journal;this.readiness=readiness;
     }
     @Transactional
     public Map<String,Object> start(Actor actor,UUID actionId,StartWorkflowRequest request) {
@@ -25,6 +26,7 @@ public class WorkflowService {
         db.gate();Instant now=time.now();
         var replay=actions.replay(actionId,actor.actorId(),"START_WORKFLOW",null,request);
         if(replay.isPresent())return replay.get();
+        readiness.requireReady();
         var registry=db.one("SELECT * FROM application_registry WHERE business_reference=?",request.businessReference())
                 .orElseThrow(()->new ApiException(409,"APPLICATION_CONFLICT","Application is not registered"));
         if(!request.customerId().equals(str(registry,"customer_id")) || request.amountKrw()!=number(registry,"amount_krw") ||

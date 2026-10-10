@@ -12,6 +12,12 @@ import org.springframework.stereotype.Component;
 public final class FuseReadinessHealthIndicator implements HealthIndicator {
     private final Db db; private final FusePolicy policy; private final SigningKeyProvider keys;
     public FuseReadinessHealthIndicator(Db db,FusePolicy policy,SigningKeyProvider keys) {this.db=db;this.policy=policy;this.keys=keys;}
+    /** Reject fresh execution admission; callers must resolve durable action replays first. */
+    public void requireReady() {
+        if(!org.springframework.boot.health.contributor.Status.UP.equals(health().getStatus()))
+            throw new com.finsec.fuse.common.ApiException(503,"DEPENDENCY_UNAVAILABLE",
+                "Execution dependencies are not ready. Retry the same action ID after recovery.");
+    }
     @Override public Health health() {
         try {
             for(String agent:List.of("FUSE","KYC","LOAN","PAYMENT")) {

@@ -19,8 +19,9 @@ public class ApprovalService {
     private final Db db; private final Json json; private final TimeSource time;
     private final FusePolicy policy; private final ActionRequests actions; private final PaymentSupport support;
     private final com.finsec.fuse.workflow.WorkflowJournal journal;
-    public ApprovalService(Db db,Json json,TimeSource time,FusePolicy policy,ActionRequests actions,PaymentSupport support,com.finsec.fuse.workflow.WorkflowJournal journal) {
-        this.db=db;this.json=json;this.time=time;this.policy=policy;this.actions=actions;this.support=support;this.journal=journal;
+    private final com.finsec.fuse.config.FuseReadinessHealthIndicator readiness;
+    public ApprovalService(Db db,Json json,TimeSource time,FusePolicy policy,ActionRequests actions,PaymentSupport support,com.finsec.fuse.workflow.WorkflowJournal journal,com.finsec.fuse.config.FuseReadinessHealthIndicator readiness) {
+        this.db=db;this.json=json;this.time=time;this.policy=policy;this.actions=actions;this.support=support;this.journal=journal;this.readiness=readiness;
     }
     @Transactional
     public Map<String,Object> preview(Actor actor,UUID workflowId) {
@@ -43,6 +44,7 @@ public class ApprovalService {
         var body=Json.ordered("decision",request.decision(),"reviewSnapshotHash",request.reviewSnapshotHash(),"comment",request.comment());
         var replay=actions.replay(actionId,actor.actorId(),"APPROVAL",workflowId,body);
         if(replay.isPresent()) return replay.get();
+        if(request.decision()==ApprovalRequest.Decision.APPROVE) readiness.requireReady();
         if(!"WAIT_APPROVAL".equals(str(workflow,"state"))) throw new ApiException(409,"INVALID_STATE","The workflow is not waiting for a reviewer.");
         var snapshot=support.snapshot(workflow);
         if(!json.hash(snapshot).equals(request.reviewSnapshotHash())) throw new ApiException(409,"REVIEW_CHANGED","Review details changed. Fetch a new approval preview.");
