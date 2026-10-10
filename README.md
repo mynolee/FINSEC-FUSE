@@ -14,12 +14,20 @@ KYC 제안 → 독립 증거 검증 → 대출 추천 → 직원의 정확한 �
 
 ## 로컬 실행
 
-Docker Engine와 Compose가 필요합니다. 저장소 루트에서 실행하세요.
+Docker Engine와 Compose가 필요합니다. 최초 설치에서는 DB 마이그레이션과 모의 토큰 발급을 별도 단계로 진행합니다. 저장소 루트에서 비공개 기본 설정부터 준비하세요.
 
 ```sh
 ./scripts/bootstrap-dev.sh
-docker compose up --build
 ```
+
+부트스트랩이 만든 토큰 값에는 아직 인증 권한이 없습니다. 다음 순서를 따라야 합니다.
+
+1. 운영자가 승인한 DB 연결과 마이그레이션 절차로 `V6__durable_demo_tokens.sql`까지 적용합니다. 마이그레이션만으로 토큰이 발급되지는 않습니다.
+2. [모의 토큰 초기 발급](docs/runtime-security.md#first-installation)의 독립 실행 명령으로 새 토큰을 새 비공개 파일에 발급합니다.
+3. 발급 성공을 확인한 뒤 소유자가 출력 파일의 토큰을 사용할 설정으로 옮길지 검토·승인합니다. 기존 `.env`는 자동 수정되지 않습니다.
+4. 설정 반영이 끝나면 `docker compose up --build`로 서비스를 시작하고 준비 상태를 확인합니다.
+
+기존 환경에서 업그레이드할 때도 이전 토큰을 자동 가져오지 않습니다. 원래 발급·만료·폐기 이력이 없는 토큰에 새 유효기간을 부여할 수 없으므로 새 발급과 설정 교체가 필요합니다. Compose 시작·재시작은 토큰 발급이나 복구를 실행하지 않습니다. DB 연결 준비, 별도 마이그레이션, 토큰 교체는 운영자가 승인한 절차로 수행하세요.
 
 - 운영 화면: http://localhost:5173
 - 백엔드 준비 상태: http://localhost:8080/actuator/health/readiness
@@ -32,9 +40,9 @@ docker compose exec -T agent python -c 'import urllib.request; print(urllib.requ
 
 로컬 직접 디버깅에만 `docker compose -f compose.yaml -f compose.dev.yaml up --build`를 사용하면 Python 8001과 PostgreSQL 5432가 loopback에 열립니다. 기본 구성은 내부 네트워크 세 개로 UI·DB·Python 경계를 나누고 모든 서비스를 non-root·읽기 전용 루트로 실행하도록 설정합니다. 실제 Docker 기동·네트워크 차단 검증 여부는 [Compose 보안 설정](docs/compose-security.md)을 참고하세요.
 
-생성된 `.env`의 역할별 모의 토큰을 화면에 입력합니다. 고객 101~104, 승인 담당자, 보안 담당자, 개발자 토큰은 서로 다릅니다. 토큰은 서버의 고정된 역할·고객 범위에 연결되며 입력 JSON으로 역할을 바꿀 수 없습니다.
+명시적으로 발급하고 설정에 반영한 역할별 모의 토큰을 화면에 입력합니다. 고객 101~104, 승인 담당자, 보안 담당자, 개발자 토큰은 서로 다릅니다. 토큰의 역할·현재 고객 범위·발급 및 만료 시각·폐기 상태는 PostgreSQL에 유지되며 입력 JSON으로 바꿀 수 없습니다. 유효기간은 발급부터 7,200초이고 재시작으로 늘어나지 않습니다. 만료·폐기된 토큰의 기록도 유지합니다. 설정에서 토큰을 지우거나 바꾸는 것만으로 이전 토큰이 폐기되지는 않으므로 [명시적 교체·폐기 절차](docs/runtime-security.md#replacement-revocation-and-scope)를 사용하세요.
 
-`.env`, `.secrets/`, 실제 API 키와 개인 데이터는 커밋하지 마세요. 부트스트랩은 기존 설정을 덮어쓰지 않습니다. DB 볼륨이 이미 존재하면 비밀번호를 파일에서 바꾸는 것만으로 DB 비밀번호가 변경되지는 않습니다.
+`.env`, `.secrets/`, 토큰 발급 출력 파일, 실제 API 키와 개인 데이터는 커밋하지 마세요. 부트스트랩은 기존 설정을 덮어쓰지 않습니다. DB 볼륨이 이미 존재하면 비밀번호를 파일에서 바꾸는 것만으로 DB 비밀번호가 변경되지는 않습니다. 인증 테이블·초기화 기록·설정된 토큰 기록이 없거나 DB에 접근할 수 없으면 인증 요청은 실패하고 준비 상태가 내려갑니다. 자동 재발급하지 않으므로 [복구 안내](docs/runtime-security.md#recovery-and-uncertain-results)를 확인하세요.
 
 ```sh
 ./scripts/run-demo.sh
