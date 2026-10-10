@@ -1,6 +1,8 @@
 .env
 .env.*
-!.env.example
+*.env
+*.env.*
+!/.env.example
 .secrets/
 **/target/
 **/node_modules/
@@ -73,3 +75,42 @@ GEMINI*.md
 mcp.json
 opencode.json
 opencode.jsonc
+
+# User-supplied specifications and private development toolkit
+finsec-inputs/
+FINSEC_FUSE_DEV_TOOLKIT/
+docs/finsec-dev/
+docs/work/
+contracts/source-pack/
+FINSEC_FUSE_개발도구_파일목록.md
+FINSEC_FUSE_개발도구_파일목록.md
+00_START_HERE.md
+FINSEC_FUSE_전체파일_한번에저장.md
+FINSEC_FUSE_전체파일_한번에저장.md
+FINSEC_FUSE_서비스명세서(1).md
+FINSEC_FUSE_서비스명세서(1).md
+FINSEC_FUSE_서비스명세서.docx
+FINSEC_FUSE_서비스명세서.docx
+FINSEC_FUSE_서비스명세서.md
+FINSEC_FUSE_서비스명세서.md
+
+/safe-artifacts/
+
+# Private role and orchestration instruction exports
+FINSEC_FUSE_*프롬프트*
+FINSEC_FUSE_*프롬프트*
+*.tsbuildinfo
+
+# JVM diagnostics and crash artifacts
+.attach_pid*
+hs_err_pid*
+replay_pid*
+*.hprof
+core
+core.*
+
+# Private supplied v2.1 source assets
+FINSEC_FUSE_*v2.1*
+FINSEC_FUSE_v2.1/
+FILE_HASHES_v2.1.md
+00_START_HERE*.md

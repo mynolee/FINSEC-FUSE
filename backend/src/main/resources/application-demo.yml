@@ -1,0 +1,3 @@
+fuse:
+  demo-seed: ${FUSE_DEMO_SEED:true}
+  kyc-mode: ${FUSE_KYC_MODE:replay}
