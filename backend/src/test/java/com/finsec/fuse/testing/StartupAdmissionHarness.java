@@ -105,6 +105,7 @@ public final class StartupAdmissionHarness {
             checkpoint(Stage.PREPARE_ADMISSION);
             HttpResult queued=post(preparePort,reviewer,UUID.randomUUID(),"102");
             check(queued.status==202 && "ALLOW".equals(queued.body.get("decision")),"Preparation did not create a queued workflow");
+            UUID preparedWorkflowId=preparedWorkflowId(queued.body);
             stop(prepare);check(!prepare.isAlive(),"Preparation process did not stop");check(calls.get()==0,"Preparation ran a worker");
             check("1".equals(scalar(url,"SELECT count(*) FROM workflow_job WHERE state='PENDING' AND lease_token IS NULL")),"No unclaimed pending job to challenge scheduler");
             boolean missingAgent=name.startsWith("MISSING_") && Set.of("FUSE","KYC","LOAN","PAYMENT").contains(name.substring(8));
@@ -152,13 +153,13 @@ public final class StartupAdmissionHarness {
                 sql(url,"INSERT INTO agent_registry(agent_id,version,role,auth_subject,status) VALUES('"+absent+"',1,'"+role+"','"+auth+"','ACTIVE')");
                 result.put("repair","Explicitly restore only the removed registry entry; same process and unchanged config");
                 checkpoint(Stage.RECOVERY_READINESS);
-                awaitHealth(subject,port,true);checkpoint(Stage.RECOVERY_CLAIM);awaitClaim(url,calls,subject);
+                awaitHealth(subject,port,true);checkpoint(Stage.RECOVERY_CLAIM);awaitClaim(url,preparedWorkflowId,calls,subject);
                 check(post(port,reviewer,deniedAction,"103").status==202,"Same previously refused action did not recover");
                 result.put("recovery", "Same-process readiness UP, scheduled KYC claim and previously refused action accepted");
             }else if(name.equals("VALID_REPLAY_NO_MODEL_KEY")) {
                 checkpoint(Stage.VALID_CONTROL);
                 awaitHealth(subject,port,true);check(get(port,"/actuator/health/liveness").status==200,"Valid process not live");
-                awaitClaim(url,calls,subject);result.put("livenessStatus",200);result.put("readinessStatus",200);
+                awaitClaim(url,preparedWorkflowId,calls,subject);result.put("livenessStatus",200);result.put("readinessStatus",200);
                 result.put("control","Queued job consumed by actual scheduler with local synthetic REPLAY and no external model key");
             }else {
                 checkpoint(Stage.INVALID_EXIT);
@@ -195,7 +196,7 @@ public final class StartupAdmissionHarness {
                 result.put("repair","Explicit new process with original valid configuration/resource loader and restored owned database");
                 checkpoint(Stage.RECOVERY_READINESS);
                 int recoveryPort=freePort();Process recovery=launch(work,"recovery","NONE",base,recoveryPort);
-                awaitHealth(recovery,recoveryPort,true);checkpoint(Stage.RECOVERY_CLAIM);awaitClaim(url,calls,recovery);stop(recovery);
+                awaitHealth(recovery,recoveryPort,true);checkpoint(Stage.RECOVERY_CLAIM);awaitClaim(url,preparedWorkflowId,calls,recovery);stop(recovery);
                 result.put("recovery","New valid process ready; queued job reached scheduled KYC execution");
             }
             checkpoint(Stage.FINAL_INVARIANTS);
@@ -251,10 +252,27 @@ public final class StartupAdmissionHarness {
                 r.status==(ready?200:503) && (ready?"UP":"DOWN").equals(r.body.get("status")))return;Thread.sleep(100);}
         throw new AssertionError("Expected readiness not reached");
     }
-    private static void awaitClaim(String url,AtomicInteger calls,Process process)throws Exception {
+    static UUID preparedWorkflowId(Map<?,?> response) {
+        Object value=response.get("workflowId");
+        check(value instanceof String,"Preparation response lacks a workflow UUID");
+        String text=(String)value;
+        UUID workflowId;
+        try {workflowId=UUID.fromString(text);}
+        catch(IllegalArgumentException invalid){throw new AssertionError("Preparation response has an invalid workflow UUID",invalid);}
+        check(workflowId.toString().equalsIgnoreCase(text),"Preparation response has a noncanonical workflow UUID");
+        return workflowId;
+    }
+    static boolean workflowAwaitingApproval(String url,UUID workflowId)throws SQLException {
+        try(var c=DriverManager.getConnection(url,"postgres","");
+            var s=c.prepareStatement("SELECT EXISTS (SELECT 1 FROM workflow WHERE id=? AND state='WAIT_APPROVAL')")) {
+            s.setObject(1,Objects.requireNonNull(workflowId));
+            try(var r=s.executeQuery()){r.next();return r.getBoolean(1);}
+        }
+    }
+    private static void awaitClaim(String url,UUID workflowId,AtomicInteger calls,Process process)throws Exception {
         long until=System.nanoTime()+Duration.ofSeconds(20).toNanos();
         while(System.nanoTime()<until){check(process.isAlive(),"Recovery child exited");
-            if(calls.get()>0 && "1".equals(scalar(url,"SELECT count(*) FROM workflow WHERE customer_id='customer-102' AND state='WAIT_APPROVAL'")))return;Thread.sleep(100);}
+            if(calls.get()>0 && workflowAwaitingApproval(url,workflowId))return;Thread.sleep(100);}
         throw new AssertionError("Actual scheduler and synthetic replay did not reach WAIT_APPROVAL after readiness recovery");
     }
     private static Map<String,List<String>> snapshot(String url)throws Exception {
