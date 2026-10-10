@@ -89,6 +89,6 @@ LIVE는 사례별 3회, 매 회차 모델을 한 번 호출한 동일 출력을 
 
 ## 개발·검증 상태
 
-모의 시제품이며 로컬 결과와 실제 GitHub CI 결과를 구분합니다. 2026-10-10 UTC의 최신 확인 기준선은 [0c18b454](https://github.com/mynolee/FINSEC-FUSE/commit/0c18b4544207c3147a16a44127de00f4d0a29aa3)입니다. [push CI](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38051952319)와 [PR CI](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38051955035)가 각각 8개 작업 모두 성공했습니다. 해당 소스 트리에서 실제 Compose·브라우저·PostgreSQL·시작 전제조건·프로세스 장애 복구와 재구성 REPLAY를 실행했습니다. 이 결과는 이후 소스 변경이나 전체 원본 인수조건을 검증하지 않습니다. 이전 성공·실패 이력과 정확한 범위는 [검증 문서](docs/VERIFICATION.md)에 기록합니다.
+모의 시제품이며 로컬 결과와 실제 GitHub CI 결과를 구분합니다. 2026-10-11 01:48 KST에 확인한 고정 검증 체크포인트는 [6162b060](https://github.com/mynolee/FINSEC-FUSE/commit/6162b060361261872a040414d03d1d6a36a9c8fd)입니다. [push CI](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38068597161)와 [PR CI](https://github.com/mynolee/FINSEC-FUSE/actions/runs/38068601047)가 각각 8개 작업 모두 성공했습니다. 해당 소스 트리에서 프론트엔드 258개·Java 단위 278개·PostgreSQL 통합 285개와 실제 Compose·시작 전제조건·프로세스 장애 복구·재구성 REPLAY를 검증했습니다. 기존 Chromium 브라우저 검사 11개도 통과했지만, 새 변경 요청 응답(receipt) 검증·불확실 응답 복구 시나리오의 실제 브라우저 실행이나 로컬 네이티브 브라우저 검증은 별도로 남아 있습니다. 이 결과는 이 문서 변경을 포함할 이후 커밋이나 전체 원본 인수조건을 검증하지 않습니다. 이전 성공·실패 이력과 정확한 범위는 [검증 문서](docs/VERIFICATION.md)에 기록합니다.
 
 브랜치·PR·커밋 운영 방식과 명세 출처는 [개발 문서](docs/DEVELOPMENT.md)를 참고하세요. 초기 평가 픽스처는 재구성한 회귀 사례입니다. 현재 목표는 v2.1이며, 확보한 원본 자료와 구현·실행 증거를 대조하고 있습니다. 이전 v2.0 자료는 이력으로 구분합니다. 기존 재구성 60개 시험 통과를 원본 60개 인수 사례 또는 전체 인수 분기의 통과로 간주하지 않습니다.
