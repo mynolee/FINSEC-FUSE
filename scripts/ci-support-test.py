@@ -621,6 +621,7 @@ class RegistryDiagnosticsTest(unittest.TestCase):
 class StructuredDiagnosticsTest(unittest.TestCase):
     FRONTEND_TEST_FILES = (
         'frontend/src/App.test.tsx', 'frontend/src/ApprovalHistory.test.tsx',
+        'frontend/src/EvidenceTimeStatus.test.tsx',
         'frontend/src/LiveExperiments.test.tsx',
         'frontend/src/Operations.test.tsx', 'frontend/src/PotentialImpact.test.tsx',
         'frontend/src/api.test.ts', 'frontend/src/browserSecurity.test.tsx',
@@ -681,8 +682,8 @@ class StructuredDiagnosticsTest(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(summary['reportState'], 'PARSED')
         self.assertEqual(summary['status'], 'PASS')
-        self.assertEqual(summary['files'], 11)
-        self.assertEqual(summary['counts'], {'total': 11, 'passed': 11, 'failed': 0, 'skipped': 0, 'todo': 0})
+        self.assertEqual(summary['files'], 12)
+        self.assertEqual(summary['counts'], {'total': 12, 'passed': 12, 'failed': 0, 'skipped': 0, 'todo': 0})
         self.assertNotIn('PRIVATE_MARKER', json.dumps(summary))
 
     def test_approval_history_exact_paths_preserve_counts_and_redaction(self):
@@ -710,6 +711,40 @@ class StructuredDiagnosticsTest(unittest.TestCase):
                          'frontend/src/ApprovalHistory.test.tsx/../PRIVATE_MARKER',
                          '/private/ApprovalHistory.test.tsx',
                          'frontend/src/approvalhistory.test.tsx'):
+            with self.subTest(filename=filename):
+                report = self.report()
+                report['testResults'][0]['name'] = filename
+                result, summary = self.frontend_invoke(report, 0)
+                self.assertEqual(result, 1)
+                self.assertEqual(summary['reportState'], 'INVALID')
+                self.assertEqual(summary['status'], 'FAIL')
+                self.assertNotIn('PRIVATE_MARKER', json.dumps(summary))
+
+    def test_evidence_time_status_exact_paths_preserve_counts_and_redaction(self):
+        filename = 'frontend/src/EvidenceTimeStatus.test.tsx'
+        for path in (filename, str(diagnostics.ROOT / filename)):
+            for status, exit_code in (('passed', 0), ('failed', 1)):
+                with self.subTest(path=path, status=status):
+                    report = self.report(status)
+                    report['testResults'][0]['name'] = path
+                    result, summary = self.frontend_invoke(report, exit_code)
+                    self.assertEqual(result, exit_code)
+                    self.assertEqual(summary['reportState'], 'PARSED')
+                    self.assertEqual(summary['status'], 'PASS' if status == 'passed' else 'FAIL')
+                    self.assertEqual(summary['counts'], {
+                        'total': 1, 'passed': int(status == 'passed'),
+                        'failed': int(status == 'failed'), 'skipped': 0, 'todo': 0})
+                    self.assertEqual(summary['failedTests'], [] if status == 'passed' else [{
+                        'file': filename, 'testOrdinal': 1, 'line': 15, 'code': 'ASSERTION_FAILED',
+                    }])
+                    self.assertNotIn('PRIVATE_MARKER', json.dumps(summary))
+
+    def test_evidence_time_status_allowlist_rejects_lookalikes(self):
+        for filename in ('frontend/src/EvidenceTimeStatus.test.tsx.private',
+                         'frontend/src/EvidenceTimeStatusExtra.test.tsx',
+                         'frontend/src/EvidenceTimeStatus.test.tsx/../PRIVATE_MARKER',
+                         '/private/EvidenceTimeStatus.test.tsx',
+                         'frontend/src/evidencetimestatus.test.tsx'):
             with self.subTest(filename=filename):
                 report = self.report()
                 report['testResults'][0]['name'] = filename
@@ -792,7 +827,8 @@ class StructuredDiagnosticsTest(unittest.TestCase):
 
     def test_allowlisted_but_missing_source_remains_fail_closed(self):
         for filename in ('frontend/src/api.test.ts', 'frontend/src/PotentialImpact.test.tsx',
-                         'frontend/src/ApprovalHistory.test.tsx'):
+                         'frontend/src/ApprovalHistory.test.tsx',
+                         'frontend/src/EvidenceTimeStatus.test.tsx'):
             with self.subTest(filename=filename):
                 (diagnostics.ROOT / filename).unlink()
                 report = self.report()
