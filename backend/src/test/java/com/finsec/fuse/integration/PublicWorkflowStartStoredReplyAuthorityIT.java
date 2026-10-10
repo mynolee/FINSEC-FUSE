@@ -43,6 +43,7 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
     private final HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private record Identity(String token,Actor actor) {}
     private record Saved(UUID workflowId,UUID actionId,String body,Map<String,Object> reply,Identity owner) {}
+    private record StoredStartAllow(Saved saved,String receiptJson,byte[] replayBody,Map<String,List<String>> rows) {}
     private record StoredStartDeny(Saved saved,String receiptJson,byte[] replayBody,Map<String,List<String>> rows) {}
     private enum Rejection {
         OWNER(403,"FORBIDDEN","Action receipt is outside the current actor's access",false),
@@ -143,6 +144,103 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         exerciseAuthorityMatrix(saved,independent);
         assertEquals("WAIT_APPROVAL",workflow(saved.workflowId()).get("state"));
         assertCreationActor(saved);
+    }
+
+    @Timeout(60) @Test
+    void parsedEquivalentJsonReplaysStoredStartAllowWithoutAnyDurableMutation() throws Exception {
+        UUID independent=populatedIndependentWorkflow();
+        var original=storedStartAllow();var saved=original.saved();
+        var request=json.read(saved.body(),StartWorkflowRequest.class);
+        String reordered="{\"payoutAccountId\":"+json.write(request.payoutAccountId())
+            +",\"amountKrw\":"+request.amountKrw()+",\"customerId\":"+json.write(request.customerId())
+            +",\"businessReference\":"+json.write(request.businessReference())+"}";
+        String spaced=" { \n \"businessReference\" : "+json.write(request.businessReference())
+            +" , \"customerId\" : "+json.write(request.customerId())+" , \n \"amountKrw\" : "+request.amountKrw()
+            +" , \"payoutAccountId\" : "+json.write(request.payoutAccountId())+" \n } \t";
+        // Decode both a member name and a string value; construct the JSON escapes at runtime.
+        String escaped=saved.body().replace("customerId","customer"+"\\"+"u0049d")
+            .replace("APP-DEMO","\\"+"u0041PP-DEMO");
+        for(String body:List.of(reordered,spaced,escaped)) {
+            assertNotEquals(saved.body(),body,"Each normalization control must change the actual request bytes");
+            assertEquals(json.map(saved.body()),json.map(body));
+            assertEquals(request,json.read(body,StartWorkflowRequest.class));
+            startAllowReplay(original,body);
+        }
+        // A value-space changes meaning; token-space and escaped representation must not erase it.
+        String changed=spaced.replace(json.write(request.businessReference()),
+            json.write(request.businessReference()+" "));
+        assertEquals(new StartWorkflowRequest(request.businessReference()+" ",request.customerId(),
+            request.amountKrw(),request.payoutAccountId()),json.read(changed,StartWorkflowRequest.class));
+        assertNotEquals(request,json.read(changed,StartWorkflowRequest.class));
+        assertNotEquals(json.map(saved.body()),json.map(changed));
+        clock.set(clock.now().plusSeconds(1));
+        var conflict=post(saved.actionId(),changed,saved.owner());
+        assertEquals(409,conflict.statusCode(),conflict.body());assertSafeHeaders(conflict);
+        var expected=Json.ordered("requestId",saved.actionId().toString(),"workflowId",null,"generation",null,
+            "state",null,"decision","DENY","reasonCodes",List.of("REPLAY_CONFLICT"),
+            "message","Idempotency key was already used for a different request","replayed",false);
+        assertEquals(expected,json.map(conflict.body()),"Conflict must return only the exact safe public envelope");
+        assertFalse(conflict.body().contains(saved.workflowId().toString()));
+        assertStoredStartAllowUnchanged(original);
+        startAllowReplay(original,saved.body());
+        startAllowReplay(original,escaped); // The conflict cannot poison original or equivalent replay.
+        // Encoded equivalence must still pass the unchanged current authority and receipt-owner checks.
+        exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        assertStoredStartAllowUnchanged(original);
+    }
+
+    private StoredStartAllow storedStartAllow() throws Exception {
+        var saved=saveInitialStart(identity("CUSTOMER"));
+        String receiptJson=db.required("SELECT * FROM action_request WHERE action_id=?",saved.actionId())
+            .get("result_json").toString();
+        var replay=json.map(receiptJson);assertEquals(saved.reply(),replay);
+        replay.put("replayed",true);
+        finishEvaluation(saved.workflowId(),"WAIT_APPROVAL");
+        var request=new QuarantineRequest(QuarantineRequest.Scope.WORKFLOW,null,null,saved.workflowId(),
+            null,null,null,null,QuarantineRequest.Reason.SECURITY_INVESTIGATION,"Synthetic workflow investigation");
+        UUID incident=(UUID)quarantines.apply(SECURITY,UUID.randomUUID(),request).get("quarantineId");
+        assertEquals("BLOCKED",workflow(saved.workflowId()).get("state"));
+        assertEquals("DENY",workflow(saved.workflowId()).get("last_decision"));
+        var evidenceIds=db.jdbc().queryForList("SELECT id FROM trusted_evidence "
+            +"WHERE customer_id=? AND status='ACTIVE' AND outcome='PASS' ORDER BY id",UUID.class,CUSTOMER);
+        assertFalse(evidenceIds.isEmpty());
+        var release=new ReleaseRequest(new ReleaseRequest.Remediation(DOCUMENT,1,evidenceIds,null,null,
+            "Reviewed synthetic remediation"));
+        quarantines.release(SECURITY,incident,UUID.randomUUID(),release);
+        assertEquals("RELEASED",db.required("SELECT * FROM quarantine WHERE id=?",incident).get("status"));
+        var resumed=recovery.resume(REVIEWER,saved.workflowId(),UUID.randomUUID(),
+            new ResumeRequest(1,"Resume after synthetic remediation"));
+        assertEquals("ALLOW",resumed.get("decision"));assertEquals(2,((Number)resumed.get("generation")).intValue());
+        finishEvaluation(saved.workflowId(),"WAIT_APPROVAL");
+        assertCreationActor(saved);
+        var original=new StoredStartAllow(saved,receiptJson,json.bytes(replay),durableRows());
+        assertStoredStartAllowUnchanged(original); // The initial receipt also survives legitimate advancement.
+        return original;
+    }
+    private void startAllowReplay(StoredStartAllow original,String body) throws Exception {
+        clock.set(clock.now().plusSeconds(1));
+        var saved=original.saved();
+        var response=client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api/v1/workflows"))
+            .timeout(Duration.ofSeconds(10)).header("Authorization","Bearer "+saved.owner().token())
+            .header("Idempotency-Key",saved.actionId().toString()).header("Content-Type","application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(202,response.statusCode(),"Preserve the original accepted ALLOW HTTP status");
+        assertEquals("no-store",response.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals("nosniff",response.headers().firstValue("X-Content-Type-Options").orElseThrow());
+        var expected=new LinkedHashMap<>(saved.reply());expected.put("replayed",true);
+        assertEquals(expected,json.map(response.body()),"Only replayed may change in the historical KYC_PENDING ALLOW reply");
+        assertArrayEquals(original.replayBody(),response.body(),"Return the encoded stored reply with only replayed changed");
+        assertStoredStartAllowUnchanged(original);
+    }
+    private void assertStoredStartAllowUnchanged(StoredStartAllow original) {
+        var saved=original.saved();
+        var receipt=db.required("SELECT * FROM action_request WHERE action_id=?",saved.actionId());
+        assertEquals(original.receiptJson(),receipt.get("result_json").toString(),"Stored JSON bytes must remain untouched");
+        assertEquals("SUCCEEDED",receipt.get("status"));assertEquals("ALLOW",receipt.get("decision"));
+        assertEquals(2,integer(workflow(saved.workflowId()),"generation"));
+        assertEquals("WAIT_APPROVAL",workflow(saved.workflowId()).get("state"));
+        assertEquals(0,count("approval"));assertEquals(0,count("payment_reservation"));assertEquals(0,count("mock_payment"));
+        assertEquals(original.rows(),durableRows(),"Preserve every committed row and timestamp, including the independent workflow");
     }
 
     @Timeout(60) @Test
