@@ -56,7 +56,7 @@ class PublicRateLimitStateIT extends PaymentFixture {
 
     private String token(Set<String> customers) {
         String token=DevActorRegistry.generateToken();
-        registry.register(token,new Actor("rate-state-"+UUID.randomUUID(),"LOAN_REVIEWER",customers));
+        issueToken(token,new Actor("rate-state-"+UUID.randomUUID(),"LOAN_REVIEWER",customers));
         return token;
     }
     private String startBody(int customer) {
@@ -90,7 +90,7 @@ class PublicRateLimitStateIT extends PaymentFixture {
             var result=new LinkedHashMap<String,List<String>>();
             var tables=db.jdbc().queryForList("SELECT table_name FROM information_schema.tables "
                 +"WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class);
-            assertTrue(tables.containsAll(List.of("workflow","workflow_job","action_request",
+            assertTrue(tables.containsAll(List.of("demo_auth_registry","demo_token","workflow","workflow_job","action_request",
                 "delegation_grant","trusted_evidence","risk_ledger","approval","mock_payment")));
             for(String table:tables) {
                 String quoted="\""+table.replace("\"","\"\"")+"\"";

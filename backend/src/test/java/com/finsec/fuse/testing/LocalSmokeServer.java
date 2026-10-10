@@ -56,6 +56,14 @@ public final class LocalSmokeServer {
                                   "customer-104", "reviewer", "security", "developer")) {
             options.add("--fuse.auth." + role + "-token=" + required(config, role));
         }
+        // This process owns a newly created PostgreSQL fixture. Bootstrap once before starting HTTP.
+        var owner = new org.springframework.jdbc.datasource.DriverManagerDataSource(PostgresSupport.url(), "postgres", "");
+        org.flywaydb.core.Flyway.configure().dataSource(owner).locations("classpath:db/migration").load().migrate();
+        var fixtureTokens = new java.util.LinkedHashMap<String, String>();
+        for (String role : List.of("customer-101", "customer-102", "customer-103", "customer-104", "reviewer", "security", "developer"))
+            fixtureTokens.put(role, required(config, role));
+        fixtureTokens.put("kyc-service", required(config, "service"));
+        DemoTokenTestFixture.initializeOwned(owner, PostgresSupport.url(), fixtureTokens);
         var context = new SpringApplication(FuseApplication.class).run(options.toArray(String[]::new));
         // Publish only this process's actual bound port; the caller still checks readiness.
         var portFile = Path.of(args[1]);

@@ -22,7 +22,7 @@ class PublicQueryContractIT extends PaymentFixture {
     private final HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private String token(String role,String... customers) {
         String token=DevActorRegistry.generateToken();
-        registry.register(token,new Actor("query-"+UUID.randomUUID(),role,Set.of(customers)));return token;
+        issueToken(token,new Actor("query-"+UUID.randomUUID(),role,Set.of(customers)));return token;
     }
     private HttpResponse<String> get(String path,String token) throws Exception {
         var request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+path)).timeout(Duration.ofSeconds(10));
@@ -38,6 +38,8 @@ class PublicQueryContractIT extends PaymentFixture {
         var result=new LinkedHashMap<String,Object>();
         for(String table:List.of("loan_application","workflow","agent_run","workflow_job","approval","mock_payment","risk_ledger","quarantine","action_request","audit_event"))
             result.put(table,db.query("SELECT * FROM "+table+" ORDER BY "+(table.equals("action_request")?"action_id":"id")));
+        for(String table:List.of("demo_auth_registry","demo_token"))
+            result.put(table,db.jdbc().queryForList("SELECT to_jsonb(t)::text FROM "+table+" t ORDER BY to_jsonb(t)::text",String.class));
         return json.write(result);
     }
     private void invalid(HttpResponse<String> response) {
@@ -58,14 +60,15 @@ class PublicQueryContractIT extends PaymentFixture {
         assertEquals(before,snapshot());
     }
     @Test void otherRoutesHaveNoQueryParametersAndAuthenticationStillRunsFirst() throws Exception {
-        UUID workflow=start("customer-102");String token=token("LOAN_REVIEWER","customer-102");String before=snapshot();
+        UUID workflow=start("customer-102");String token=token("LOAN_REVIEWER","customer-102");
+        String service=token("KYC_SERVICE"),outOfScope=token("CUSTOMER","customer-101");String before=snapshot();
         for(String path:List.of("/api/v1/workflows/"+workflow,"/api/v1/workflows/"+workflow+"/trace","/api/v1/workflows/"+workflow+"/approval-preview",
                 "/api/v1/incidents/"+UUID.randomUUID()+"/impact","/api/v1/experiments/"+UUID.randomUUID()))
             invalid(get(path+"?page=0",token));
         assertEquals(401,get("/api/v1/workflows?unknown=1",null).statusCode());
-        assertEquals(403,get("/api/v1/workflows?unknown=1",token("KYC_SERVICE")).statusCode());
+        assertEquals(403,get("/api/v1/workflows?unknown=1",service).statusCode());
         assertEquals(404,get("/api/v1/not-a-route?unknown=1",token).statusCode());
-        assertEquals(403,get("/api/v1/workflows/"+workflow,token("CUSTOMER","customer-101")).statusCode());
+        assertEquals(403,get("/api/v1/workflows/"+workflow,outOfScope).statusCode());
         assertEquals(before,snapshot());
     }
     @Test void rejectedMutationQueryLeavesNoActionAndSameKeyCanBeUsedForValidRequest() throws Exception {

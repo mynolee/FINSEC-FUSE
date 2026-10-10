@@ -104,6 +104,7 @@ class DatabaseAuthorityClockIT {
         db.jdbc().execute("DROP SCHEMA public CASCADE");
         db.jdbc().execute("CREATE SCHEMA public");
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        PostgresSupport.initializeAuth(dataSource, context.getEnvironment());
         seed.run(null);
     }
 

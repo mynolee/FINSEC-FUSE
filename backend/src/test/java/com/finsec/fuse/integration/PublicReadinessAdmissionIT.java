@@ -37,7 +37,7 @@ class PublicReadinessAdmissionIT extends PaymentFixture {
 
     private String token() {
         String token=DevActorRegistry.generateToken();
-        actors.register(token,new Actor("readiness-"+UUID.randomUUID(),"LOAN_REVIEWER",
+        issueToken(token,new Actor("readiness-"+UUID.randomUUID(),"LOAN_REVIEWER",
             Set.of("customer-102","customer-103")));
         return token;
     }
@@ -68,7 +68,7 @@ class PublicReadinessAdmissionIT extends PaymentFixture {
             var result=new LinkedHashMap<String,List<String>>();
             var tables=db.jdbc().queryForList("SELECT table_name FROM information_schema.tables "
                 +"WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class);
-            assertTrue(tables.containsAll(List.of("workflow_job","delegation_grant","risk_ledger","mock_payment","action_request")));
+            assertTrue(tables.containsAll(List.of("demo_auth_registry","demo_token","workflow_job","delegation_grant","risk_ledger","mock_payment","action_request")));
             for(String table:tables) {
                 String quoted="\""+table.replace("\"","\"\"")+"\"";
                 result.put(table,db.jdbc().queryForList("SELECT to_jsonb(t)::text FROM public."+quoted

@@ -152,7 +152,7 @@ class ImpactPotentialAmountIT extends PaymentFixture {
         for(String field:List.of("roles","maxDownstreamDepth","registeredCustomerCount","perApplicationLimitKrw","missingPolicyFields"))assertTrue(potential.containsKey(field),field);
     }
     private String token(String role,String customer) {
-        String token=DevActorRegistry.generateToken();actors.register(token,new Actor("impact-"+UUID.randomUUID(),role,Set.of(customer)));return token;
+        String token=DevActorRegistry.generateToken();issueToken(token,new Actor("impact-"+UUID.randomUUID(),role,Set.of(customer)));return token;
     }
     private HttpResponse<String> get(String path,String token) throws Exception {
         var request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+path)).timeout(Duration.ofSeconds(10));

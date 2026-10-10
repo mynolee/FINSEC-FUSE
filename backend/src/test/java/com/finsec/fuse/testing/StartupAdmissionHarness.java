@@ -77,6 +77,12 @@ public final class StartupAdmissionHarness {
             byte[] key=new byte[32];new SecureRandom().nextBytes(key);
             Path keyFile=work.resolve("ephemeral-signing-key");Files.write(keyFile,key);privateFile(keyFile);Arrays.fill(key,(byte)0);
             String service=DevActorRegistry.generateToken(),reviewer=DevActorRegistry.generateToken(),developer=DevActorRegistry.generateToken();
+            // Fresh scenario setup only; prepare, subject and recovery reuse the unchanged ledger.
+            org.flywaydb.core.Flyway.configure().dataSource(pg.getPostgresDatabase())
+                .locations("classpath:db/migration").load().migrate();
+            DemoTokenTestFixture.initializeOwned(pg.getPostgresDatabase(),url,
+                Map.of("kyc-service",service,"reviewer",reviewer));
+            var originalAuth=snapshot(url);
             agent=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
             agentExecutor=Executors.newVirtualThreadPerTaskExecutor();agent.setExecutor(agentExecutor);
             agent.createContext("/internal/v1/kyc/evaluations",exchange->{
@@ -201,6 +207,10 @@ public final class StartupAdmissionHarness {
             }
             checkpoint(Stage.FINAL_INVARIANTS);
             stop(subject);check("0".equals(scalar(url,"SELECT count(*) FROM mock_payment")),"Startup tests unexpectedly paid");
+            var finalRows=snapshot(url);
+            for(String table:List.of("demo_auth_registry","demo_token"))
+                check(originalAuth.get(table).equals(finalRows.get(table)),"Startup/recovery altered durable credential authority");
+            result.put("credentialAuthorityPreservedAcrossStartup",true);
             result.put("kycHttpCallsAfterRecoveryOrControl",calls.get());result.put("verdict","PASS");
         } catch(Exception | AssertionError failure) {
             writeDiagnostic(failure instanceof AssertionError?FailureCategory.ASSERTION_FAILED:FailureCategory.EXECUTION_FAILED);
@@ -280,7 +290,7 @@ public final class StartupAdmissionHarness {
         try(var c=DriverManager.getConnection(url,"postgres","")) {
             c.setAutoCommit(false);c.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);c.setReadOnly(true);
             var tables=new ArrayList<String>();try(var s=c.createStatement();var r=s.executeQuery("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name")){while(r.next())tables.add(r.getString(1));}
-            check(tables.containsAll(List.of("workflow_job","action_request","mock_payment","risk_ledger")),"Snapshot lacks business tables");
+            check(tables.containsAll(List.of("demo_auth_registry","demo_token","workflow_job","action_request","mock_payment","risk_ledger")),"Snapshot lacks business tables");
             for(String table:tables){var rows=new ArrayList<String>();try(var s=c.createStatement();var r=s.executeQuery("SELECT to_jsonb(t)::text FROM public.\""+table.replace("\"","\"\"")+"\" t ORDER BY to_jsonb(t)::text")){while(r.next())rows.add(r.getString(1));}result.put(table,rows);}c.commit();
         }return result;
     }

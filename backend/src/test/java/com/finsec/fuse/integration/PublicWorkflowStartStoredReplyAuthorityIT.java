@@ -7,6 +7,7 @@ import com.finsec.fuse.FuseApplication;
 import com.finsec.fuse.auth.Actor;
 import com.finsec.fuse.auth.DevActorRegistry;
 import com.finsec.fuse.common.Json;
+import com.finsec.fuse.testing.DemoTokenFixtureOracle;
 import com.finsec.fuse.payment.PaymentFixture;
 import com.finsec.fuse.quarantine.QuarantineRequest;
 import com.finsec.fuse.quarantine.ReleaseRequest;
@@ -57,13 +58,15 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         }
     }
 
+    private DemoTokenFixtureOracle authOracle() { return new DemoTokenFixtureOracle(tokenFixture,json,this::durableRows); }
+
     private Identity identity(String role) {
         return identity("start-reply-"+UUID.randomUUID(),role);
     }
     private Identity identity(String actorId,String role) {
         String token=DevActorRegistry.generateToken();
         var actor=new Actor(actorId,role,Set.of(CUSTOMER));
-        registry.register(token,actor);
+        authOracle().issue(token,actor);
         assertEquals(actor,registry.resolve(token),"Every caller must be a recognized server-side identity");
         return new Identity(token,actor);
     }
@@ -185,7 +188,8 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         startAllowReplay(original,saved.body());
         startAllowReplay(original,escaped); // The conflict cannot poison original or equivalent replay.
         // Encoded equivalence must still pass the unchanged current authority and receipt-owner checks.
-        exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        var afterAuthority=exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        original=new StoredStartAllow(original.saved(),original.receiptJson(),original.replayBody(),afterAuthority);
         assertStoredStartAllowUnchanged(original);
     }
 
@@ -311,7 +315,8 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
             startDenyReplay(original,body);
         }
         // Equivalent wire forms still require current authority and the original action's owner.
-        exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        var afterAuthority=exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        original=rebase(original,afterAuthority);
         assertStoredStartDenyUnchanged(original);
     }
 
@@ -331,11 +336,11 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         startDenyConflict(original,new StartWorkflowRequest(request.businessReference(),request.customerId(),
             request.amountKrw(),UUID.fromString("00000000-0000-4000-8000-000000000103")));
         // The changed customer must also be authorized, so this control reaches fingerprint comparison.
-        registry.updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER,INDEPENDENT_CUSTOMER));
+        original=rebase(original,authOracle().updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER,INDEPENDENT_CUSTOMER)));
         assertEquals(Set.of(CUSTOMER,INDEPENDENT_CUSTOMER),registry.resolve(saved.owner().token()).customerIds());
         startDenyConflict(original,new StartWorkflowRequest(request.businessReference(),INDEPENDENT_CUSTOMER,
             request.amountKrw(),request.payoutAccountId()));
-        registry.updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER));
+        original=rebase(original,authOracle().updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER)));
         assertEquals(saved.owner().actor(),registry.resolve(saved.owner().token()));
         startDenyReplay(original,saved.body());
         assertEquals("REJECTED",workflow(independent).get("state"));
@@ -421,39 +426,47 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
         assertEquals(original.rows(),durableRows(),"Preserve every committed row and timestamp, including the independent workflow");
     }
 
-    private void exerciseAuthorityMatrix(Saved saved,UUID independent) throws Exception {
+    private Map<String,List<String>> exerciseAuthorityMatrix(Saved saved,UUID independent) throws Exception {
         assertTrue(jobs.claim().isEmpty());
+        // Provision all role controls first, checking each precise auth-only insertion.
+        var others=List.of("CUSTOMER","LOAN_REVIEWER").stream().map(this::identity).toList();
+        var samePrincipal=List.of("CUSTOMER","LOAN_REVIEWER","SECURITY_OPERATOR","DEVELOPER","FUSE_WORKER","KYC_SERVICE")
+            .stream().map(role->identity(saved.owner().actor().actorId(),role)).toList();
         var before=durableRows();
         ownerReplay(saved,before);
         // Both roles may start this customer's workflow, but neither other actor owns the saved action.
-        for(String role:List.of("CUSTOMER","LOAN_REVIEWER"))
-            denied(saved,identity(role),Rejection.OWNER,before);
-        // Same-principal registry credentials isolate current role checks from receipt-owner checks.
-        for(String role:List.of("CUSTOMER","LOAN_REVIEWER"))
-            authorizedReplay(saved,identity(saved.owner().actor().actorId(),role),before);
-        for(String role:List.of("SECURITY_OPERATOR","DEVELOPER"))
-            denied(saved,identity(saved.owner().actor().actorId(),role),Rejection.ROLE,before);
-        for(String role:List.of("FUSE_WORKER","KYC_SERVICE"))
-            denied(saved,identity(saved.owner().actor().actorId(),role),Rejection.SERVICE,before);
+        for(var other:others)denied(saved,other,Rejection.OWNER,before);
+        // Same-principal credentials isolate current role checks from receipt-owner checks.
+        for(var caller:samePrincipal) {
+            switch(caller.actor().role()) {
+                case "CUSTOMER","LOAN_REVIEWER" -> authorizedReplay(saved,caller,before);
+                case "SECURITY_OPERATOR","DEVELOPER" -> denied(saved,caller,Rejection.ROLE,before);
+                default -> denied(saved,caller,Rejection.SERVICE,before);
+            }
+        }
         for(Set<String> scope:List.of(Set.<String>of(),Set.of(INDEPENDENT_CUSTOMER))) {
-            registry.updateScope(saved.owner().actor().actorId(),scope);
+            before=authOracle().updateScope(saved.owner().actor().actorId(),scope);
             assertEquals(scope,registry.resolve(saved.owner().token()).customerIds());
             denied(saved,saved.owner(),Rejection.SCOPE,before);
         }
-        registry.updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER));
+        before=authOracle().updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER));
         assertEquals(saved.owner().actor(),registry.resolve(saved.owner().token()));
         ownerReplay(saved,before); // Denied attempts must neither consume nor replace the original receipt.
-        registry.updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER,INDEPENDENT_CUSTOMER));
+        before=authOracle().updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER,INDEPENDENT_CUSTOMER));
         assertEquals(Set.of(CUSTOMER,INDEPENDENT_CUSTOMER),registry.resolve(saved.owner().token()).customerIds());
         ownerReplay(saved,before); // Authority is current customer membership, not equality with the old scope set.
-        registry.updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER));
+        before=authOracle().updateScope(saved.owner().actor().actorId(),Set.of(CUSTOMER));
         assertEquals(saved.owner().actor(),registry.resolve(saved.owner().token()));
         ownerReplay(saved,before);
-        registry.revoke(saved.owner().actor().actorId());assertNull(registry.resolve(saved.owner().token()));
+        before=authOracle().revoke(saved.owner().actor().actorId());assertNull(registry.resolve(saved.owner().token()));
         denied(saved,saved.owner(),Rejection.REVOKED,before);
         assertEquals("REJECTED",workflow(independent).get("state"));
         assertEquals(0,count("approval"));assertEquals(0,count("payment_reservation"));assertEquals(0,count("mock_payment"));
         assertEquals(before,durableRows(),"Include the populated independent workflow and all historical receipts");
+        return before;
+    }
+    private StoredStartDeny rebase(StoredStartDeny original,Map<String,List<String>> rows) {
+        return new StoredStartDeny(original.saved(),original.receiptJson(),original.replayBody(),rows);
     }
     private void ownerReplay(Saved saved,Map<String,List<String>> before) throws Exception {
         authorizedReplay(saved,saved.owner(),before);
@@ -501,7 +514,7 @@ class PublicWorkflowStartStoredReplyAuthorityIT extends PaymentFixture {
             var rows=new LinkedHashMap<String,List<String>>();
             var tables=db.jdbc().queryForList("SELECT table_name FROM information_schema.tables "
                 +"WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class);
-            assertTrue(tables.containsAll(List.of("workflow","workflow_job","workflow_stage","agent_run","agent_result",
+            assertTrue(tables.containsAll(List.of("demo_auth_registry","demo_token","workflow","workflow_job","workflow_stage","agent_run","agent_result",
                 "delegation_grant","approval","quarantine","payment_reservation","mock_payment","risk_ledger",
                 "action_request","audit_event")));
             // Every column, including JSON receipts and timestamps, detects updates as well as extra rows.

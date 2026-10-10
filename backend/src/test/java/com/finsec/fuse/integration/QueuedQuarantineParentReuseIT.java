@@ -27,7 +27,7 @@ import org.springframework.web.context.WebApplicationContext;
 /** Independent synthetic inputs. Queue cancellation and authenticated lineage admission are separate oracles. */
 class QueuedQuarantineParentReuseIT extends PaymentFixture {
     private static final String LOAN_ACTION="CREATE_LOAN_RECOMMENDATION";
-    private static final List<String> TABLES=List.of("execution_gate","loan_application","workflow","workflow_stage",
+    private static final List<String> TABLES=List.of("demo_auth_registry","demo_token","execution_gate","loan_application","workflow","workflow_stage",
             "workflow_job","agent_run","agent_result","run_source_use","run_evidence_use","run_dependency",
             "delegation_grant","approval","payment_reservation","risk_ledger","mock_payment","quarantine",
             "quarantine_workflow_hold","action_request","audit_event","trusted_evidence","source_document_version");
@@ -44,7 +44,7 @@ class QueuedQuarantineParentReuseIT extends PaymentFixture {
         AnnotationAwareOrderComparator.sort(filters);
         mvc=MockMvcBuilders.webAppContextSetup(context).addFilters(filters.toArray(Filter[]::new)).build();
         reviewerToken=DevActorRegistry.generateToken();
-        actors.register(reviewerToken,new Actor("queued-reviewer-"+UUID.randomUUID(),"LOAN_REVIEWER",Set.of("customer-102")));
+        issueToken(reviewerToken,new Actor("queued-reviewer-"+UUID.randomUUID(),"LOAN_REVIEWER",Set.of("customer-102")));
     }
 
     @Test void sourceQuarantineCancelsActuallyQueuedLoanWithoutDispatchAndRecoveryUsesFreshParents() throws Exception {

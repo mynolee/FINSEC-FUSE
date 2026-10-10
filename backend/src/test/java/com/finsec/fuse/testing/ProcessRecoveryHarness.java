@@ -78,6 +78,13 @@ public final class ProcessRecoveryHarness {
             row.put("postgresVersion", single(databaseUrl, "show server_version"));
             check("16.15".equals(row.get("postgresVersion")), "Expected PostgreSQL 16.15");
             ownedPorts.add(pg.getPort());
+            // Explicitly initialize this scenario's fresh owned ledger once, before either child starts.
+            org.flywaydb.core.Flyway.configure().dataSource(pg.getPostgresDatabase())
+                .locations("classpath:db/migration").load().migrate();
+            var fixtureTokens = new LinkedHashMap<>(actorTokens);
+            fixtureTokens.put("kyc-service", token);
+            DemoTokenTestFixture.initializeOwned(pg.getPostgresDatabase(), databaseUrl, fixtureTokens);
+            var originalAuthority = authSnapshot(databaseUrl);
             byte[] key = new byte[32];
             new SecureRandom().nextBytes(key);
             Path keyFile = work.resolve("ephemeral-signing-key");
@@ -135,6 +142,7 @@ public final class ProcessRecoveryHarness {
                 row.put("injectionBoundary", Files.readString(work.resolve("boundary.ready")));
             }
             var before = snapshot(databaseUrl);
+            check(originalAuthority.equals(authSnapshot(databaseUrl)), "Initial child changed credential authority");
             row.put("beforeFailure", before);
             assertPrepared(scenario, before);
             if ("DB_UNAVAILABLE".equals(scenario)) {
@@ -175,6 +183,9 @@ public final class ProcessRecoveryHarness {
             ownedPorts.add(Integer.parseInt(Files.readString(work.resolve("recover.port"))));
             awaitFile(work.resolve("recovery.ready"), restarted, 30);
             var actual = snapshot(databaseUrl);
+            check(originalAuthority.equals(authSnapshot(databaseUrl)),
+                "Restart must retain exact original credential rows, issuance/expiry, scope and revocation");
+            row.put("credentialAuthorityPreservedAcrossRestart", true);
             row.put("actual", actual);
             row.put("recoveryEvidence", JSON.readValue(Files.readString(work.resolve("recovery.ready")), Map.class));
             row.put("kycHttpCallCount", calls.get());
@@ -208,7 +219,11 @@ public final class ProcessRecoveryHarness {
         Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"));
         var command = List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
             "-cp", System.getProperty("java.class.path"), ProcessRecoveryServer.class.getName(), path.toString());
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(work.resolve(phase + ".log").toFile()).start();
+        var builder = new ProcessBuilder(command);
+        builder.environment().keySet().removeIf(key -> key.startsWith("FUSE_") || key.startsWith("SPRING_")
+            || key.endsWith("_API_KEY") || key.startsWith("OPENAI_") || key.startsWith("ANTHROPIC_")
+            || Set.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS", "PORT").contains(key));
+        Process process = builder.redirectErrorStream(true).redirectOutput(work.resolve(phase + ".log").toFile()).start();
         children.add(process);
         return process;
     }
@@ -225,6 +240,8 @@ public final class ProcessRecoveryHarness {
     private static Map<String, Object> snapshot(String url) throws Exception {
         var result = new LinkedHashMap<String, Object>();
         try (var connection = DriverManager.getConnection(url, "postgres", "")) {
+            result.put("demoAuthRegistry", rows(connection, "select to_jsonb(t)::text as row from demo_auth_registry t order by to_jsonb(t)::text"));
+            result.put("demoTokens", rows(connection, "select to_jsonb(t)::text as row from demo_token t order by to_jsonb(t)::text"));
             result.put("workflow", rows(connection, "select id,state,generation,used_risk,reserved_risk,last_decision,last_reason_code,current_kyc_result_id,current_loan_result_id from workflow"));
             result.put("stages", rows(connection, "select stage,run_count,used_points,reserved_points from workflow_stage order by stage"));
             result.put("jobs", rows(connection, "select id,phase,state,generation,execution_action_id,approval_id,run_id,lease_until,last_error from workflow_job order by phase,id"));
@@ -241,6 +258,13 @@ public final class ProcessRecoveryHarness {
             result.put("actionCount", number(connection, "select count(*) from action_request"));
         }
         return result;
+    }
+
+    private static Map<String, Object> authSnapshot(String url) throws SQLException {
+        try (var connection = DriverManager.getConnection(url, "postgres", "")) {
+            return Map.of("registry", rows(connection, "select to_jsonb(t)::text as row from demo_auth_registry t order by to_jsonb(t)::text"),
+                "tokens", rows(connection, "select to_jsonb(t)::text as row from demo_token t order by to_jsonb(t)::text"));
+        }
     }
 
     private static List<Map<String, Object>> rows(Connection connection, String sql) throws SQLException {

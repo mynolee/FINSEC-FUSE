@@ -33,7 +33,7 @@ class PublicBodyReplayIT extends PaymentFixture {
         """.strip();
     // Include composite-key tables, gate/registries, evidence, grants, reservations and incidents,
     // not just the workflow and receipt counts. Row JSON keeps bytea/JSON/timestamps comparable.
-    private static final List<String> TABLES=List.of(
+    private static final List<String> TABLES=List.of("demo_auth_registry","demo_token",
         "execution_gate","agent_registry","mock_account","mock_profile","application_registry",
         "source_document_version","trusted_evidence","loan_application","workflow","workflow_stage",
         "agent_run","agent_result","run_source_use","run_evidence_use","run_dependency","action_request",
@@ -76,7 +76,7 @@ class PublicBodyReplayIT extends PaymentFixture {
     }
     private void rejectedBodyCanBeCorrectedAndReplayed(String rejectedBody,boolean preMvcRejection) throws Exception {
         String actorId="body-"+UUID.randomUUID(),token=DevActorRegistry.generateToken();
-        registry.register(token,new Actor(actorId,"CUSTOMER",Set.of("customer-102")));
+        issueToken(token,new Actor(actorId,"CUSTOMER",Set.of("customer-102")));
         UUID action=UUID.randomUUID();
         var before=snapshot();
         assertTrue(before.get("action_request").isEmpty());

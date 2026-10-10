@@ -64,7 +64,7 @@ class ApprovalReplayIntegrityIT extends PaymentFixture {
             var rows=new LinkedHashMap<String,List<String>>();
             var tables=db.jdbc().queryForList("SELECT table_name FROM information_schema.tables "
                 +"WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class);
-            assertTrue(tables.containsAll(List.of("action_request","approval","workflow","workflow_job",
+            assertTrue(tables.containsAll(List.of("demo_auth_registry","demo_token","action_request","approval","workflow","workflow_job",
                 "delegation_grant","payment_reservation","mock_payment","risk_ledger","audit_event")));
             for(String table:tables) {
                 String quoted="\""+table.replace("\"","\"\"")+"\"";
@@ -77,7 +77,7 @@ class ApprovalReplayIntegrityIT extends PaymentFixture {
     private Original approveOriginal(UUID workflow) throws Exception {
         String actorId="approval-replay-"+UUID.randomUUID(),token=DevActorRegistry.generateToken();
         var actor=new Actor(actorId,"LOAN_REVIEWER",Set.of("customer-102","customer-103"));
-        registry.register(token,actor);
+        issueToken(token,actor);
         String hash=(String)approvals.preview(actor,workflow).get("reviewSnapshotHash");
         String body=body(ApprovalRequest.Decision.APPROVE,hash,COMMENT);UUID action=UUID.randomUUID();
         var response=post(token,workflow,action,body);

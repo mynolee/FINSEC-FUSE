@@ -2,6 +2,7 @@ package com.finsec.fuse.auth;
 
 import com.finsec.fuse.common.ApiErrorHandler;
 import com.finsec.fuse.common.Json;
+import com.finsec.fuse.testing.DemoTokenTestFixture;
 import com.finsec.fuse.config.JsonConfiguration;
 import com.finsec.fuse.config.PublicUuidConfiguration;
 import com.finsec.fuse.config.PublicUuidBindingAdvice;
@@ -32,7 +33,7 @@ class PublicUuidMvcTest {
         var environment=new MockEnvironment().withProperty("FUSE_DEV_CUSTOMER_101_TOKEN",token);environment.setActiveProfiles("test");
         var conversion=new DefaultFormattingConversionService();new PublicUuidConfiguration().addFormatters(conversion);
         mvc=MockMvcBuilders.standaloneSetup(controller).setConversionService(conversion).setControllerAdvice(new ApiErrorHandler(),new PublicUuidBindingAdvice())
-            .addFilters(new PublicHeaderFilter(json,policy,environment),new DemoAuthFilter(environment,json),new JsonRequestGuard(json,policy)).build();
+            .addFilters(new PublicHeaderFilter(json,policy,environment),DemoTokenTestFixture.filter(environment,json),new JsonRequestGuard(json,policy)).build();
     }
     @Test void malformedPathUuidsAre400BeforeControllerInvocation()throws Exception {
         for(String id:INVALID)mvc.perform(get("/api/v1/workflows/{id}",id).header("Authorization","Bearer "+token)).andExpect(status().isBadRequest());

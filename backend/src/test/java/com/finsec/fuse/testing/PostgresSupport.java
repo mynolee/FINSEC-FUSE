@@ -25,6 +25,9 @@ public final class PostgresSupport {
         } catch (Exception e) { throw new ExceptionInInitializerError(e); }
     }
     public static String url() { return PG.getJdbcUrl("postgres","postgres"); }
+    public static void initializeAuth(javax.sql.DataSource dataSource, org.springframework.core.env.Environment environment) {
+        DemoTokenTestFixture.initializeOwned(dataSource, url(), environment);
+    }
     public static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", PostgresSupport::url);
         registry.add("spring.datasource.username", ()->"postgres");
@@ -33,11 +36,16 @@ public final class PostgresSupport {
         registry.add("spring.flyway.password", ()->"");
         registry.add("fuse.worker-enabled", ()->"false");
         registry.add("fuse.experiments.enabled", ()->"false");
-        registry.add("fuse.auth.customer-101-token", ()->token("customer-101"));
-        registry.add("fuse.auth.customer-102-token", ()->token("customer-102"));
-        registry.add("fuse.auth.reviewer-token", ()->token("reviewer"));
-        registry.add("fuse.auth.security-token", ()->token("security"));
-        registry.add("fuse.auth.developer-token", ()->token("developer"));
+        // Override every alias the registry reads; inherited development credentials are never fixtures.
+        for(String role:java.util.List.of("customer-101","customer-102","customer-103","customer-104","reviewer","security","developer")) {
+            String suffix=role.toUpperCase(java.util.Locale.ROOT).replace('-','_');
+            registry.add("fuse.auth."+role+"-token", ()->token(role));
+            registry.add("FUSE_DEV_"+suffix+"_TOKEN", ()->token(role));
+            registry.add("FUSE_"+suffix+"_TOKEN", ()->token(role));
+        }
+        registry.add("FUSE_REVIEWER_CUSTOMERS", ()->"customer-101,customer-102,customer-103,customer-104");
+        registry.add("FUSE_SECURITY_CUSTOMERS", ()->"customer-101,customer-102,customer-103,customer-104");
         registry.add("fuse.service-token", ()->token("kyc-service"));
+        registry.add("FUSE_SERVICE_TOKEN", ()->token("kyc-service"));
     }
 }

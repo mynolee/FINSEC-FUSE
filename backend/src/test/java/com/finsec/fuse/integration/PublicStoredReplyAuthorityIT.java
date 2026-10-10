@@ -7,6 +7,7 @@ import com.finsec.fuse.FuseApplication;
 import com.finsec.fuse.auth.Actor;
 import com.finsec.fuse.auth.DevActorRegistry;
 import com.finsec.fuse.config.FusePolicy;
+import com.finsec.fuse.testing.DemoTokenFixtureOracle;
 import com.finsec.fuse.payment.ApprovalRequest;
 import com.finsec.fuse.payment.PaymentFixture;
 import com.finsec.fuse.quarantine.ResumeRequest;
@@ -42,10 +43,12 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
                          Map<String,Object> reply,Identity owner) {}
     private record StoredDeny(Saved saved,String receiptJson,byte[] replayBody,Map<String,List<String>> rows) {}
 
+    private DemoTokenFixtureOracle authOracle() { return new DemoTokenFixtureOracle(tokenFixture,json,this::durableRows); }
+
     private Identity identity(String role) {
         String token=DevActorRegistry.generateToken();
         var actor=new Actor("stored-reply-"+UUID.randomUUID(),role,Set.of("customer-102"));
-        registry.register(token,actor);
+        authOracle().issue(token,actor);
         assertEquals(actor,registry.resolve(token));
         return new Identity(token,actor);
     }
@@ -162,7 +165,8 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
             resumeDenyReplay(original,body);
         }
         // Normalization must not let another actor, forbidden role, withdrawn scope or revoked token see history.
-        exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        var afterAuthority=exerciseAuthorityMatrix(withBody(saved,escaped),independent);
+        original=new StoredDeny(original.saved(),original.receiptJson(),original.replayBody(),afterAuthority);
         assertStoredDenyUnchanged(original);
     }
 
@@ -228,24 +232,26 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
         assertEquals(original.rows(),durableRows(),"Preserve every committed row and timestamp, including the independent workflow");
     }
 
-    private void exerciseAuthorityMatrix(Saved saved,UUID independent) throws Exception {
+    private Map<String,List<String>> exerciseAuthorityMatrix(Saved saved,UUID independent) throws Exception {
         assertTrue(jobs.claim().isEmpty(),"No asynchronous work may race the committed-row oracle");
+        // Each issue is independently checked for its exact auth-only delta before the HTTP baseline.
+        var others=List.of("LOAN_REVIEWER","CUSTOMER","SECURITY_OPERATOR","DEVELOPER","FUSE_WORKER","KYC_SERVICE")
+            .stream().map(this::identity).toList();
         var before=durableRows();
         ownerReplay(saved,before);
         // The other reviewer has valid route permission and customer scope, but does not own this action.
-        denied(saved,identity("LOAN_REVIEWER"),403,"FORBIDDEN",before);
-        for(String role:List.of("CUSTOMER","SECURITY_OPERATOR","DEVELOPER","FUSE_WORKER","KYC_SERVICE"))
-            denied(saved,identity(role),403,"FORBIDDEN",before);
-        registry.updateScope(saved.owner().actor().actorId(),Set.of("customer-103"));
+        for(var other:others)denied(saved,other,403,"FORBIDDEN",before);
+        before=authOracle().updateScope(saved.owner().actor().actorId(),Set.of("customer-103"));
         assertEquals(Set.of("customer-103"),registry.resolve(saved.owner().token()).customerIds());
         denied(saved,saved.owner(),403,"FORBIDDEN",before);
-        registry.updateScope(saved.owner().actor().actorId(),Set.of("customer-102"));
+        before=authOracle().updateScope(saved.owner().actor().actorId(),Set.of("customer-102"));
         assertEquals(saved.owner().actor(),registry.resolve(saved.owner().token()));
         ownerReplay(saved,before); // Rejections must neither consume nor replace the original receipt.
-        registry.revoke(saved.owner().actor().actorId());assertNull(registry.resolve(saved.owner().token()));
+        before=authOracle().revoke(saved.owner().actor().actorId());assertNull(registry.resolve(saved.owner().token()));
         denied(saved,saved.owner(),401,"UNAUTHENTICATED",before);
         assertEquals("REJECTED",workflow(independent).get("state"));
         assertEquals(before,durableRows(),"Include the populated independent workflow and its complete history");
+        return before;
     }
     private void ownerReplay(Saved saved,Map<String,List<String>> before) throws Exception {
         clock.set(clock.now().plusSeconds(1));
@@ -277,7 +283,7 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
             var rows=new LinkedHashMap<String,List<String>>();
             var tables=db.jdbc().queryForList("SELECT table_name FROM information_schema.tables "
                 +"WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class);
-            assertTrue(tables.containsAll(List.of("workflow","workflow_job","workflow_stage","agent_run","agent_result",
+            assertTrue(tables.containsAll(List.of("demo_auth_registry","demo_token","workflow","workflow_job","workflow_stage","agent_run","agent_result",
                 "delegation_grant","approval","payment_reservation","mock_payment","risk_ledger","action_request","audit_event")));
             // Every column including JSON receipts and timestamps; catches updates as well as extra rows.
             for(String table:tables)rows.put(table,db.jdbc().queryForList("SELECT to_jsonb(t)::text FROM public.\""
@@ -310,7 +316,7 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
             approvalRejectionReplay(original,body);
         }
         // Equivalent representations cannot bypass present authority or original action ownership.
-        exerciseRejectionAuthorityMatrix(original,escaped,independent);
+        original=exerciseRejectionAuthorityMatrix(original,escaped,independent);
         assertStoredRejectionUnchanged(original);
     }
 
@@ -403,23 +409,29 @@ class PublicStoredReplyAuthorityIT extends PaymentFixture {
         assertEquals(original.rows(),durableRows(),"Preserve every committed row and timestamp, including the independent workflow");
     }
 
-    private void exerciseRejectionAuthorityMatrix(StoredRejection original,String body,UUID independent) throws Exception {
+    private StoredRejection exerciseRejectionAuthorityMatrix(StoredRejection original,String body,UUID independent) throws Exception {
         var saved=original.saved();
         assertTrue(jobs.claim().isEmpty(),"No asynchronous work may race the committed-row oracle");
+        assertStoredRejectionUnchanged(original);
+        var others=List.of("LOAN_REVIEWER","CUSTOMER","SECURITY_OPERATOR","DEVELOPER","FUSE_WORKER","KYC_SERVICE")
+            .stream().map(this::identity).toList();
+        original=rebase(original,durableRows());
         approvalRejectionReplay(original,body);
-        approvalRejectionDenied(original,body,identity("LOAN_REVIEWER"),403,"FORBIDDEN");
-        for(String role:List.of("CUSTOMER","SECURITY_OPERATOR","DEVELOPER","FUSE_WORKER","KYC_SERVICE"))
-            approvalRejectionDenied(original,body,identity(role),403,"FORBIDDEN");
-        registry.updateScope(saved.owner().actor().actorId(),Set.of("customer-103"));
+        for(var other:others)approvalRejectionDenied(original,body,other,403,"FORBIDDEN");
+        original=rebase(original,authOracle().updateScope(saved.owner().actor().actorId(),Set.of("customer-103")));
         assertEquals(Set.of("customer-103"),registry.resolve(saved.owner().token()).customerIds());
         approvalRejectionDenied(original,body,saved.owner(),403,"FORBIDDEN");
-        registry.updateScope(saved.owner().actor().actorId(),Set.of("customer-102"));
+        original=rebase(original,authOracle().updateScope(saved.owner().actor().actorId(),Set.of("customer-102")));
         assertEquals(saved.owner().actor(),registry.resolve(saved.owner().token()));
         approvalRejectionReplay(original,body);
-        registry.revoke(saved.owner().actor().actorId());assertNull(registry.resolve(saved.owner().token()));
+        original=rebase(original,authOracle().revoke(saved.owner().actor().actorId()));assertNull(registry.resolve(saved.owner().token()));
         approvalRejectionDenied(original,body,saved.owner(),401,"UNAUTHENTICATED");
         assertEquals("REJECTED",workflow(independent).get("state"));
         assertStoredRejectionUnchanged(original);
+        return original;
+    }
+    private StoredRejection rebase(StoredRejection original,Map<String,List<String>> rows) {
+        return new StoredRejection(original.saved(),original.reviewHash(),original.receiptJson(),original.replayBody(),rows);
     }
 
     private void approvalRejectionDenied(StoredRejection original,String body,Identity caller,int status,String reason)

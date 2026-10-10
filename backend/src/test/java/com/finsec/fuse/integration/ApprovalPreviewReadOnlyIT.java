@@ -5,6 +5,7 @@ import com.finsec.fuse.auth.Actor;
 import com.finsec.fuse.auth.DevActorRegistry;
 import com.finsec.fuse.common.Json;
 import com.finsec.fuse.config.FusePolicy;
+import com.finsec.fuse.testing.DemoTokenFixtureOracle;
 import com.finsec.fuse.payment.ApprovalRequest;
 import com.finsec.fuse.payment.PaymentFixture;
 import java.net.URI;
@@ -37,7 +38,7 @@ class ApprovalPreviewReadOnlyIT extends PaymentFixture {
 
     private String token(String role,Set<String> customers) {
         String token=DevActorRegistry.generateToken();
-        registry.register(token,new Actor("preview-only-"+UUID.randomUUID(),role,customers));
+        new DemoTokenFixtureOracle(tokenFixture,json,this::snapshot).issue(token,new Actor("preview-only-"+UUID.randomUUID(),role,customers));
         return token;
     }
     private HttpResponse<String> preview(UUID workflow,String token) throws Exception {
@@ -58,7 +59,7 @@ class ApprovalPreviewReadOnlyIT extends PaymentFixture {
             var rows=new LinkedHashMap<String,List<String>>();
             var tables=db.jdbc().queryForList("SELECT table_name FROM information_schema.tables "
                 +"WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class);
-            assertTrue(tables.containsAll(List.of("execution_gate","application_registry","loan_application",
+            assertTrue(tables.containsAll(List.of("demo_auth_registry","demo_token","execution_gate","application_registry","loan_application",
                 "workflow","workflow_job","agent_run","agent_result","delegation_grant","approval",
                 "payment_reservation","mock_payment","risk_ledger","audit_event","action_request")));
             // Discover every public base table, including Flyway history and future tables. Full
@@ -132,11 +133,13 @@ class ApprovalPreviewReadOnlyIT extends PaymentFixture {
         var loan=jobs.claim().orElseThrow();assertEquals("LOAN",loan.phase());loans.execute(loan.jobId(),loan.token());
         assertEquals("REJECTED",workflow(independent).get("state"));assertTrue(jobs.claim().isEmpty());
         var independentBefore=committed(()->new LinkedHashMap<>(workflow(independent)));
-        var expected=expectedPreview(id);noAuthorizationCreated(id);var before=snapshot();
+        var expected=expectedPreview(id);noAuthorizationCreated(id);
         String reviewer=token("LOAN_REVIEWER",Set.of("customer-102"));
+        String broadReviewer=token("LOAN_REVIEWER",Set.of("customer-101","customer-102","customer-103"));
+        var before=snapshot();
         for(int attempt=0;attempt<5;attempt++)
             readOnlyPreview(id,reviewer,200,expected,before,"authorized preview "+attempt);
-        readOnlyPreview(id,token("LOAN_REVIEWER",Set.of("customer-101","customer-102","customer-103")),
+        readOnlyPreview(id,broadReviewer,
             200,expected,before,"reviewer with broader legitimate customer scope");
 
         UUID action=UUID.randomUUID();
@@ -169,17 +172,21 @@ class ApprovalPreviewReadOnlyIT extends PaymentFixture {
     }
 
     @Test void onlyInScopeReviewersMayPreviewAndEveryDeniedRoleIsDurablyReadOnly() throws Exception {
-        UUID id=ready102();var expected=expectedPreview(id);var before=snapshot();
-        // v2.1 public contract: all non-reviewer roles are FORBIDDEN, even with matching scope.
-        // Test both configured service identities; no caller-supplied role is trusted.
-        for(String role:List.of("CUSTOMER","SECURITY_OPERATOR","DEVELOPER","KYC_SERVICE","FUSE_WORKER")) {
+        UUID id=ready102();var expected=expectedPreview(id);
+        record Caller(String token,String label) {}
+        var callers=new java.util.ArrayList<Caller>();
+        // Issue controls before the baseline; each issue checks its exact auth-only insertion.
+        for(String role:List.of("CUSTOMER","SECURITY_OPERATOR","DEVELOPER","KYC_SERVICE","FUSE_WORKER"))
             for(Set<String> scope:List.of(Set.of("customer-102"),Set.of("customer-101"),Set.<String>of()))
-                readOnlyPreview(id,token(role,scope),403,expected,before,role+" scope="+scope);
-        }
+                callers.add(new Caller(token(role,scope),role+" scope="+scope));
         for(Set<String> scope:List.of(Set.of("customer-101"),Set.<String>of()))
-            readOnlyPreview(id,token("LOAN_REVIEWER",scope),403,expected,before,"out-of-scope reviewer "+scope);
+            callers.add(new Caller(token("LOAN_REVIEWER",scope),"out-of-scope reviewer "+scope));
+        String control=token("LOAN_REVIEWER",Set.of("customer-102"));
+        var before=snapshot();
+        // v2.1 public contract: all non-reviewer roles are FORBIDDEN, even with matching scope.
+        for(var caller:callers)readOnlyPreview(id,caller.token(),403,expected,before,caller.label());
         readOnlyPreview(id,null,401,expected,before,"missing authentication");
         readOnlyPreview(id,DevActorRegistry.generateToken(),401,expected,before,"unregistered bearer token");
-        readOnlyPreview(id,token("LOAN_REVIEWER",Set.of("customer-102")),200,expected,before,"in-scope reviewer control");
+        readOnlyPreview(id,control,200,expected,before,"in-scope reviewer control");
     }
 }

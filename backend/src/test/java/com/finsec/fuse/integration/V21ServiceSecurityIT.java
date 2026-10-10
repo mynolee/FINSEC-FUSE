@@ -2,6 +2,7 @@ package com.finsec.fuse.integration;
 
 import com.finsec.fuse.auth.*;
 import com.finsec.fuse.common.ApiException;
+import com.finsec.fuse.testing.DemoTokenFixtureOracle;
 import com.finsec.fuse.experiments.*;
 import com.finsec.fuse.payment.*;
 import com.finsec.fuse.persistence.ActionRequests;
@@ -39,19 +40,33 @@ class V21ServiceSecurityIT extends PaymentFixture {
     private Identity identity(String role, String... customers) {
         String token=DevActorRegistry.generateToken();
         Actor actor=new Actor("qa-"+UUID.randomUUID(),role,Set.of(customers));
-        actors.register(token,actor);return new Identity(token,actor);
+        authOracle().issue(token,actor);return new Identity(token,actor);
     }
     private String bearer(Identity who){return "Bearer "+who.token();}
-    private Map<String,Long> counts() {
-        var result=new LinkedHashMap<String,Long>();
+    private Map<String,Object> counts() {
+        var result=new LinkedHashMap<String,Object>();
         for(String table:List.of("workflow","agent_run","workflow_job","approval","mock_payment","risk_ledger","quarantine","action_request","audit_event"))
             result.put(table,count(table));
+        for(String table:List.of("demo_auth_registry","demo_token"))result.put(table,rows(table));
         return result;
     }
+    private List<String> rows(String table) {
+        return db.jdbc().queryForList("SELECT to_jsonb(t)::text FROM \""+table.replace("\"","\"\"")+"\" t ORDER BY to_jsonb(t)::text",String.class);
+    }
+    private Map<String,List<String>> fullRows() {
+        var result=new LinkedHashMap<String,List<String>>();
+        for(String table:db.jdbc().queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class))
+            result.put(table,rows(table));
+        assertTrue(result.keySet().containsAll(List.of("demo_auth_registry","demo_token")));
+        return result;
+    }
+    private DemoTokenFixtureOracle authOracle() { return new DemoTokenFixtureOracle(tokenFixture,json,this::fullRows); }
     private void denied(MockHttpServletRequestBuilder request,int status) throws Exception {
+        var before=fullRows();
         String response=mvc.perform(request).andExpect(status().is(status)).andReturn().getResponse().getContentAsString();
         assertFalse(response.contains("reviewSnapshotHash"));assertFalse(response.contains("approvalId"));
         assertFalse(response.contains("paymentId"));assertFalse(response.contains("receipt_json"));
+        assertEquals(before,fullRows(),"Denied HTTP request must preserve all business and auth rows");
     }
     @Test void originalReviewerScopeAndRevocationAreCheckedBeforeHistoricalApprovalReplay() throws Exception {
         UUID workflow=ready102(),action=UUID.randomUUID();
@@ -66,18 +81,20 @@ class V21ServiceSecurityIT extends PaymentFixture {
         clock.set(clock.now().plusSeconds(3600)); // Historical reply remains valid after approval/evidence expiry.
         mvc.perform(post(path).header("Authorization",bearer(reviewer)).header("Idempotency-Key",action).contentType(MediaType.APPLICATION_JSON).content(body))
             .andExpect(status().isCreated()).andExpect(jsonPath("$.replayed").value(true));
-        var before=counts();
         Identity other=identity("LOAN_REVIEWER","customer-101");
-        denied(post(path).header("Authorization",bearer(other)).header("Idempotency-Key",action).contentType(MediaType.APPLICATION_JSON).content(body),403);
         Identity otherInScope=identity("LOAN_REVIEWER","customer-102");
+        var before=counts();
+        denied(post(path).header("Authorization",bearer(other)).header("Idempotency-Key",action).contentType(MediaType.APPLICATION_JSON).content(body),403);
         denied(post(path).header("Authorization",bearer(otherInScope)).header("Idempotency-Key",action).contentType(MediaType.APPLICATION_JSON).content(body),403);
         assertEquals(403,assertThrows(ApiException.class,()->approvals.decide(otherInScope.actor(),workflow,action,request)).status());
-        actors.updateScope(reviewer.actor().actorId(),Set.of("customer-101"));
+        assertEquals(before,counts());
+        authOracle().updateScope(reviewer.actor().actorId(),Set.of("customer-101"));before=counts();
         denied(post(path).header("Authorization",bearer(reviewer)).header("Idempotency-Key",action).contentType(MediaType.APPLICATION_JSON).content(body),403);
         Actor current=actors.resolve(reviewer.token());
         assertEquals(403,assertThrows(ApiException.class,()->approvals.decide(current,workflow,action,request)).status());
-        actors.updateScope(reviewer.actor().actorId(),Set.of("customer-102"));
-        actors.revoke(reviewer.actor().actorId());
+        assertEquals(before,counts());
+        authOracle().updateScope(reviewer.actor().actorId(),Set.of("customer-102"));
+        authOracle().revoke(reviewer.actor().actorId());before=counts();
         denied(post(path).header("Authorization",bearer(reviewer)).header("Idempotency-Key",action).contentType(MediaType.APPLICATION_JSON).content(body),401);
         assertEquals(before,counts());assertEquals(1,count("mock_payment"));assertEquals(1,events("CONSUME"));assertRisk(workflow,85,0);
     }
@@ -102,7 +119,8 @@ class V21ServiceSecurityIT extends PaymentFixture {
         mvc.perform(get(path).header("Authorization",bearer(owner))).andExpect(status().isOk()).andExpect(jsonPath("$.customerId").value("customer-102"));
         denied(get(path+"/trace").header("Authorization",bearer(owner)),403);
         mvc.perform(get(path+"/trace").header("Authorization",bearer(reviewer))).andExpect(status().isOk()).andExpect(jsonPath("$.runs.length()").value(2));
-        actors.updateScope(reviewer.actor().actorId(),Set.of("customer-101"));
+        assertEquals(before,counts());
+        authOracle().updateScope(reviewer.actor().actorId(),Set.of("customer-101"));before=counts();
         for(String suffix:List.of("","/trace","/approval-preview"))denied(get(path+suffix).header("Authorization",bearer(reviewer)),403);
         mvc.perform(get("/api/v1/workflows").header("Authorization",bearer(reviewer))).andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0));
         denied(get(path).header("Authorization",bearer(developer)),403);
@@ -113,7 +131,7 @@ class V21ServiceSecurityIT extends PaymentFixture {
         var request=new QuarantineRequest(QuarantineRequest.Scope.WORKFLOW,null,null,workflow,null,null,null,null,QuarantineRequest.Reason.SECURITY_INVESTIGATION,"Mock investigation");
         UUID incident=(UUID)quarantines.apply(security.actor(),action,request).get("quarantineId");
         mvc.perform(get("/api/v1/incidents/"+incident+"/impact").header("Authorization",bearer(security))).andExpect(status().isOk());
-        var before=counts();actors.updateScope(security.actor().actorId(),Set.of("customer-101"));
+        authOracle().updateScope(security.actor().actorId(),Set.of("customer-101"));var before=counts();
         denied(post("/api/v1/quarantines").header("Authorization",bearer(security)).header("Idempotency-Key",action).contentType(MediaType.APPLICATION_JSON).content(json.write(request)),403);
         denied(get("/api/v1/incidents/"+incident+"/impact").header("Authorization",bearer(security)),403);
         var ids=db.query("SELECT id FROM trusted_evidence WHERE customer_id='customer-102'").stream().map(row->(UUID)row.get("id")).toList();

@@ -35,7 +35,7 @@ class PublicApplicationReplayIT extends PaymentFixture {
 
     private String token(String role,Set<String> customers) {
         String token=DevActorRegistry.generateToken();
-        registry.register(token,new Actor("application-replay-"+UUID.randomUUID(),role,customers));
+        issueToken(token,new Actor("application-replay-"+UUID.randomUUID(),role,customers));
         return token;
     }
     private String body(String reference,String customer,long amount,UUID account) {
@@ -65,7 +65,7 @@ class PublicApplicationReplayIT extends PaymentFixture {
             // catches changes to timestamps, receipts, audit/risk ledgers and composite-key rows.
             var tables=db.jdbc().queryForList("SELECT table_name FROM information_schema.tables "
                 +"WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class);
-            assertTrue(tables.containsAll(List.of("application_registry","action_request","workflow",
+            assertTrue(tables.containsAll(List.of("demo_auth_registry","demo_token","application_registry","action_request","workflow",
                 "workflow_job","risk_ledger","mock_payment")));
             for(String table:tables) {
                 String quoted="\""+table.replace("\"","\"\"")+"\"";

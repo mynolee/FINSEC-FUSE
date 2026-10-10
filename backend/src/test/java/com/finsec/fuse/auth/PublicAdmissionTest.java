@@ -1,6 +1,7 @@
 package com.finsec.fuse.auth;
 
 import com.finsec.fuse.common.Json;
+import com.finsec.fuse.testing.DemoTokenTestFixture;
 import com.finsec.fuse.config.*;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
@@ -24,15 +25,15 @@ class PublicAdmissionTest {
     private MockEnvironment env(String token){var env=new MockEnvironment().withProperty("FUSE_DEV_CUSTOMER_101_TOKEN",token);env.setActiveProfiles("test");return env;}
     @Test void tokensAreRandomBoundedExpireExactlyAndCannotBeReactivatedByScopeUpdates(){
         String token=DevActorRegistry.generateToken();assertEquals(32,Base64.getUrlDecoder().decode(token).length);assertNotEquals(token,DevActorRegistry.generateToken());
-        var clock=new TestClock();var registry=new DevActorRegistry(env(token),policy,clock);
-        assertTrue(registry.resolve(token).canAccess("customer-101"));registry.updateScope("customer-101",Set.of());assertFalse(registry.resolve(token).canAccess("customer-101"));
+        var clock=new TestClock();var fixture=new DemoTokenTestFixture(env(token),policy,clock);var registry=fixture.registry();
+        assertTrue(registry.resolve(token).canAccess("customer-101"));fixture.updateScope("customer-101",Set.of());assertFalse(registry.resolve(token).canAccess("customer-101"));
         clock.advance(7199);assertNotNull(registry.resolve(token));clock.advance(1);assertNull(registry.resolve(token));
-        String other=DevActorRegistry.generateToken();registry.register(other,new Actor("other","CUSTOMER",Set.of("customer-102")));
-        registry.revoke("other");registry.updateScope("other",Set.of("customer-102"));assertNull(registry.resolve(other));
+        String other=DevActorRegistry.generateToken();fixture.issue(other,new Actor("other","CUSTOMER",Set.of("customer-102")));
+        fixture.revoke("other");fixture.updateScope("other",Set.of("customer-102"));assertNull(registry.resolve(other));
     }
     @Test void weakTokensAndMixedProductionProfilesFailClosed(){
-        assertThrows(IllegalStateException.class,()->new DevActorRegistry(env("test-only-short"),policy));
-        var env=env(DevActorRegistry.generateToken());env.setActiveProfiles("prod","demo");assertThrows(IllegalStateException.class,()->new DevActorRegistry(env,policy));
+        assertThrows(IllegalStateException.class,()->new DemoTokenTestFixture(env("test-only-short"),policy,new TestClock()));
+        var env=env(DevActorRegistry.generateToken());env.setActiveProfiles("prod","demo");assertThrows(IllegalStateException.class,()->new DemoTokenTestFixture(env,policy,new TestClock()));
     }
     @Test void actorReadWriteAndAnonymousWindowsHaveExactBoundariesAndIndependentActors(){
         var clock=new TestClock();var limiter=new AdmissionLimiter(policy,clock);var actor=new Actor("a","CUSTOMER",Set.of());
@@ -48,18 +49,18 @@ class PublicAdmissionTest {
         assertEquals(20,allowed.get());
     }
     @Test void cookiesDoNotAuthenticateAndSpoofedForwardingCannotResetAnonymousRate()throws Exception{
-        var token=DevActorRegistry.generateToken();var filter=new DemoAuthFilter(env(token),json);
+        var token=DevActorRegistry.generateToken();var filter=DemoTokenTestFixture.filter(env(token),json);
         for(int i=0;i<31;i++){var req=new MockHttpServletRequest("GET","/api/v1/workflows");req.setRemoteAddr("127.0.0.1");req.addHeader("X-Forwarded-For","192.0.2."+i);req.addHeader("Cookie","Authorization=Bearer "+token);var res=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilter(req,res,chain);assertEquals(i<30?401:429,res.getStatus());assertNull(chain.getRequest());if(i==30)assertEquals("60",res.getHeader("Retry-After"));}
     }
     @Test void duplicateAndCombinedAuthorityHeadersAreRejectedBeforeWork()throws Exception{
         for(String name:List.of("Authorization","Idempotency-Key"))for(boolean combined:List.of(false,true)){
-            var token=DevActorRegistry.generateToken();var filter=new DemoAuthFilter(env(token),json);var req=new MockHttpServletRequest("POST","/api/v1/workflows");
+            var token=DevActorRegistry.generateToken();var filter=DemoTokenTestFixture.filter(env(token),json);var req=new MockHttpServletRequest("POST","/api/v1/workflows");
             if(!name.equals("Authorization"))req.addHeader("Authorization","Bearer "+token);
             req.addHeader(name,combined?"one,two":"one");if(!combined)req.addHeader(name,"two");var res=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilter(req,res,chain);assertEquals(400,res.getStatus());assertNull(chain.getRequest());
         }
     }
     @Test void authenticatedRateRejectsBeforeWorkAcrossRemoteAddresses()throws Exception{
-        String token=DevActorRegistry.generateToken();var filter=new DemoAuthFilter(env(token),json);
+        String token=DevActorRegistry.generateToken();var filter=DemoTokenTestFixture.filter(env(token),json);
         for(int i=0;i<21;i++){
             var request=new MockHttpServletRequest("POST","/api/v1/workflows");request.setRemoteAddr("192.0.2."+i);request.addHeader("Authorization","Bearer "+token);
             var response=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilter(request,response,chain);
@@ -67,16 +68,16 @@ class PublicAdmissionTest {
         }
     }
     @Test void everyRequestResolvesCurrentScopeExpiryAndRevocation()throws Exception{
-        String token=DevActorRegistry.generateToken();var clock=new TestClock();var registry=new DevActorRegistry(env(token),policy,clock);var filter=new DemoAuthFilter(registry,new AdmissionLimiter(policy,clock),json);
+        String token=DevActorRegistry.generateToken();var clock=new TestClock();var fixture=new DemoTokenTestFixture(env(token),policy,clock);var registry=fixture.registry();var filter=new DemoAuthFilter(registry,new AdmissionLimiter(policy,clock),json);
         for(int step=0;step<3;step++){
-            if(step==1)registry.updateScope("customer-101",Set.of());if(step==2)registry.revoke("customer-101");
+            if(step==1)fixture.updateScope("customer-101",Set.of());if(step==2)fixture.revoke("customer-101");
             var request=new MockHttpServletRequest("GET","/api/v1/workflows");request.addHeader("Authorization","Bearer "+token);var response=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilter(request,response,chain);
             if(step<2){assertEquals(200,response.getStatus());assertEquals(step==0,ActorResolver.current(request).canAccess("customer-101"));}else{assertEquals(401,response.getStatus());assertNull(chain.getRequest());}
         }
     }
     @Test void actualCorsRequestsStillRequireBearerAndNeverGrantSuffixOrigins()throws Exception{
         var headers=new PublicHeaderFilter(json,policy,new MockEnvironment().withProperty("FUSE_CORS_ALLOWED_ORIGINS","http://localhost:5173"));
-        var auth=new DemoAuthFilter(env(DevActorRegistry.generateToken()),json);
+        var auth=DemoTokenTestFixture.filter(env(DevActorRegistry.generateToken()),json);
         for(String origin:List.of("http://localhost:5173","http://localhost:5173.evil.test")){
             var request=new MockHttpServletRequest("GET","/api/v1/workflows");request.addHeader("Origin",origin);var response=new MockHttpServletResponse();
             headers.doFilter(request,response,(req,res)->auth.doFilter(req,res,new MockFilterChain()));assertEquals(401,response.getStatus());assertEquals("no-store",response.getHeader("Cache-Control"));

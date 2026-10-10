@@ -49,7 +49,7 @@ class PublicMutationAuthorityIT extends PaymentFixture {
     private Identity identity(String role) {
         String token=DevActorRegistry.generateToken();
         var actor=new Actor("authority-"+UUID.randomUUID(),role,Set.of("customer-102"));
-        registry.register(token,actor);
+        issueToken(token,actor);
         assertEquals(actor,registry.resolve(token),"The test must use a recognized server-side identity");
         return new Identity(token,actor);
     }
@@ -88,7 +88,7 @@ class PublicMutationAuthorityIT extends PaymentFixture {
             var rows=new LinkedHashMap<String,List<String>>();
             var tables=db.jdbc().queryForList("SELECT table_name FROM information_schema.tables "
                 +"WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name",String.class);
-            assertTrue(tables.containsAll(List.of("execution_gate","application_registry","loan_application",
+            assertTrue(tables.containsAll(List.of("demo_auth_registry","demo_token","execution_gate","application_registry","loan_application",
                 "workflow","workflow_job","agent_run","agent_result","delegation_grant","approval",
                 "quarantine","payment_reservation","mock_payment","risk_ledger","audit_event","action_request")));
             // Include every persisted column, timestamp, receipt and future table, not just counts.
