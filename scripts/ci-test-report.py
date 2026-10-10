@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Publish counts and bounded, source-validated test IDs; never raw failure content."""
 import argparse
+from functools import lru_cache
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -14,10 +16,19 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1] / 'backend/src/test/java'
 IDENT = r'[A-Za-z_][A-Za-z_0-9]{0,159}'
 
 
-def source_manifest() -> dict:
-    """Conservative allowlist from checkout declarations, never from XML names.
+@lru_cache(maxsize=1)
+def inventory_module():
+    """Share the inventory's exact source and report-name identity policy."""
+    spec = importlib.util.spec_from_file_location('report_inventory', Path(__file__).with_name('ci-test-inventory.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    Unsupported nested or dynamic tests remain unknown. Strip
+
+def source_locations() -> dict:
+    """Optional line bounds only; this parser cannot authorize an identity.
+
+    Unsupported declarations have no line bounds. Strip
     comments and literals before matching declarations, preserving line numbers.
     """
     result = {}
@@ -72,28 +83,34 @@ def source_manifest() -> dict:
     return result
 
 
+def source_manifest() -> dict:
+    """Use only inventory-approved identities, with optional source line bounds."""
+    try:
+        identities = inventory_module().source_manifest(SOURCE_ROOT)
+    except (OSError, UnicodeError, ValueError):
+        return {}  # Missing source diagnostics never change aggregate counts.
+    try:
+        locations = source_locations()
+    except (OSError, UnicodeError, ValueError):
+        locations = {}  # Optional locations cannot remove a proven identity.
+    return {classname: {method: (*locations.get(classname, {}).get(method, (None, None))[:2], signature)
+                        for method, signature in methods.items()}
+            for classname, methods in identities.items()}
+
+
 def failure_id(case, manifest):
     """Return canonical source values only. XML display names are never emitted."""
     classname = case.get('classname', '')
     name = case.get('name', '')
     methods = manifest.get(classname)
-    if methods is None:
-        return None
-    # Match complete checkout-derived signatures before recognizing bounded
-    # Gradle invocation suffixes. Never copy a display/parameter suffix to output.
-    canonical_method = None
-    for candidate, (_, _, signature) in methods.items():
-        if signature is None:
-            accepted = name in (candidate, candidate + '()')
-        else:
-            prefix = candidate + '(' + signature + ')'
-            accepted = bool(re.fullmatch(re.escape(prefix) + r'(?:\[[1-9][0-9]{0,5}\](?: [^\r\n]{0,1024})?)?', name))
-        if accepted:
-            canonical_method = candidate
-            break
-    if canonical_method is None:
+    if not methods:
         return None
     canonical_class = next(key for key in manifest if key == classname)
+    identities = {canonical_class: {method: signature for method, (_, _, signature) in methods.items()}}
+    resolved = inventory_module().identity(classname, name, identities)
+    if resolved is None:
+        return None
+    canonical_class, canonical_method, _ = resolved
     low, high, _ = methods[canonical_method]
     line = None
     frame = re.compile(r'\s*at ' + re.escape(canonical_class + '.' + canonical_method) +
@@ -101,7 +118,7 @@ def failure_id(case, manifest):
     for failure in list(case.findall('failure')) + list(case.findall('error')):
         for text in (failure.text or '').splitlines():
             match = frame.fullmatch(text)
-            if match and low <= int(match[1]) <= high:
+            if match and low is not None and high is not None and low <= int(match[1]) <= high:
                 line = int(match[1])
                 break
         if line is not None:

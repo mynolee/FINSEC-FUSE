@@ -223,11 +223,13 @@ be mapped safely. Dynamic, generated, inherited, custom-display or ambiguous
 identities remain explicitly unknown when the conservative parser cannot prove
 the mapping. Partial mapping yields `complete=false` and
 `EVIDENCE_INCOMPLETE`; it does not reduce or rewrite independently verified
-aggregate test counts. The inventory's identity parser is deliberately stricter
-than the existing summary's failure-location parser. If a summary failure ID has
-no corresponding mapped failed/error inventory row, the binder rejects the
-inconsistent pair and withholds the upload; it does not silently discard that
-failure ID or downgrade the mismatch to partial evidence.
+aggregate test counts. The summary and inventory use the same conservative
+checkout-derived identity manifest and report-name resolver. The summary's
+separate line parser supplies only optional, bounded `sourceLine` values; it
+cannot authorize an identity, and an unresolved location remains null. If a
+summary failure ID has no corresponding mapped failed/error inventory row, the
+binder rejects the inconsistent pair and withholds the upload; it does not
+silently discard that failure ID or downgrade the mismatch to partial evidence.
 Even `EVIDENCE_COMPLETE` is not source coverage, a test
 pass verdict, full acceptance, Compose/browser verification or LIVE robustness.
 
