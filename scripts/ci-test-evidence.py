@@ -39,6 +39,14 @@ REQUIRED_METHODS = tuple(sorted((
 )))
 
 
+RATE_CLASS = 'com.finsec.fuse.integration.PublicReadAnonymousRateBoundaryIT'
+RATE_SOURCE = 'backend/src/test/java/com/finsec/fuse/integration/PublicReadAnonymousRateBoundaryIT.java'
+RATE_METHODS = tuple(sorted((
+    'authenticatedReadsRespectExactQuotaWithoutBusinessOrModelEffects',
+    'anonymousAttemptsRespectExactQuotaWithoutBusinessOrModelEffects',
+)))
+
+
 class Invalid(ValueError):
     pass
 
@@ -253,34 +261,35 @@ def reports(summary, inventory, root, tracked):
 
 
 
-def required_method_evidence(root, inventory, source, run_id, attempt):
+def fixed_method_evidence(root, inventory, source, run_id, attempt,
+                          target_class, target_source, target_methods, schema, allow_absent):
     """One fixed regression contract, independent of global identity completeness.
 
     Caller has validated the full checkout and sanitized reports. Raw report
     reconciliation and the target projection share each bounded read; no report
     names, XML names, diagnostic text or exception messages reach output.
     """
-    selected = [item for item in source['files'] if item['path'] == REQUIRED_SOURCE]
+    selected = [item for item in source['files'] if item['path'] == target_source]
     require(len(selected) <= 1)
     try:
-        target_bytes = read(root / REQUIRED_SOURCE)
+        target_bytes = read(root / target_source)
     except FileNotFoundError:
         # safe_open walks every ancestor with O_NOFOLLOW. Dangling symlinks,
         # non-directory ancestors and unreadable paths are not absence.
-        require(not selected)
-        require(not any(row['class'] == REQUIRED_CLASS for task in inventory['tasks'].values()
+        require(allow_absent and not selected)
+        require(not any(row['class'] == target_class for task in inventory['tasks'].values()
                         for row in task['rows']))
-        return {'schemaVersion': 'FUSE-REQUIRED-METHODS-1', 'status': 'NOT_APPLICABLE',
-                'reason': 'SOURCE_ABSENT', 'class': REQUIRED_CLASS,
+        return {'schemaVersion': schema, 'status': 'NOT_APPLICABLE',
+                'reason': 'SOURCE_ABSENT', 'class': target_class,
                 'head': source['head'], 'tree': source['tree'],
                 'run': {'id': run_id, 'attempt': attempt}}
     require(len(selected) == 1)
-    require(selected[0] == {'path': REQUIRED_SOURCE, **digest(target_bytes)})
+    require(selected[0] == {'path': target_source, **digest(target_bytes)})
     spec = importlib.util.spec_from_file_location('required_inventory', Path(__file__).with_name('ci-test-inventory.py'))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     manifest = module.source_manifest(root / 'backend/src/test/java')
-    require(manifest.get(REQUIRED_CLASS) == dict.fromkeys(REQUIRED_METHODS))
+    require(manifest.get(target_class) == dict.fromkeys(target_methods))
     observed, report_digests = set(), {}
     for task in sorted(TASKS):
         directory = root / 'backend/build/test-results' / task
@@ -314,12 +323,12 @@ def required_method_evidence(root, inventory, source, run_id, attempt):
                 else:
                     unmapped[outcome] += 1
                 # A target-named suite may not hide foreign/unknown cases.
-                if suite == REQUIRED_CLASS:
-                    require(classname == REQUIRED_CLASS)
-                if classname == REQUIRED_CLASS:
-                    require(suite == REQUIRED_CLASS and task == 'integrationTest')
+                if suite == target_class:
+                    require(classname == target_class)
+                if classname == target_class:
+                    require(suite == target_class and task == 'integrationTest')
                     require(resolved is not None and resolved[2] == 'single')
-                    require(resolved[1] in REQUIRED_METHODS and outcome == 'passed')
+                    require(resolved[1] in target_methods and outcome == 'passed')
                     require(resolved[1] not in observed)
                     observed.add(resolved[1])
         require(sum(counts.values()) > 0)
@@ -334,15 +343,28 @@ def required_method_evidence(root, inventory, source, run_id, attempt):
         report_digest = hashlib.sha256(b'FUSE-RAW-REPORT-SET-1\0' + len(files).to_bytes(8, 'big') +
                                        b''.join(sorted(report_records))).hexdigest()
         report_digests[task] = {'files': len(files), 'sha256': report_digest}
-    require(observed == set(REQUIRED_METHODS))
-    return {'schemaVersion': 'FUSE-REQUIRED-METHODS-1', 'status': 'PASS',
-            'class': REQUIRED_CLASS, 'sourceSha256': digest(target_bytes)['sha256'],
+    require(observed == set(target_methods))
+    return {'schemaVersion': schema, 'status': 'PASS',
+            'class': target_class, 'sourceSha256': digest(target_bytes)['sha256'],
             'head': source['head'], 'tree': source['tree'],
             'run': {'id': run_id, 'attempt': attempt}, 'rawReportSets': report_digests,
-            'methods': [{'method': method, 'status': 'passed', 'count': 1} for method in REQUIRED_METHODS]}
+            'methods': [{'method': method, 'status': 'passed', 'count': 1} for method in target_methods]}
 
 
-def execute(command, root, artifacts, head, run_id, attempt):
+
+def required_method_evidence(root, inventory, source, run_id, attempt):
+    return fixed_method_evidence(root, inventory, source, run_id, attempt,
+                                 REQUIRED_CLASS, REQUIRED_SOURCE, REQUIRED_METHODS,
+                                 'FUSE-REQUIRED-METHODS-1', True)
+
+
+def public_read_rate_evidence(root, inventory, source, run_id, attempt):
+    return fixed_method_evidence(root, inventory, source, run_id, attempt,
+                                 RATE_CLASS, RATE_SOURCE, RATE_METHODS,
+                                 'FUSE-PUBLIC-READ-RATE-METHODS-1', False)
+
+
+def execute(command, root, artifacts, head, run_id, attempt, require_public_read_rate=False):
     require(type(head) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head))
     require(all(type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item) for item in (run_id, attempt)))
     root, artifacts = Path(root).absolute(), Path(artifacts).absolute()
@@ -363,6 +385,10 @@ def execute(command, root, artifacts, head, run_id, attempt):
     inventory = parse(payloads[PAYLOADS[0]])
     complete = reports(parse(payloads[PAYLOADS[1]]), inventory, root, tracked)
     required = required_method_evidence(root, inventory, source, run_id, attempt)
+    rate = public_read_rate_evidence(root, inventory, source, run_id, attempt) if require_public_read_rate else None
+    if rate is not None and required['status'] == 'PASS':
+        # Both independently reconciled projections must attest identical raw bytes.
+        require(required['rawReportSets'] == rate['rawReportSets'])
     expected = {'schemaVersion': SCHEMA, 'revision': source, 'run': {'id': run_id, 'attempt': attempt},
                 'artifacts': {name: digest(data) for name, data in payloads.items()}, 'complete': complete}
     if command == 'verify':
@@ -371,6 +397,8 @@ def execute(command, root, artifacts, head, run_id, attempt):
         # Python equates booleans with integers; canonical JSON does not.
         require(json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True))
         print(json.dumps(required, sort_keys=True))
+        if rate is not None:
+            print(json.dumps(rate, sort_keys=True))
     else:
         output = (json.dumps(expected, sort_keys=True, indent=2) + '\n').encode()
         require(len(output) <= LIMIT)
@@ -398,8 +426,9 @@ def main():
         parser.add_argument('--head', required=True)
         parser.add_argument('--run-id', required=True)
         parser.add_argument('--run-attempt', required=True)
+        parser.add_argument('--require-public-read-rate', action='store_true')
         args = parser.parse_args()
-        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt)
+        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate)
         print('EVIDENCE_COMPLETE' if complete else 'EVIDENCE_INCOMPLETE')
         return 0
     except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, subprocess.SubprocessError):
