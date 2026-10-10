@@ -1,7 +1,9 @@
 .git
 .env
 .env.*
-!.env.example
+*.env
+*.env.*
+!/.env.example
 .secrets
 private-prompts
 .agents
@@ -97,3 +99,8 @@ frontend/playwright-report
 **/.github/agents
 **/FINSEC_FUSE_*프롬프트*
 **/FINSEC_FUSE_*프롬프트*
+
+# All nested environment variants stay outside build contexts.
+**/*.env
+**/*.env.*
+!/.env.example
