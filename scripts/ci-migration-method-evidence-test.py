@@ -198,5 +198,171 @@ class MigrationEvidenceTests(unittest.TestCase):
         self.assertIn('run: python -B scripts/ci-migration-method-evidence-test.py', workflow)
 
 
+COMBINED_SPEC = importlib.util.spec_from_file_location('combined_transport_fixture',
+    Path(__file__).with_name('ci-http-pool-lifecycle-evidence-test.py'))
+combined_fixture = importlib.util.module_from_spec(COMBINED_SPEC)
+COMBINED_SPEC.loader.exec_module(combined_fixture)
+combined_fixture.evidence = evidence
+
+
+class AllThirteenEvidenceGroupsTests(unittest.TestCase):
+    """Synthetic cross-family parser closure, not execution evidence for Java tests."""
+    refresh_manifest = combined_fixture.AllNineEvidenceGroupsTests.refresh_manifest
+    refresh_payloads = MigrationEvidenceTests.refresh_payloads
+    save = MigrationEvidenceTests.save
+    write_report = MigrationEvidenceTests.write_report
+    cases = MigrationEvidenceTests.cases
+    write_target = MigrationEvidenceTests.write_target
+    group_cases = MigrationEvidenceTests.group_cases
+    write_group = MigrationEvidenceTests.write_group
+    main = MigrationEvidenceTests.main
+    reject = MigrationEvidenceTests.reject
+    FLAGS = (*combined_fixture.AllNineEvidenceGroupsTests.FLAGS, '--require-migration-methods')
+    SCHEMAS = (*combined_fixture.AllNineEvidenceGroupsTests.SCHEMAS,
+               *(group['schema'] for group in evidence.MIGRATION_CONTRACTS))
+
+    def setUp(self):
+        combined_fixture.AllNineEvidenceGroupsTests.setUp(self)
+        self.migration_xml = {}
+        self.checkout_root = Path(__file__).resolve().parents[1]
+        for group in evidence.MIGRATION_CONTRACTS:
+            path = self.root / group['source']; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes((self.checkout_root / group['source']).read_bytes())
+            self.write_group(group)
+        self.refresh_manifest(); self.refresh_payloads()
+
+    def require_complete_fixed_groups(self, output):
+        lines = output.splitlines()
+        self.assertEqual('EVIDENCE_INCOMPLETE', lines[-1])
+        projections = [json.loads(line) for line in lines[:-1]]
+        self.assertEqual(self.SCHEMAS, tuple(p['schemaVersion'] for p in projections))
+        self.assertEqual([7, 2, 1, 5, 2, 4, 5, 1, 1, 8, 6, 5, 1], [len(p['methods']) for p in projections])
+        self.assertEqual(48, sum(len(p['methods']) for p in projections))
+        for item in projections:
+            self.assertEqual('PASS', item['status'])
+            self.assertEqual('a'*40, item['head']); self.assertEqual('b'*40, item['tree'])
+            self.assertEqual({'id': '123', 'attempt': '1'}, item['run'])
+            self.assertEqual(projections[0]['rawReportSets'], item['rawReportSets'])
+            self.assertTrue(all(m['status'] == 'passed' and m['count'] == 1 for m in item['methods']))
+        for item, group in zip(projections[9:], evidence.MIGRATION_CONTRACTS):
+            self.assertEqual(group['task'], item['task']); self.assertEqual(group['source'], item['source'])
+            self.assertEqual(group['sha256'], item['sourceSha256'])
+            self.assertEqual(group['required'], [x['method'] for x in item['methods']])
+        for index, filename in ((4, evidence.RAG_FIXTURE), (6, evidence.RAG_SUPPLIED_FIXTURE)):
+            raw = (self.root / filename).read_bytes()
+            self.assertEqual({'path': filename, **evidence.digest(raw),
+                'canonicalSha256': evidence.hashlib.sha256(json.dumps(json.loads(raw), ensure_ascii=False,
+                    sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()},
+                projections[index]['fixture'])
+        self.assertNotIn(CANARY, output); self.assertNotIn('TEST-', output)
+        return projections
+
+    def test_all_flags_bind_and_verify_thirteen_groups_without_claiming_generic_completeness(self):
+        self.assertEqual((0, 'EVIDENCE_INCOMPLETE\n', ''), self.main('bind'))
+        status, output, error = self.main('verify')
+        self.assertEqual(0, status); self.assertEqual('', error)
+        self.require_complete_fixed_groups(output)
+        self.assertFalse(json.loads((self.artifacts / evidence.EVIDENCE).read_bytes())['complete'])
+        self.assertGreater(self.inventory['tasks']['integrationTest']['unmapped']['passed'], 0)
+
+    def test_every_flag_is_required_once_in_both_real_workflow_commands(self):
+        workflow = (self.checkout_root / '.github/workflows/ci.yml').read_text()
+        commands = [line for line in workflow.splitlines() if 'scripts/ci-test-evidence.py ' in line]
+        self.assertEqual(2, len(commands))
+        self.assertIn(' bind ', commands[0]); self.assertIn(' verify ', commands[1])
+        for command in commands:
+            for flag in self.FLAGS:
+                self.assertEqual(1, command.split().count(flag))
+                with self.assertRaises(AssertionError):
+                    self.assertEqual(1, command.replace(flag, '').split().count(flag))
+
+    def test_omitted_optional_flag_cannot_satisfy_full_composition_oracle(self):
+        self.assertEqual((0, 'EVIDENCE_INCOMPLETE\n', ''), self.main('bind'))
+        original = self.FLAGS
+        for omitted in original:
+            with self.subTest(flag=omitted):
+                self.FLAGS = tuple(flag for flag in original if flag != omitted)
+                status, output, error = self.main('verify')
+                self.assertEqual(0, status); self.assertEqual('', error)
+                with self.assertRaises(AssertionError): self.require_complete_fixed_groups(output)
+        self.FLAGS = original
+        self.require_complete_fixed_groups(self.main('verify')[1])
+
+    def all_groups(self):
+        return [dict(classname=cls, source=source, methods=list(methods), required=list(methods),
+                     task='integrationTest') for cls, source, methods in self.groups] + list(evidence.MIGRATION_CONTRACTS)
+
+    def xml_for(self, group):
+        return (self.group_xml if group['classname'] in self.group_xml else self.migration_xml)[group['classname']]
+
+    def test_missing_required_case_in_every_selected_testing_or_migration_group_rejects(self):
+        for group in self.all_groups():
+            with self.subTest(group=group['classname']):
+                path = self.xml_for(group); original = path.read_bytes()
+                cases = [case for case in self.group_cases(group) if case[1] != group['required'][0] + '()']
+                self.write_report(group['task'], group['classname'].rsplit('.', 1)[1], group['classname'], cases)
+                self.refresh_payloads(); self.reject()
+                path.write_bytes(original); self.refresh_payloads()
+
+    def test_failed_required_case_in_every_selected_testing_or_migration_group_rejects(self):
+        for group in self.all_groups():
+            with self.subTest(group=group['classname']):
+                path = self.xml_for(group); original = path.read_bytes()
+                cases = [(cls, name, 'failed' if name == group['required'][0] + '()' else state)
+                         for cls, name, state in self.group_cases(group)]
+                self.write_report(group['task'], group['classname'].rsplit('.', 1)[1], group['classname'], cases)
+                self.refresh_payloads(); self.reject()
+                path.write_bytes(original); self.refresh_payloads()
+
+    def test_source_mutation_across_testing_and_migration_rejects(self):
+        for group in self.all_groups():
+            with self.subTest(group=group['classname']):
+                path = self.root / group['source']; original = path.read_bytes()
+                method = group['required'][0]
+                path.write_bytes(original.replace(method.encode(), (method + 'Changed').encode()))
+                self.refresh_manifest(); self.refresh_payloads(); self.reject()
+                path.write_bytes(original); self.refresh_manifest(); self.refresh_payloads()
+
+    def test_task_mismatch_across_testing_and_migration_rejects(self):
+        for group in self.all_groups():
+            with self.subTest(group=group['classname']):
+                path = self.xml_for(group); original = path.read_bytes(); path.unlink()
+                wrong = 'test' if group['task'] == 'integrationTest' else 'integrationTest'
+                misplaced = self.write_report(wrong, group['classname'].rsplit('.', 1)[1],
+                                               group['classname'], self.group_cases(group))
+                self.refresh_payloads(); self.reject()
+                misplaced.unlink(); path.write_bytes(original); self.refresh_payloads()
+
+    def test_duplicate_required_case_across_testing_and_migration_rejects(self):
+        for group in self.all_groups():
+            with self.subTest(group=group['classname']):
+                path = self.xml_for(group); original = path.read_bytes()
+                cases = self.group_cases(group)
+                cases.append((group['classname'], group['required'][0] + '()', 'passed'))
+                self.write_report(group['task'], group['classname'].rsplit('.', 1)[1], group['classname'], cases)
+                self.refresh_payloads(); self.reject()
+                path.write_bytes(original); self.refresh_payloads()
+
+    def test_cross_family_raw_report_mismatch_rejects_before_any_projection_output(self):
+        for name in ('rag_supplied_document_evidence', 'http_pool_lifecycle_evidence', 'migration_method_evidence'):
+            with self.subTest(helper=name):
+                original = getattr(evidence, name)
+                def changed(*args, **kwargs):
+                    result = original(*args, **kwargs)
+                    item = result[0] if isinstance(result, list) else result
+                    item['rawReportSets']['test']['sha256'] = 'f'*64
+                    return result
+                with patch.object(evidence, name, side_effect=changed): self.reject()
+        self.assertEqual((0, 'EVIDENCE_INCOMPLETE\n', ''), self.main('bind'))
+        for name in ('rag_supplied_document_evidence', 'http_pool_lifecycle_evidence', 'migration_method_evidence'):
+            original = getattr(evidence, name)
+            def changed(*args, **kwargs):
+                result = original(*args, **kwargs)
+                item = result[0] if isinstance(result, list) else result
+                item['rawReportSets']['test']['sha256'] = 'f'*64
+                return result
+            with patch.object(evidence, name, side_effect=changed): self.reject('verify')
+
+
 if __name__ == '__main__':
     unittest.main()
