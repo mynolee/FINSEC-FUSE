@@ -1,0 +1,7 @@
+# Explicit local debugging only. Never use this override for a shared deployment.
+# The default stack intentionally does not publish PostgreSQL or the adapter.
+services:
+  postgres:
+    ports: ["127.0.0.1:5432:5432"]
+  agent:
+    ports: ["127.0.0.1:8001:8001"]

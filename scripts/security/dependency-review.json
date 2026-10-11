@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "status": "APPROVED",
+  "decision": "Reviewed dependency updates: Spring Boot 4.1.1 with coherent Jackson 3.1.7 BOM and Tomcat embed 11.0.26 constraints; pytest 9.0.3; pinned scanner toolchain. Approval covers dependency changes and exact manifest hashes only, not unexecuted container/browser acceptance. Proposed dedicated credential-free ingress remediation for proven absent port bindings; workload internal networks unchanged. New Docker runtime verification remains pending. Independent static review accepted the 19 exact manifest hashes; runtime verification remains pending. 2026-10-10 independent static CI-overlay review: compose.ci.yaml only disables backend Flyway and clears both migration-owner fields for the explicit synthetic CI path. It adds no image, package, repository, network, port, mount or service. The existing 19 manifest bindings remain unchanged; the twentieth binding is this reviewed overlay. This additional approval covers source configuration only; repaired runtime and exact-head CI remain unverified.",
+  "impactTests": [
+    "Patched-dependency Gradle unit suite: 252 passed, 0 failures/errors/skips, 2026-10-09T12:32Z",
+    "Patched-dependency PostgreSQL integration suite: 150 passed, 0 failures/errors/skips, 2026-10-09T12:32Z",
+    "Python pytest 9.0.3 agent and evaluation suite: 219 passed, one library warning",
+    "Frontend: 78 tests passed; production build and format check passed",
+    "Compose static topology tests: 20 passed; actual Docker execution NOT_RUN",
+    "Bootstrap isolated tests: 6 passed; no real-user credential changes",
+    "Ingress revision: 27 Compose static, 33 CI-support and 17 scanner-static tests passed; actual nginx/Docker startup and browser verification NOT_RUN until next CI.",
+    "2026-10-10: independently reviewed environment-file exclusion-only .dockerignore change; publication privacy gate has 8 offline tests passing. Fresh exact-head CI remains required.",
+    "2026-10-10: static build.gradle delta review found only the explicit demoTokenProvision JavaExec task using the existing main runtime classpath. Removing that task reproduces the previously reviewed file byte-for-byte; dependencies, repositories, plugins, resolution and security settings are unchanged. Refreshed this exact manifest binding only. No Gradle, dependency resolution, downloads or runtime verification were executed for this update.",
+    "2026-10-10 independent read-only source review: the CI-only Compose overlay contains only backend FUSE_MIGRATE=false, FUSE_MIGRATION_USERNAME empty and FUSE_MIGRATION_PASSWORD empty. The base Compose network, port and storage configuration, all images/dependency files, PostgreSQL initialization script and V6 runtime SELECT-only auth grants are byte-for-byte unchanged from the frozen candidate. No Docker, Java, Gradle, database, network probe, service or CI execution was performed for this review; migration, issuance, private handoff and cleanup runtime outcomes remain UNKNOWN."
+  ],
+  "sha256": {
+    "build.gradle": "6495cf6f5e719cbb63c837dbfe84020df000fb5aae9fe2f5540fd4b7c0667467",
+    "settings.gradle": "4923253e34baac194581bd7f6810a322c1dd6b403d21f6624fe705bfc76c7f9e",
+    "gradle/wrapper/gradle-wrapper.properties": "eec0e0552947873a3e2d491f69cdd1176e546b4bef8c3aec1af58504bad608a8",
+    "agent/requirements.txt": "a2e9095465c7069352c7f7c76eb635f11deaf352c959f3d92f7e43ccaa6ad287",
+    "agent/requirements-dev.txt": "aac0f89c008ade07883c0ccc3a8f2246ab0e82489376a772c0276186740d664e",
+    "frontend/package.json": "ddcd2fd1e88a1a319440c38dd3eb2abf1844a0519712b67a85be1e5ec3d12750",
+    "frontend/package-lock.json": "8797c6e1c0045f9adb3553a485442fb5d52000e0bc60a26f5144f6b756c8e067",
+    "compose.yaml": "3742187e01ac76c0f73e5535482e3d87eae7e0e8a850cebc31830090daa904a6",
+    "compose.dev.yaml": "20b7cd59a874091fdc0e29350df9f16441d3dc62f8496a9b05449c9d6d8cf80d",
+    "compose.live.yaml": "61583f02e46e85cfe141994a2dd0e705add60c49703d2e40c295596e662d712a",
+    "compose.private.yaml": "86c578f7b55ffecdbbba0e7ea55bdb2238e0ada7edc5c554f600d85ecd11c1fe",
+    ".dockerignore": "83b0ddc5921238ab2a1e6348a0893615530b4a6a42b91d6010fd4b627eb0dc8b",
+    "agent/Dockerfile": "919603038ae0d8c967eecf6d4c8648ff2337f09249c991af2131bc9378ab3e2b",
+    "backend/Dockerfile": "cbb27aea15a7ba1144410ed80b67e1ba96bcfb28fd77a179e7e6918a43613ebf",
+    "frontend/Dockerfile": "6be7aaa01ba87f0f56bf85cccdef47449731c4b0b1e5ec9e6b5cb41643b9eabd",
+    "scripts/security/requirements.txt": "c41a0598c93f4e50d82471500b3a0e983939d2e31a27b48634878e1c54a1bf39",
+    "scripts/security/requirements.lock": "54cba196fe82b195801a61fc7fded264b066573f76637160cb828d018eab6f1f",
+    "ingress/Dockerfile": "d13d1e3e4b4b0bff11aa221e24ec8f5e45ead5387909f863d3fd3201945b3f8d",
+    "ingress/nginx.conf": "ed66e2615e67abd103895978632919b85ea6475ac1f96434fa19a53be4502ff8",
+    "compose.ci.yaml": "229da3191dad45ef28dff9d51b28e3c82a74fbc9ecc00c62d845e47347a053db"
+  }
+}
