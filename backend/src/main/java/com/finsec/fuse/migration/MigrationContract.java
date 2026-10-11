@@ -78,26 +78,28 @@ public final class MigrationContract {
 
     public static void requireFresh(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery(
-                "SELECT current_database()='fuse' AND current_user='fuse_owner' AND session_user='fuse_owner' "
-                + "AND current_schema()='public' AND EXISTS (SELECT 1 FROM pg_database d JOIN pg_roles r ON r.oid=d.datdba "
-                + "WHERE d.datname=current_database() AND r.rolname='fuse_owner') "
-                + "AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname='fuse_runtime') "
-                + "AND NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname NOT IN "
-                + "('public','information_schema','pg_catalog','pg_toast')) "
-                + "AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public') "
-                + "AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public') "
-                + "AND NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public') "
-                // Namespace dependencies also cover collations/conversions/operators/opclasses/opfamilies.
-                // The bootstrap's owner table/sequence default ACL metadata is the sole permitted object.
-                + "AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_namespace n ON n.oid=d.refobjid "
-                + "WHERE d.refclassid='pg_namespace'::regclass AND n.nspname='public' "
-                + "AND d.classid<>'pg_default_acl'::regclass) "
-                + "AND NOT EXISTS (SELECT 1 FROM pg_default_acl a JOIN pg_namespace n ON n.oid=a.defaclnamespace "
-                + "JOIN pg_roles r ON r.oid=a.defaclrole WHERE n.nspname='public' "
-                + "AND (r.rolname<>'fuse_owner' OR a.defaclobjtype NOT IN ('r','S'))) "
-                + "AND NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname<>'plpgsql') "
-                + "AND NOT EXISTS (SELECT 1 FROM pg_event_trigger) AND NOT EXISTS (SELECT 1 FROM pg_publication) "
-                + "AND NOT EXISTS (SELECT 1 FROM pg_subscription) AND NOT EXISTS (SELECT 1 FROM pg_largeobject_metadata)")) {
+            // Namespace dependencies also cover collations/conversions/operators/opclasses/opfamilies.
+            // The bootstrap's owner table/sequence default ACL metadata is the sole permitted object.
+            """
+            SELECT current_database()='fuse' AND current_user='fuse_owner' AND session_user='fuse_owner' \
+            AND current_schema()='public' AND EXISTS (SELECT 1 FROM pg_database d JOIN pg_roles r ON r.oid=d.datdba \
+            WHERE d.datname=current_database() AND r.rolname='fuse_owner') \
+            AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname='fuse_runtime') \
+            AND NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname NOT IN \
+            ('public','information_schema','pg_catalog','pg_toast')) \
+            AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public') \
+            AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public') \
+            AND NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public') \
+            AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_namespace n ON n.oid=d.refobjid \
+            WHERE d.refclassid='pg_namespace'::regclass AND n.nspname='public' \
+            AND d.classid<>'pg_default_acl'::regclass) \
+            AND NOT EXISTS (SELECT 1 FROM pg_default_acl a JOIN pg_namespace n ON n.oid=a.defaclnamespace \
+            JOIN pg_roles r ON r.oid=a.defaclrole WHERE n.nspname='public' \
+            AND (r.rolname<>'fuse_owner' OR a.defaclobjtype NOT IN ('r','S'))) \
+            AND NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname<>'plpgsql') \
+            AND NOT EXISTS (SELECT 1 FROM pg_event_trigger) AND NOT EXISTS (SELECT 1 FROM pg_publication) \
+            AND NOT EXISTS (SELECT 1 FROM pg_subscription) AND NOT EXISTS (SELECT 1 FROM pg_largeobject_metadata)\
+            """)) {
             if (!rows.next() || !rows.getBoolean(1)) throw rejected();
         }
         requireFreshDefaults(connection);
@@ -112,10 +114,12 @@ public final class MigrationContract {
         }
         if (records != 2) throw rejected();
         try (Statement query = connection.createStatement(); ResultSet rows = query.executeQuery(
-                "SELECT a.defaclobjtype::text,owner.rolname,n.nspname,grantee.rolname,grantor.rolname,x.privilege_type,x.is_grantable "
-                + "FROM pg_default_acl a JOIN pg_roles owner ON owner.oid=a.defaclrole "
-                + "JOIN pg_namespace n ON n.oid=a.defaclnamespace CROSS JOIN LATERAL aclexplode(a.defaclacl) x "
-                + "LEFT JOIN pg_roles grantee ON grantee.oid=x.grantee LEFT JOIN pg_roles grantor ON grantor.oid=x.grantor")) {
+            """
+            SELECT a.defaclobjtype::text,owner.rolname,n.nspname,grantee.rolname,grantor.rolname,x.privilege_type,x.is_grantable \
+            FROM pg_default_acl a JOIN pg_roles owner ON owner.oid=a.defaclrole \
+            JOIN pg_namespace n ON n.oid=a.defaclnamespace CROSS JOIN LATERAL aclexplode(a.defaclacl) x \
+            LEFT JOIN pg_roles grantee ON grantee.oid=x.grantee LEFT JOIN pg_roles grantor ON grantor.oid=x.grantor\
+            """)) {
             while (rows.next()) {
                 if (!"fuse_owner".equals(rows.getString(2)) || !"public".equals(rows.getString(3))
                         || !"fuse_runtime".equals(rows.getString(4))
@@ -161,8 +165,10 @@ public final class MigrationContract {
     public static void requireObjects(Connection connection) throws SQLException {
         Set<String> actual = new HashSet<>();
         try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery(
-                "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
-                + "WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')")) {
+            """
+            SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace \
+            WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')\
+            """)) {
             while (rows.next()) actual.add(rows.getString(1));
         }
         if (!actual.equals(TABLES)) throw rejected();

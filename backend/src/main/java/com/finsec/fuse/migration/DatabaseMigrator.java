@@ -82,8 +82,10 @@ public final class DatabaseMigrator {
             if (result.migrationsExecuted != MigrationContract.SCRIPTS.size()) throw MigrationContract.rejected();
             MigrationContract.validate(configuration, "fuse_runtime");
             try (Statement query = lock.createStatement(); ResultSet rows = query.executeQuery(
-                    "SELECT (SELECT count(*) FROM demo_auth_registry)=0 AND (SELECT count(*) FROM demo_token)=0 "
-                    + "AND (SELECT count(*) FROM execution_gate WHERE id=1 AND epoch=0)=1")) {
+                """
+                SELECT (SELECT count(*) FROM demo_auth_registry)=0 AND (SELECT count(*) FROM demo_token)=0 \
+                AND (SELECT count(*) FROM execution_gate WHERE id=1 AND epoch=0)=1\
+                """)) {
                 if (!rows.next() || !rows.getBoolean(1)) throw MigrationContract.rejected();
             }
             try (Statement query = lock.createStatement(); ResultSet rows = query.executeQuery(EMPTY_APPLICATION_TABLES)) {

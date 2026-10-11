@@ -69,10 +69,13 @@ public final class BoundedPostgresDataSource implements DataSource {
             connection.setReadOnly(readOnly);
             try (Statement statement = connection.createStatement()) {
                 statement.setQueryTimeout(5);
-                try (ResultSet rows = statement.executeQuery("SELECT pg_catalog.current_database(),current_user,session_user,pg_catalog.current_schema(),"
-                        + "pg_catalog.current_setting('default_transaction_read_only'),pg_catalog.current_setting('transaction_read_only'),"
-                        + "pg_catalog.current_setting('lock_timeout'),pg_catalog.current_setting('statement_timeout'),"
-                        + "pg_catalog.current_schemas(true)::pg_catalog.text")) {
+                try (ResultSet rows = statement.executeQuery(
+                    """
+                    SELECT pg_catalog.current_database(),current_user,session_user,pg_catalog.current_schema(),\
+                    pg_catalog.current_setting('default_transaction_read_only'),pg_catalog.current_setting('transaction_read_only'),\
+                    pg_catalog.current_setting('lock_timeout'),pg_catalog.current_setting('statement_timeout'),\
+                    pg_catalog.current_schemas(true)::pg_catalog.text\
+                    """)) {
                     if (!rows.next() || !configuration.database().equals(rows.getString(1))
                             || !configuration.username().equals(rows.getString(2))
                             || !configuration.username().equals(rows.getString(3)) || !"public".equals(rows.getString(4))
