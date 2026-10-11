@@ -385,7 +385,7 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.source_bytes).hexdigest(), report.API_DIAGNOSTIC_SOURCE_SHA256)
         for (helper, line), stage in report.API_DIAGNOSTIC_STAGES.items():
             with self.subTest(stage=stage):
-                self.assertEqual(self.diagnostic(self.case(self.frame(helper, str(line)))), {'method': self.method, 'stage': stage})
+                self.assertEqual(self.diagnostic(self.case(self.frame(helper, str(line)))), {'method': self.method, 'stage': stage, 'reason': 'MATCHED_FRAME'})
 
     def test_each_known_method_is_canonical(self):
         for method in report.API_DIAGNOSTIC_METHODS:
@@ -463,7 +463,7 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
             after=report.summarize(root, diagnostics)
         self.assertEqual(before, after)
         self.assertEqual(after['tasks']['integrationTest']['status'], 'FAIL')
-        self.assertEqual(diagnostics, [{'method':self.method,'stage':'PREPARE_TOMCAT_VERSION'}])
+        self.assertEqual(diagnostics, [{'method':self.method,'stage':'PREPARE_TOMCAT_VERSION','reason':'MATCHED_FRAME'}])
 
     def test_invalid_report_does_not_emit_partial_diagnostics(self):
         root=self.report_root([self.case()]);diagnostics=[]
@@ -480,6 +480,40 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
         self.assertEqual(len(diagnostics),report.MAX_FAILURE_IDS)
         self.assertEqual(summary['tasks']['integrationTest']['failures'],report.MAX_FAILURE_IDS+5)
 
+    def test_app_loader_prefix_recovers_exact_fixed_stage(self):
+        for (helper, line), stage in report.API_DIAGNOSTIC_STAGES.items():
+            frame=self.frame(helper,str(line)).replace('at ', 'at app//')
+            self.assertEqual(self.diagnostic(self.case(frame)),{'method':self.method,'stage':stage,'reason':'MATCHED_FRAME'})
+
+    def test_other_loader_and_module_prefixes_are_not_accepted(self):
+        for prefix in ['other//','App//','app/','app///','app/module/','java.base/','app//app//',SECRET+'//']:
+            row=self.diagnostic(self.case(self.frame().replace('at ','at '+prefix)))
+            self.assertEqual((row['stage'],row['reason']),('UNKNOWN','NO_TARGET_FRAME'))
+
+    def test_unknown_reason_separates_absence_unmapped_and_multiple(self):
+        cases=[(SECRET,'NO_TARGET_FRAME'),(self.frame(line='209'),'UNMAPPED_LINE'),
+               (self.frame()+'\n'+self.frame(),'MULTIPLE_TARGET_FRAMES'),
+               (self.frame()+'\n'+self.frame(line='209'),'MULTIPLE_TARGET_FRAMES'),
+               (self.frame(line='209')+'\n'+self.frame(line='208'),'MULTIPLE_TARGET_FRAMES')]
+        for stack,reason in cases:
+            row=self.diagnostic(self.case(stack))
+            self.assertEqual((row['stage'],row['reason']),('UNKNOWN',reason))
+
+    def test_mixed_bare_and_app_frames_remain_ambiguous(self):
+        row=self.diagnostic(self.case(self.frame()+'\n'+self.frame().replace('at ','at app//')))
+        self.assertEqual((row['stage'],row['reason']),('UNKNOWN','MULTIPLE_TARGET_FRAMES'))
+
+    def test_app_prefix_does_not_relax_identity_or_source(self):
+        for frame in [self.frame(helper=SECRET),self.frame(filename=SECRET),self.frame(classname=SECRET)]:
+            self.assertEqual(self.diagnostic(self.case(frame.replace('at ','at app//')))['reason'],'NO_TARGET_FRAME')
+        self.source.write_bytes(self.source_bytes+b'\n')
+        self.assertIsNone(self.diagnostic(self.case(self.frame().replace('at ','at app//'))))
+
+    def test_fake_reason_and_frame_embedded_in_message_do_not_leak(self):
+        for stack in ['MATCHED_FRAME '+SECRET,'NO_TARGET_FRAME '+SECRET,SECRET+self.frame().replace('at ','at app//')]:
+            row=self.diagnostic(self.case(stack))
+            self.assertEqual(row['reason'],'NO_TARGET_FRAME')
+
     def test_cli_stdout_only_projection_never_changes_artifact_or_exit(self):
         root=self.report_root([self.case(SECRET+'\n'+self.frame()+'\n'+SECRET)])
         output=self.root/'safe-summary.json'
@@ -491,7 +525,7 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
         self.assertEqual(len(rows),2)
         self.assertEqual(rows[0],json.loads(output.read_text()))
         self.assertEqual(rows[1]['schemaVersion'],'FUSE-API-PATH-GUARD-DIAGNOSTICS-1')
-        self.assertEqual(rows[1]['failures'],[{'method':self.method,'stage':'PREPARE_TOMCAT_VERSION'}])
+        self.assertEqual(rows[1]['failures'],[{'method':self.method,'stage':'PREPARE_TOMCAT_VERSION','reason':'MATCHED_FRAME'}])
         self.assertNotIn('failures',rows[0])
 
 

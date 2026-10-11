@@ -193,7 +193,7 @@ def api_guard_diagnostic(case, manifest):
             return None
     except OSError:
         return None
-    frame = re.compile(r'\s*at ' + re.escape(API_DIAGNOSTIC_CLASS) +
+    frame = re.compile(r'\s*at (?:app//)?' + re.escape(API_DIAGNOSTIC_CLASS) +
                        r'\.(prepare|request|rejected|unchanged)\(PublicApiCanonicalPathGuardIT\.java:([1-9][0-9]{0,5})\)\s*')
     matches = []
     for failure in list(case.findall('failure')) + list(case.findall('error')):
@@ -201,10 +201,12 @@ def api_guard_diagnostic(case, manifest):
             match = frame.fullmatch(line)
             if match:
                 stage = API_DIAGNOSTIC_STAGES.get((match[1], int(match[2])))
-                if stage is not None:
-                    matches.append(stage)
+                matches.append(stage)
     # Multiple recognized frames, including duplicates, are ambiguous.
-    return {'method': identity['method'], 'stage': matches[0] if len(matches) == 1 else 'UNKNOWN'}
+    reason = ('NO_TARGET_FRAME' if not matches else 'MULTIPLE_TARGET_FRAMES' if len(matches) != 1
+              else 'UNMAPPED_LINE' if matches[0] is None else 'MATCHED_FRAME')
+    return {'method': identity['method'],
+            'stage': matches[0] if reason == 'MATCHED_FRAME' else 'UNKNOWN', 'reason': reason}
 
 
 def summarize(root: Path, api_diagnostics=None) -> dict:
