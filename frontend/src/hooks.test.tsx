@@ -287,3 +287,194 @@ describe('receipt-gated command completion', () => {
     expect([localStorage.length, sessionStorage.length]).toEqual([0, 0]);
   });
 });
+
+describe('query ownership retirement', () => {
+  it.each(['resolve', 'reject'] as const)(
+    'clear fences a late %s and timer, then explicit reload recovers',
+    async (completion) => {
+      vi.useFakeTimers();
+      let unmount: (() => void) | undefined;
+      try {
+        let resolve!: (value: string) => void;
+        let reject!: (error: Error) => void;
+        const stale = new Promise<string>((yes, no) => {
+          resolve = yes;
+          reject = no;
+        });
+        const signals: AbortSignal[] = [];
+        const load = vi.fn((signal: AbortSignal) => {
+          signals.push(signal);
+          return signals.length === 1
+            ? Promise.resolve('initial')
+            : signals.length === 2
+              ? stale
+              : Promise.resolve('fresh');
+        });
+        const hook = renderHook(() => useQuery(load, true, 5000));
+        unmount = hook.unmount;
+        await act(async () => {});
+        expect(hook.result.current.data).toBe('initial');
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5000);
+        });
+        expect(load).toHaveBeenCalledTimes(2);
+        act(() => {
+          hook.result.current.clear();
+          expect(signals[1].aborted).toBe(true);
+        });
+        expect(hook.result.current.data).toBeUndefined();
+        expect(hook.result.current.loading).toBe(false);
+        await act(async () => {
+          if (completion === 'resolve') resolve('stale');
+          else reject(new Error('stale failure'));
+        });
+        expect(hook.result.current.data).toBeUndefined();
+        expect(hook.result.current.error).toBeUndefined();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(20000);
+        });
+        expect(load).toHaveBeenCalledTimes(2);
+        await act(async () => {
+          hook.result.current.reload();
+        });
+        expect(hook.result.current.data).toBe('fresh');
+        expect(load).toHaveBeenCalledTimes(3);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5000);
+        });
+        expect(load).toHaveBeenCalledTimes(4);
+      } finally {
+        unmount?.();
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('clear cancels an already scheduled timer and stays paused across interval-only changes', async () => {
+    vi.useFakeTimers();
+    let unmount: (() => void) | undefined;
+    try {
+      const load = vi.fn().mockResolvedValue('record');
+      const hook = renderHook(({ interval }) => useQuery(load, true, interval), {
+        initialProps: { interval: 5000 },
+      });
+      unmount = hook.unmount;
+      await act(async () => {});
+      act(() => hook.result.current.clear());
+      hook.rerender({ interval: 0 });
+      hook.rerender({ interval: 1000 });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20000);
+      });
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(hook.result.current.data).toBeUndefined();
+      await act(async () => {
+        hook.result.current.reload();
+      });
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(hook.result.current.data).toBe('record');
+    } finally {
+      unmount?.();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('reload retires a pending owner synchronously before the replacement effect', async () => {
+    const stale = deferred<string>();
+    const load = vi.fn().mockReturnValueOnce(stale.promise).mockResolvedValueOnce('fresh');
+    const hook = renderHook(() => useQuery(load));
+    await act(async () => {
+      hook.result.current.reload();
+      expect(load.mock.calls[0][0].aborted).toBe(true);
+      stale.resolve('stale');
+    });
+    expect(hook.result.current.data).toBe('fresh');
+    hook.unmount();
+  });
+
+  it('a new query identity or enabled transition recovers a cleared query', async () => {
+    const first = vi.fn().mockResolvedValue('first');
+    const next = vi.fn().mockResolvedValue('next');
+    const hook = renderHook(({ load, enabled }) => useQuery(load, enabled), {
+      initialProps: { load: first, enabled: true },
+    });
+    await act(async () => {});
+    act(() => hook.result.current.clear());
+    await act(async () => {
+      hook.rerender({ load: next, enabled: true });
+    });
+    expect(hook.result.current.data).toBe('next');
+    act(() => hook.result.current.clear());
+    hook.rerender({ load: next, enabled: false });
+    await act(async () => {
+      hook.rerender({ load: next, enabled: true });
+    });
+    expect(hook.result.current.data).toBe('next');
+    expect(next).toHaveBeenCalledTimes(2);
+    hook.unmount();
+  });
+
+  it('preserves normal transient-error polling', async () => {
+    vi.useFakeTimers();
+    let unmount: (() => void) | undefined;
+    try {
+      const load = vi
+        .fn()
+        .mockResolvedValueOnce('initial')
+        .mockRejectedValueOnce(new ApiError('offline', 503))
+        .mockResolvedValueOnce('recovered');
+      const hook = renderHook(() => useQuery(load, true, 5000));
+      unmount = hook.unmount;
+      await act(async () => {});
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(hook.result.current.data).toBe('initial');
+      expect(hook.result.current.error).toBeInstanceOf(ApiError);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(hook.result.current.data).toBe('recovered');
+      expect(hook.result.current.error).toBeUndefined();
+    } finally {
+      unmount?.();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps StrictMode replay and unmount ownership separate', async () => {
+    vi.useFakeTimers();
+    let unmount: (() => void) | undefined;
+    try {
+      const old = deferred<string>();
+      const live = deferred<string>();
+      const load = vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(live.promise);
+      const hook = renderHook(() => useQuery(load, true, 5000), { reactStrictMode: true });
+      unmount = hook.unmount;
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(load.mock.calls[0][0].aborted).toBe(true);
+      await act(async () => {
+        old.resolve('retired');
+      });
+      expect(hook.result.current.data).toBeUndefined();
+      await act(async () => {
+        live.resolve('current');
+      });
+      expect(hook.result.current.data).toBe('current');
+      hook.unmount();
+      unmount = undefined;
+      expect(load.mock.calls[1][0].aborted).toBe(true);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20000);
+      });
+      expect(load).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount?.();
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+});
