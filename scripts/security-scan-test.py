@@ -84,6 +84,29 @@ class SecurityGateTest(unittest.TestCase):
             record.write_text(json.dumps({'status': 'APPROVED', 'decision': 'synthetic', 'impactTests': ['synthetic'], 'sha256': {}}))
             self.assertNotEqual(scanner.dependency_review(root)['status'], 'PASS')
 
+    def test_admin_overlay_is_an_exact_dependency_binding_not_a_file_wide_exception(self):
+        import hashlib
+        self.assertIn('compose.admin.yaml', scanner.MANIFESTS)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in scanner.MANIFESTS:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('synthetic manifest')
+            values = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in scanner.MANIFESTS}
+            document = {'schemaVersion': 1, 'status': 'APPROVED', 'decision': 'synthetic review',
+                        'impactTests': ['synthetic offline fixture'], 'sha256': values}
+            path = 'scripts/security/dependency-review.json'
+            (root / path).write_text(json.dumps(document, indent=2))
+            line = next(i + 1 for i, value in enumerate((root / path).read_text().splitlines()) if 'compose.admin.yaml' in value)
+            finding = {'type': 'Hex High Entropy String', 'line_number': line,
+                       'hashed_secret': hashlib.sha1(values['compose.admin.yaml'].encode()).hexdigest()}
+            self.assertEqual('PASS', scanner.dependency_review(root)['status'])
+            self.assertTrue(scanner.metadata_fingerprint(path, finding, root))
+            (root / 'compose.admin.yaml').write_text('changed synthetic overlay')
+            self.assertNotEqual('PASS', scanner.dependency_review(root)['status'])
+            self.assertFalse(scanner.metadata_fingerprint(path, finding, root))
+
     def test_secret_review_is_exact_bound_and_expires(self):
         import hashlib
         with tempfile.TemporaryDirectory() as d:
