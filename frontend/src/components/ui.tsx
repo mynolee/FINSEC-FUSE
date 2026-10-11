@@ -257,13 +257,53 @@ export function Json({ value }: { value: unknown }) {
   return <pre className="json">{JSON.stringify(redact(value), null, 2)}</pre>;
 }
 export function CommandFeedback({ command }: { command: ReturnType<typeof useCommand> }) {
+  const original = command.retryRequest;
+  const body =
+    original?.body && typeof original.body === 'object'
+      ? (original.body as Record<string, unknown>)
+      : undefined;
   return (
     <>
       {command.pending && <Loading />}
       <ErrorNotice error={command.error} />
       {command.retryable && (
-        <div className="notice warning">
-          <p>처리 결과를 아직 알 수 없어요. 입력을 바꾸지 않고 같은 요청 번호로 재확인합니다.</p>
+        <div className="notice warning" role="region" aria-label="원래 요청 재확인">
+          <div>
+            <strong>처리 결과가 확인되지 않은 원래 요청</strong>
+            <p>아래 원래 입력과 요청 번호를 그대로 다시 전송합니다. 새 입력으로 바꾸지 않습니다.</p>
+            <p>첫 요청이 서버에 도착하지 않았다면 이번 재확인으로 처음 접수·실행될 수 있어요.</p>
+            {command.retryRequest && (
+              <>
+                <KeyValues
+                  items={[
+                    ['요청 경로', command.retryRequest.path],
+                    ['요청 번호', command.retryRequest.actionId],
+                  ]}
+                />
+                {body && original?.path === '/experiments' && (
+                  <KeyValues
+                    items={[
+                      ['원래 모델 모드', String(body.modelMode)],
+                      ['원래 사례 묶음', String(body.fixtureSetId)],
+                      ['원래 반복 횟수', String(body.repeatCount)],
+                    ]}
+                  />
+                )}
+                {body && /^\/workflows\/[^/]+\/approvals$/.test(original?.path || '') && (
+                  <KeyValues
+                    items={[
+                      ['원래 직원 판단', String(body.decision)],
+                      ['원래 승인 화면 지문', String(body.reviewSnapshotHash)],
+                    ]}
+                  />
+                )}
+                <Json value={command.retryRequest.body} />
+                {command.retryRequest.path === '/experiments' && body?.modelMode === 'LIVE' && (
+                  <p>원래 LIVE 실행 요청입니다. 등록된 사례의 외부 모델 전송과 비용이 발생할 수 있어요.</p>
+                )}
+              </>
+            )}
+          </div>
           <button
             className="button secondary"
             disabled={command.pending}

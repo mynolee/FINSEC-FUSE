@@ -16,6 +16,7 @@ TEST_FILES = frozenset({
     'frontend/src/App.test.tsx', 'frontend/src/ApprovalHistory.test.tsx',
     'frontend/src/EvidenceTimeStatus.test.tsx',
     'frontend/src/LiveExperiments.test.tsx',
+    'frontend/src/UnknownCommand.test.tsx',
     'frontend/src/Operations.test.tsx', 'frontend/src/PotentialImpact.test.tsx',
     'frontend/src/api.test.ts',
     'frontend/src/browserSecurity.test.tsx', 'frontend/src/experimentExport.test.tsx',

@@ -391,3 +391,79 @@ describe('v2.1 current export authorization', () => {
     expect(screen.queryByRole('button', { name: 'CSV 내보내기' })).not.toBeInTheDocument();
   });
 });
+
+describe('export authorization revocation fence', () => {
+  it.each(
+    [401, 403, 404].flatMap((status) =>
+      ['RUNNING', 'COMPLETED'].map((lateStatus) => ({ status, lateStatus })),
+    ),
+  )(
+    'does not restore an older $lateStatus poll after a newer export denial HTTP $status',
+    async ({ status, lateStatus }) => {
+      vi.useFakeTimers();
+      let view: ReturnType<typeof render> | undefined;
+      try {
+        const create = vi.fn();
+        vi.stubGlobal(
+          'URL',
+          class extends URL {
+            static createObjectURL = create;
+            static revokeObjectURL() {}
+          },
+        );
+        const running = { ...experiment(), status: 'RUNNING' };
+        let resolvePoll!: (response: Response) => void;
+        const oldPoll = new Promise<Response>((resolve) => {
+          resolvePoll = resolve;
+        });
+        const fetcher = vi
+          .fn<typeof fetch>()
+          .mockResolvedValueOnce(new Response(JSON.stringify(running)))
+          .mockReturnValueOnce(oldPoll)
+          .mockResolvedValueOnce(new Response(JSON.stringify({ reasonCodes: ['FORBIDDEN'] }), { status }))
+          .mockImplementation(() => {
+            throw new Error('UNEXPECTED_SYNTHETIC_REQUEST');
+          });
+        await act(async () => {
+          view = render(<ExperimentsPage api={new FuseApi('synthetic-revocation-fence', fetcher)} id={ID} />);
+        });
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('security-evaluation-v1')).toBeInTheDocument();
+        // A normal later timer event starts P; keep P unresolved while E runs.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(5000);
+        });
+        expect(fetcher).toHaveBeenCalledTimes(2);
+        expect(screen.getByRole('button', { name: '정제 JSON 내보내기' })).toBeEnabled();
+        // Independent user event E is denied and clears the earlier display.
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: '정제 JSON 내보내기' }));
+        });
+        expect(fetcher).toHaveBeenCalledTimes(3);
+        expect(screen.getByRole('alert')).toHaveTextContent(`HTTP ${status}`);
+        expect(screen.queryByText('security-evaluation-v1')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: '정제 JSON 내보내기' })).not.toBeInTheDocument();
+        expect(create).not.toHaveBeenCalled();
+        // P resolves in a third, separately awaited event after the clear committed.
+        await act(async () => {
+          resolvePoll(new Response(JSON.stringify({ ...running, status: lateStatus })));
+        });
+        expect(fetcher).toHaveBeenCalledTimes(3);
+        expect(create).not.toHaveBeenCalled();
+        expect(screen.getByRole('alert')).toHaveTextContent(`HTTP ${status}`);
+        expect.soft(screen.queryByText('security-evaluation-v1')).not.toBeInTheDocument();
+        expect.soft(screen.queryByRole('button', { name: '정제 JSON 내보내기' })).not.toBeInTheDocument();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(20000);
+        });
+        expect(fetcher).toHaveBeenCalledTimes(3);
+        expect(create).not.toHaveBeenCalled();
+      } finally {
+        view?.unmount();
+        vi.clearAllTimers();
+        vi.useRealTimers();
+      }
+    },
+    10000,
+  );
+});
