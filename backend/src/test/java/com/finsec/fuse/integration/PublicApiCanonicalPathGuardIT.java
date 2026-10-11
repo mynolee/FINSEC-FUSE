@@ -1,6 +1,14 @@
 package com.finsec.fuse.integration;
 
 import com.finsec.fuse.FuseApplication;
+import com.finsec.fuse.experiments.ExperimentController;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import com.finsec.fuse.auth.Actor;
 import com.finsec.fuse.auth.AdmissionLimiter;
 import com.finsec.fuse.auth.DevActorRegistry;
@@ -83,6 +91,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest(classes=FuseApplication.class,webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties="server.address=127.0.0.1")
 @Import(PublicApiCanonicalPathGuardIT.ProbeConfiguration.class)
+@ContextConfiguration(initializers=PublicApiCanonicalPathGuardIT.ExperimentControlInitializer.class)
 @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class PublicApiCanonicalPathGuardIT extends PaymentFixture {
     private static final String CANONICAL="/api/v1/experiments";
@@ -94,8 +103,16 @@ class PublicApiCanonicalPathGuardIT extends PaymentFixture {
     @Value("${local.server.port}") int port;
     @Autowired Probe probe;
     @Autowired ServletContext servletContext;
+    @Autowired ApplicationContext applicationContext;
     private HttpClient client;
 
+    // Boot 4.1.1 applies this unordered test initializer after its dynamic-property customizer.
+    public static class ExperimentControlInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
+        public void initialize(ConfigurableApplicationContext context) {
+            context.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
+                "canonicalPathExperimentControl",Map.of("fuse.experiments.enabled",true)));
+        }
+    }
     static class Observation {
         final String raw,servlet,pathInfo,context,mapping,remote,transfer;
         final long contentLength;
@@ -212,6 +229,12 @@ class PublicApiCanonicalPathGuardIT extends PaymentFixture {
         assertEquals("127.0.0.1",environment.getProperty("server.address"));
         assertFalse(environment.getProperty("fuse.worker-enabled",Boolean.class,true));
         assertTrue(List.of(environment.getActiveProfiles()).contains("test"));
+        assertTrue(environment.getProperty("fuse.experiments.enabled",Boolean.class,false));
+        assertEquals(1,applicationContext.getBeansOfType(ExperimentController.class).size());
+        var mappings=applicationContext.getBean("requestMappingHandlerMapping",RequestMappingHandlerMapping.class);
+        assertTrue(mappings.getHandlerMethods().entrySet().stream().anyMatch(entry ->
+            entry.getValue().getBeanType()==ExperimentController.class && entry.getValue().getMethod().getName().equals("start") &&
+            entry.getKey().getPatternValues().contains(CANONICAL) && entry.getKey().getMethodsCondition().getMethods().contains(RequestMethod.POST)));
         assertEquals("",servletContext.getContextPath());
         assertEquals(Set.of("/"),Set.copyOf(servletContext.getServletRegistration("dispatcherServlet").getMappings()));
         assertTrue(port>0);assertTrue(OVERSIZED.getBytes(StandardCharsets.UTF_8).length>65536);

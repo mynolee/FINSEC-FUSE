@@ -141,7 +141,7 @@ def source_methods(code, stem, relative):
         'org.springframework.beans.factory.annotation.Autowired', 'org.springframework.beans.factory.annotation.Value',
         'org.springframework.boot.test.context.TestConfiguration', 'org.springframework.boot.test.context.SpringBootTest',
         'org.springframework.test.annotation.DirtiesContext', 'org.springframework.test.context.DynamicPropertySource',
-        'org.springframework.test.context.ActiveProfiles',
+        'org.springframework.test.context.ActiveProfiles', 'org.springframework.test.context.ContextConfiguration',
     } | {
         'org.springframework.web.bind.annotation.' + name for name in
         ('ControllerAdvice', 'RestController', 'GetMapping', 'PostMapping', 'PathVariable', 'RequestParam', 'RequestHeader')

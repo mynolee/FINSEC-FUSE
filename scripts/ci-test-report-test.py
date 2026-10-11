@@ -366,7 +366,7 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def frame(self, helper='prepare', line='211', classname=None, filename='PublicApiCanonicalPathGuardIT.java'):
+    def frame(self, helper='prepare', line='228', classname=None, filename='PublicApiCanonicalPathGuardIT.java'):
         return '\tat ' + (classname or report.API_DIAGNOSTIC_CLASS) + '.' + helper + '(' + filename + ':' + line + ')'
 
     def case(self, stack=None, classname=None, name=None):
@@ -409,7 +409,7 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
             self.assertEqual(self.diagnostic(self.case(stack))['stage'], 'UNKNOWN')
 
     def test_malformed_oversized_and_unmapped_line_are_unknown(self):
-        for line in ['0', '-1', '0211', '1.5', 'true', SECRET, '9999999', '999999', '209']:
+        for line in ['0', '-1', '0211', '1.5', 'true', SECRET, '9999999', '999999', '226']:
             self.assertEqual(self.diagnostic(self.case(self.frame(line=line)))['stage'], 'UNKNOWN')
 
     def test_untrusted_stage_text_and_embedded_frames_never_leak(self):
@@ -418,7 +418,7 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
             self.assertEqual(self.diagnostic(self.case(stack))['stage'], 'UNKNOWN')
 
     def test_duplicate_and_conflicting_frames_are_unknown(self):
-        for stack in [self.frame()+'\n'+self.frame(), self.frame()+'\n'+self.frame(line='213')]:
+        for stack in [self.frame()+'\n'+self.frame(), self.frame()+'\n'+self.frame(line='230')]:
             self.assertEqual(self.diagnostic(self.case(stack))['stage'], 'UNKNOWN')
 
     def test_canary_surrounding_valid_frame_is_not_emitted(self):
@@ -491,10 +491,10 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
             self.assertEqual((row['stage'],row['reason']),('UNKNOWN','NO_TARGET_FRAME'))
 
     def test_unknown_reason_separates_absence_unmapped_and_multiple(self):
-        cases=[(SECRET,'NO_TARGET_FRAME'),(self.frame(line='209'),'UNMAPPED_LINE'),
+        cases=[(SECRET,'NO_TARGET_FRAME'),(self.frame(line='226'),'UNMAPPED_LINE'),
                (self.frame()+'\n'+self.frame(),'MULTIPLE_TARGET_FRAMES'),
-               (self.frame()+'\n'+self.frame(line='209'),'MULTIPLE_TARGET_FRAMES'),
-               (self.frame(line='209')+'\n'+self.frame(line='208'),'MULTIPLE_TARGET_FRAMES')]
+               (self.frame()+'\n'+self.frame(line='226'),'MULTIPLE_TARGET_FRAMES'),
+               (self.frame(line='226')+'\n'+self.frame(line='225'),'MULTIPLE_TARGET_FRAMES')]
         for stack,reason in cases:
             row=self.diagnostic(self.case(stack))
             self.assertEqual((row['stage'],row['reason']),('UNKNOWN',reason))
@@ -514,7 +514,7 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
             row=self.diagnostic(self.case(stack))
             self.assertEqual(row['reason'],'NO_TARGET_FRAME')
 
-    def direct_case(self, line='334', prefix='', method=None):
+    def direct_case(self, line='357', prefix='', method=None):
         method=method or report.API_DIAGNOSTIC_DIRECT_METHOD
         stack=self.frame(helper=method,line=line).replace('at ','at '+prefix)
         return self.case(stack,name=report.API_DIAGNOSTIC_DIRECT_METHOD+'()')
@@ -540,17 +540,17 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
     def test_direct_fallback_bounds_and_unknown_lines(self):
         for line in ['0','0334','9999999','-1',SECRET]:
             self.assertEqual(self.diagnostic(self.direct_case(line))['reason'],'NO_TARGET_FRAME')
-        for line in ['333','338','999999']:
+        for line in ['356','361','999999']:
             self.assertEqual(self.diagnostic(self.direct_case(line))['reason'],'UNMAPPED_LINE')
 
     def test_direct_duplicate_and_conflicting_frames_are_ambiguous(self):
-        for line in ['334','335','333']:
+        for line in ['357','358','356']:
             case=self.direct_case();case.find('failure').text+='\n'+self.direct_case(line).find('failure').text
             row=self.diagnostic(case);self.assertEqual((row['stage'],row['reason']),('UNKNOWN','MULTIPLE_TARGET_FRAMES'))
 
     def test_helper_frames_always_take_precedence(self):
         for helper,stage,reason in [(self.frame(),'PREPARE_TOMCAT_VERSION','MATCHED_FRAME'),
-                                   (self.frame(line='209'),'UNKNOWN','UNMAPPED_LINE'),
+                                   (self.frame(line='226'),'UNKNOWN','UNMAPPED_LINE'),
                                    (self.frame()+'\n'+self.frame(),'UNKNOWN','MULTIPLE_TARGET_FRAMES')]:
             case=self.direct_case();case.find('failure').text+='\n'+helper
             row=self.diagnostic(case);self.assertEqual((row['stage'],row['reason']),(stage,reason))
@@ -562,10 +562,10 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
 
     def test_direct_stage_pins_bind_exact_assertions(self):
         lines=self.source_bytes.decode().splitlines()
-        expected={334:'assertEquals(400,binding.response().statusCode());',
-                  335:'assertEquals(1,binding.observation().handlers.get());',
-                  336:'assertEquals(1,binding.observation().conversions.get());',
-                  337:'assertEquals(unknownField.getBytes(StandardCharsets.UTF_8).length,binding.observation().bytes.get());'}
+        expected={357:'assertEquals(400,binding.response().statusCode());',
+                  358:'assertEquals(1,binding.observation().handlers.get());',
+                  359:'assertEquals(1,binding.observation().conversions.get());',
+                  360:'assertEquals(unknownField.getBytes(StandardCharsets.UTF_8).length,binding.observation().bytes.get());'}
         self.assertEqual(set(expected),set(report.API_DIAGNOSTIC_DIRECT_STAGES))
         for line,text in expected.items():self.assertEqual(lines[line-1].strip(),text)
 

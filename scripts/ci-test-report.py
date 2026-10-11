@@ -129,7 +129,7 @@ def failure_id(case, manifest):
 
 # Advisory fixed-vocabulary diagnostics only; never evidence of a passing test.
 API_DIAGNOSTIC_CLASS = 'com.finsec.fuse.integration.PublicApiCanonicalPathGuardIT'
-API_DIAGNOSTIC_SOURCE_SHA256 = '12bfb3a298a2c7a64f492f1f334bb494bf30ad698f085cf5434c757653147065'
+API_DIAGNOSTIC_SOURCE_SHA256 = '8a580cb0b409f6f20630fc7c8c539867cdb67aa51eb5db396d70a91b29799828'
 API_DIAGNOSTIC_METHODS = (
     'aliasAnonymousSaturationDoesNotBlockValidCanonicalCallerOnSameIp',
     'canonicalAndAliasHeaderChecksRemainAheadOfBodies',
@@ -140,48 +140,52 @@ API_DIAGNOSTIC_METHODS = (
 # These exact frame locations describe the unchanged, hash-pinned test source.
 # A line with several assertions deliberately has a combined stage, not a guessed cause.
 API_DIAGNOSTIC_STAGES = {
-    ('prepare', 210): 'PREPARE_BOOT_OR_SPRING_VERSION',
-    ('prepare', 211): 'PREPARE_TOMCAT_VERSION',
-    ('prepare', 212): 'PREPARE_BIND_ADDRESS',
-    ('prepare', 213): 'PREPARE_WORKER_DISABLED',
-    ('prepare', 214): 'PREPARE_TEST_PROFILE',
-    ('prepare', 215): 'PREPARE_ROOT_CONTEXT',
-    ('prepare', 216): 'PREPARE_SERVLET_MAPPING',
-    ('prepare', 217): 'PREPARE_PORT_OR_BODY_MINIMUM',
-    ('prepare', 218): 'PREPARE_BODY_MAXIMUM',
-    ('prepare', 221): 'PREPARE_SEED_WORKFLOW',
-    ('prepare', 223): 'PREPARE_DEVELOPER_TOKEN',
-    ('prepare', 225): 'PREPARE_READER_TOKEN',
-    ('prepare', 226): 'PREPARE_SNAPSHOT',
-    ('prepare', 228): 'PREPARE_NONEMPTY_SEEDED_TABLES',
-    ('request', 233): 'REQUEST_CLIENT_RAW_PATH',
-    ('request', 244): 'REQUEST_HTTP_SEND',
-    ('request', 245): 'REQUEST_PASSIVE_OBSERVER',
-    ('request', 246): 'REQUEST_OBSERVER_COMPLETION',
-    ('request', 247): 'REQUEST_SERVER_RAW_PATH',
-    ('request', 248): 'REQUEST_CONTEXT_OR_MAPPING',
-    ('request', 249): 'REQUEST_REMOTE_ADDRESS',
-    ('request', 250): 'REQUEST_ALIAS_SERVLET_PATH',
-    ('request', 252): 'REQUEST_CONTENT_LENGTH',
-    ('request', 253): 'REQUEST_CHUNKED_FRAMING',
-    ('request', 254): 'REQUEST_FIXED_FRAMING',
-    ('rejected', 259): 'REJECTION_STATUS',
-    ('rejected', 260): 'REJECTION_CACHE_HEADER',
-    ('rejected', 261): 'REJECTION_CONTENT_TYPE_HEADER',
-    ('rejected', 262): 'REJECTION_APPLICATION_BYTES',
-    ('rejected', 263): 'REJECTION_HANDLER_ENTRY',
-    ('rejected', 264): 'REJECTION_CONVERSION',
-    ('unchanged', 284): 'UNCHANGED_DATABASE_SNAPSHOT',
-    ('unchanged', 285): 'UNCHANGED_GATEWAY_CALLS',
+    ('prepare', 227): 'PREPARE_BOOT_OR_SPRING_VERSION',
+    ('prepare', 228): 'PREPARE_TOMCAT_VERSION',
+    ('prepare', 229): 'PREPARE_BIND_ADDRESS',
+    ('prepare', 230): 'PREPARE_WORKER_DISABLED',
+    ('prepare', 231): 'PREPARE_TEST_PROFILE',
+    ('prepare', 238): 'PREPARE_ROOT_CONTEXT',
+    ('prepare', 239): 'PREPARE_SERVLET_MAPPING',
+    ('prepare', 240): 'PREPARE_PORT_OR_BODY_MINIMUM',
+    ('prepare', 241): 'PREPARE_BODY_MAXIMUM',
+    ('prepare', 244): 'PREPARE_SEED_WORKFLOW',
+    ('prepare', 246): 'PREPARE_DEVELOPER_TOKEN',
+    ('prepare', 248): 'PREPARE_READER_TOKEN',
+    ('prepare', 249): 'PREPARE_SNAPSHOT',
+    ('prepare', 251): 'PREPARE_NONEMPTY_SEEDED_TABLES',
+    ('request', 256): 'REQUEST_CLIENT_RAW_PATH',
+    ('request', 267): 'REQUEST_HTTP_SEND',
+    ('request', 268): 'REQUEST_PASSIVE_OBSERVER',
+    ('request', 269): 'REQUEST_OBSERVER_COMPLETION',
+    ('request', 270): 'REQUEST_SERVER_RAW_PATH',
+    ('request', 271): 'REQUEST_CONTEXT_OR_MAPPING',
+    ('request', 272): 'REQUEST_REMOTE_ADDRESS',
+    ('request', 273): 'REQUEST_ALIAS_SERVLET_PATH',
+    ('request', 275): 'REQUEST_CONTENT_LENGTH',
+    ('request', 276): 'REQUEST_CHUNKED_FRAMING',
+    ('request', 277): 'REQUEST_FIXED_FRAMING',
+    ('rejected', 282): 'REJECTION_STATUS',
+    ('rejected', 283): 'REJECTION_CACHE_HEADER',
+    ('rejected', 284): 'REJECTION_CONTENT_TYPE_HEADER',
+    ('rejected', 285): 'REJECTION_APPLICATION_BYTES',
+    ('rejected', 286): 'REJECTION_HANDLER_ENTRY',
+    ('rejected', 287): 'REJECTION_CONVERSION',
+    ('unchanged', 307): 'UNCHANGED_DATABASE_SNAPSHOT',
+    ('unchanged', 308): 'UNCHANGED_GATEWAY_CALLS',
+    ('prepare', 232): 'PREPARE_EXPERIMENT_ENABLED',
+    ('prepare', 233): 'PREPARE_EXPERIMENT_CONTROLLER',
+    ('prepare', 235): 'PREPARE_EXPERIMENT_POST_MAPPING',
+    ('prepare', 237): 'PREPARE_EXPERIMENT_POST_MAPPING',
 }
 
 
 API_DIAGNOSTIC_DIRECT_METHOD = 'canonicalAndAliasHeaderChecksRemainAheadOfBodies'
 API_DIAGNOSTIC_DIRECT_STAGES = {
-    334: 'POSITIVE_CONTROL_STATUS',
-    335: 'POSITIVE_CONTROL_HANDLER',
-    336: 'POSITIVE_CONTROL_CONVERSION',
-    337: 'POSITIVE_CONTROL_BODY_BYTES',
+    357: 'POSITIVE_CONTROL_STATUS',
+    358: 'POSITIVE_CONTROL_HANDLER',
+    359: 'POSITIVE_CONTROL_CONVERSION',
+    360: 'POSITIVE_CONTROL_BODY_BYTES',
 }
 
 

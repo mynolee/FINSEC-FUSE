@@ -464,5 +464,25 @@ class ControllerAdviceMetadataTests(unittest.TestCase):
                 self.assertIsNone(self.parse(text)[1])
 
 
+class ContextConfigurationMetadataTests(unittest.TestCase):
+    METHODS = ControllerAdviceMetadataTests.METHODS
+    source = ControllerAdviceMetadataTests.source
+    parse = ControllerAdviceMetadataTests.parse
+
+    def test_context_initializer_maps_only_exact_existing_methods(self):
+        source=self.source()
+        self.assertIn('@ContextConfiguration(initializers=PublicApiCanonicalPathGuardIT.ExperimentControlInitializer.class)',source)
+        self.assertEqual(dict.fromkeys(self.METHODS),self.parse(source)[1]['methods'])
+
+    def test_context_configuration_untrusted_spellings_stay_unsupported(self):
+        source=self.source();official='import org.springframework.test.context.ContextConfiguration;'
+        variants=[source.replace(official,'import org.springframework.test.context.*;'),
+                  source.replace('@ContextConfiguration','@org.springframework.test.context.ContextConfiguration'),
+                  source+'\n@interface ContextConfiguration {}\n',
+                  source.replace(official,'import untrusted.ContextConfiguration;'),
+                  source.replace(official,'import untrusted.ComposedContext;').replace('@ContextConfiguration','@ComposedContext')]
+        for text in variants:self.assertIsNone(self.parse(text)[1])
+
+
 if __name__ == '__main__':
     unittest.main()
