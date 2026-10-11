@@ -90,9 +90,52 @@ class ComposeSecurityTests(unittest.TestCase):
         cls.dev = load("compose.dev.yaml")
         cls.live = load("compose.live.yaml")
         cls.private = load("compose.private.yaml")
+        cls.admin = load("compose.admin.yaml")
 
     def test_default_topology_and_hardening_contract(self):
         self.assertEqual([], base_violations(self.base))
+
+    def test_normal_runtime_has_no_main_database_migration_authority(self):
+        service = self.base["services"]["backend"]
+        self.assertEqual("backend", service["build"]["target"])
+        self.assertEqual("false", service["environment"]["FUSE_MIGRATE"])
+        for key in ("FUSE_MIGRATION_USERNAME", "FUSE_MIGRATION_PASSWORD", "FUSE_DB_OWNER_PASSWORD"):
+            self.assertNotIn(key, service["environment"])
+        # Separate experiment authority is an existing, intentional boundary.
+        self.assertEqual("fuse_experiment_owner", service["environment"]["FUSE_EXPERIMENT_DB_USERNAME"])
+
+    def test_admin_services_are_explicit_one_shots_with_separate_authority(self):
+        self.assertEqual({"migration", "token-admin"}, set(self.admin["services"]))
+        for name, service in self.admin["services"].items():
+            self.assertEqual(["admin"], service["profiles"])
+            self.assertEqual(["data"], service["networks"])
+            self.assertIs(True, service["read_only"])
+            self.assertEqual("no", service["restart"])
+            self.assertEqual(["ALL"], service["cap_drop"])
+            self.assertEqual(["no-new-privileges:true"], service["security_opt"])
+            self.assertEqual(name, service["build"]["target"])
+            for key in ("command", "entrypoint", "depends_on", "ports", "env_file", "secrets"):
+                self.assertNotIn(key, service)
+            self.assertEqual("fuse_owner", service["environment"]["FUSE_MIGRATION_USERNAME"])
+        migration = self.admin["services"]["migration"]
+        self.assertEqual("10001:10001", migration["user"])
+        self.assertEqual({"FUSE_DB_URL", "FUSE_MIGRATION_USERNAME", "FUSE_MIGRATION_PASSWORD"}, set(migration["environment"]))
+        self.assertNotIn("volumes", migration)
+        token = self.admin["services"]["token-admin"]
+        self.assertNotIn("user", token)
+        self.assertEqual({"FUSE_ADMIN_UID", "FUSE_ADMIN_GID"}, set(token["build"]["args"]))
+        self.assertEqual([{"type": "bind", "source": "./.secrets/auth-output", "target": "/private-output",
+                           "bind": {"create_host_path": False}}], token["volumes"])
+
+    def test_backend_image_default_remains_web_and_admins_have_no_operation(self):
+        source = (ROOT / "backend/Dockerfile").read_text()
+        stages = [line for line in source.splitlines() if line.startswith("FROM ")]
+        self.assertTrue(stages[-1].endswith(" AS backend"))
+        self.assertIn(" AS migration", source)
+        self.assertIn(" AS token-admin", source)
+        self.assertIn("useradd --non-unique", source)
+        self.assertNotIn("migrate-fresh", source)
+        self.assertNotIn("init-fresh", source)
 
     def test_only_required_service_pairs_share_a_network(self):
         memberships = {name: set(svc["networks"]) for name, svc in self.base["services"].items()}
