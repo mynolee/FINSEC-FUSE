@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Publish counts and bounded, source-validated test IDs; never raw failure content."""
 import argparse
+import hashlib
 from functools import lru_cache
 import importlib.util
 import json
@@ -126,7 +127,87 @@ def failure_id(case, manifest):
     return {'class': canonical_class, 'method': canonical_method, 'sourceLine': line}
 
 
-def summarize(root: Path) -> dict:
+# Advisory fixed-vocabulary diagnostics only; never evidence of a passing test.
+API_DIAGNOSTIC_CLASS = 'com.finsec.fuse.integration.PublicApiCanonicalPathGuardIT'
+API_DIAGNOSTIC_SOURCE_SHA256 = '420905789fbfa53ee91b15e3f297cdc7814a4ce3bb5d58eda49e7ea867aeba44'
+API_DIAGNOSTIC_METHODS = (
+    'aliasAnonymousSaturationDoesNotBlockValidCanonicalCallerOnSameIp',
+    'canonicalAndAliasHeaderChecksRemainAheadOfBodies',
+    'canonicalOversizedBodiesEnforceLengthAndStreamingBoundsBeforeMvc',
+    'unauthenticatedCanonicalAndAliasesRejectBeforeAnyBodyParsing',
+    'validBearerAliasesRemainOutsideRawAllowlistForBothFramings',
+)
+# These exact frame locations describe the unchanged, hash-pinned test source.
+# A line with several assertions deliberately has a combined stage, not a guessed cause.
+API_DIAGNOSTIC_STAGES = {
+    ('prepare', 210): 'PREPARE_BOOT_OR_SPRING_VERSION',
+    ('prepare', 211): 'PREPARE_TOMCAT_VERSION',
+    ('prepare', 212): 'PREPARE_BIND_ADDRESS',
+    ('prepare', 213): 'PREPARE_WORKER_DISABLED',
+    ('prepare', 214): 'PREPARE_TEST_PROFILE',
+    ('prepare', 215): 'PREPARE_ROOT_CONTEXT',
+    ('prepare', 216): 'PREPARE_SERVLET_MAPPING',
+    ('prepare', 217): 'PREPARE_PORT_OR_BODY_MINIMUM',
+    ('prepare', 218): 'PREPARE_BODY_MAXIMUM',
+    ('prepare', 221): 'PREPARE_SEED_WORKFLOW',
+    ('prepare', 223): 'PREPARE_DEVELOPER_TOKEN',
+    ('prepare', 225): 'PREPARE_READER_TOKEN',
+    ('prepare', 226): 'PREPARE_SNAPSHOT',
+    ('prepare', 228): 'PREPARE_NONEMPTY_SEEDED_TABLES',
+    ('request', 233): 'REQUEST_CLIENT_RAW_PATH',
+    ('request', 244): 'REQUEST_HTTP_SEND',
+    ('request', 245): 'REQUEST_PASSIVE_OBSERVER',
+    ('request', 246): 'REQUEST_OBSERVER_COMPLETION',
+    ('request', 247): 'REQUEST_SERVER_RAW_PATH',
+    ('request', 248): 'REQUEST_CONTEXT_OR_MAPPING',
+    ('request', 249): 'REQUEST_REMOTE_ADDRESS',
+    ('request', 250): 'REQUEST_ALIAS_SERVLET_PATH',
+    ('request', 252): 'REQUEST_CONTENT_LENGTH',
+    ('request', 253): 'REQUEST_CHUNKED_FRAMING',
+    ('request', 254): 'REQUEST_FIXED_FRAMING',
+    ('rejected', 259): 'REJECTION_STATUS',
+    ('rejected', 260): 'REJECTION_CACHE_HEADER',
+    ('rejected', 261): 'REJECTION_CONTENT_TYPE_HEADER',
+    ('rejected', 262): 'REJECTION_APPLICATION_BYTES',
+    ('rejected', 263): 'REJECTION_HANDLER_ENTRY',
+    ('rejected', 264): 'REJECTION_CONVERSION',
+    ('unchanged', 284): 'UNCHANGED_DATABASE_SNAPSHOT',
+    ('unchanged', 285): 'UNCHANGED_GATEWAY_CALLS',
+}
+
+
+def api_guard_diagnostic(case, manifest):
+    """Project only fixed source-owned IDs; untrusted text is never returned."""
+    if case.get('classname') != API_DIAGNOSTIC_CLASS:
+        return None
+    identity = failure_id(case, manifest)
+    if identity is None or identity['method'] not in API_DIAGNOSTIC_METHODS:
+        return None
+    source = SOURCE_ROOT / (API_DIAGNOSTIC_CLASS.replace('.', '/') + '.java')
+    try:
+        if any(p.is_symlink() for p in (source, *source.parents)):
+            return None
+        with source.open('rb') as stream:
+            payload = stream.read(MAX_XML_BYTES + 1)
+        if len(payload) > MAX_XML_BYTES or hashlib.sha256(payload).hexdigest() != API_DIAGNOSTIC_SOURCE_SHA256:
+            return None
+    except OSError:
+        return None
+    frame = re.compile(r'\s*at ' + re.escape(API_DIAGNOSTIC_CLASS) +
+                       r'\.(prepare|request|rejected|unchanged)\(PublicApiCanonicalPathGuardIT\.java:([1-9][0-9]{0,5})\)\s*')
+    matches = []
+    for failure in list(case.findall('failure')) + list(case.findall('error')):
+        for line in (failure.text or '').splitlines():
+            match = frame.fullmatch(line)
+            if match:
+                stage = API_DIAGNOSTIC_STAGES.get((match[1], int(match[2])))
+                if stage is not None:
+                    matches.append(stage)
+    # Multiple recognized frames, including duplicates, are ambiguous.
+    return {'method': identity['method'], 'stage': matches[0] if len(matches) == 1 else 'UNKNOWN'}
+
+
+def summarize(root: Path, api_diagnostics=None) -> dict:
     tasks = {}
     try:
         manifest = source_manifest()
@@ -135,6 +216,7 @@ def summarize(root: Path) -> dict:
     for task in ('test', 'integrationTest'):
         counts = dict(tests=0, failures=0, errors=0, skipped=0)
         ids, unknown, omitted = [], 0, 0
+        diagnostic_rows = []
         invalid = False
         files = []
         try:
@@ -172,6 +254,10 @@ def summarize(root: Path) -> dict:
                 for case in cases:
                     if case.find('failure') is None and case.find('error') is None:
                         continue
+                    if task == 'integrationTest' and api_diagnostics is not None and len(diagnostic_rows) < MAX_FAILURE_IDS:
+                        diagnostic = api_guard_diagnostic(case, manifest)
+                        if diagnostic is not None:
+                            diagnostic_rows.append(diagnostic)
                     identifier = failure_id(case, manifest)
                     if identifier is None:
                         unknown += 1
@@ -185,6 +271,8 @@ def summarize(root: Path) -> dict:
             invalid = True
             counts = dict(tests=0, failures=0, errors=0, skipped=0)
             ids, unknown, omitted = [], 0, 0
+        if not invalid and api_diagnostics is not None:
+            api_diagnostics.extend(diagnostic_rows)
         tasks[task] = {'status': 'INVALID_REPORT' if invalid else
                       'NOT_RUN' if not files or counts['tests'] == 0 else
                       'FAIL' if counts['failures'] or counts['errors'] else 'PASS', **counts,
@@ -198,10 +286,16 @@ def main() -> int:
     parser.add_argument('--input', type=Path, default=Path('backend/build/test-results'))
     parser.add_argument('--output', type=Path, default=Path('safe-artifacts/backend-test-summary.json'))
     args = parser.parse_args()
-    summary = summarize(args.input)
+    diagnostics = []
+    summary = summarize(args.input, diagnostics)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(summary, indent=2) + '\n')
     print(json.dumps(summary))
+    if diagnostics:
+        print(json.dumps({'schemaVersion': 'FUSE-API-PATH-GUARD-DIAGNOSTICS-1',
+                          'sourceSha256': API_DIAGNOSTIC_SOURCE_SHA256,
+                          'class': API_DIAGNOSTIC_CLASS, 'failures': diagnostics,
+                          'scope': 'Advisory failed-test stack stage only; no assertion cause or PASS claim.'}))
     return int(any(part['status'] != 'PASS' or part['skipped'] for part in summary['tasks'].values()))
 
 

@@ -350,5 +350,150 @@ class SafeFailureTests(unittest.TestCase):
         self.assertEqual((row['failureIds'], row['unknownFailureIds'], row['omittedFailureIds']), ([], 3, 0))
 
 
+class ApiGuardDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        self.method = report.API_DIAGNOSTIC_METHODS[0]
+        self.manifest = {report.API_DIAGNOSTIC_CLASS: {m: (None, None, None) for m in report.API_DIAGNOSTIC_METHODS}}
+        self.original_source = report.SOURCE_ROOT / (report.API_DIAGNOSTIC_CLASS.replace('.', '/') + '.java')
+        self.source_bytes = self.original_source.read_bytes()
+        directory = tempfile.TemporaryDirectory(prefix='fuse-api-diagnostic-')
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.source = self.root / (report.API_DIAGNOSTIC_CLASS.replace('.', '/') + '.java')
+        self.source.parent.mkdir(parents=True)
+        self.source.write_bytes(self.source_bytes)
+        patcher = patch.object(report, 'SOURCE_ROOT', self.root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def frame(self, helper='prepare', line='211', classname=None, filename='PublicApiCanonicalPathGuardIT.java'):
+        return '\tat ' + (classname or report.API_DIAGNOSTIC_CLASS) + '.' + helper + '(' + filename + ':' + line + ')'
+
+    def case(self, stack=None, classname=None, name=None):
+        case = ET.Element('testcase', classname=classname or report.API_DIAGNOSTIC_CLASS, name=name or self.method + '()')
+        ET.SubElement(case, 'failure', message=SECRET, type=SECRET).text = stack if stack is not None else self.frame()
+        ET.SubElement(case, 'system-out').text = SECRET
+        return case
+
+    def diagnostic(self, case):
+        result = report.api_guard_diagnostic(case, self.manifest)
+        self.assertNotIn(SECRET, json.dumps(result))
+        return result
+
+    def test_pinned_source_and_each_exact_stage(self):
+        import hashlib
+        self.assertEqual(hashlib.sha256(self.source_bytes).hexdigest(), report.API_DIAGNOSTIC_SOURCE_SHA256)
+        for (helper, line), stage in report.API_DIAGNOSTIC_STAGES.items():
+            with self.subTest(stage=stage):
+                self.assertEqual(self.diagnostic(self.case(self.frame(helper, str(line)))), {'method': self.method, 'stage': stage})
+
+    def test_each_known_method_is_canonical(self):
+        for method in report.API_DIAGNOSTIC_METHODS:
+            self.assertEqual(self.diagnostic(self.case(name=method+'()'))['method'], method)
+
+    def test_wrong_class_is_not_projected(self):
+        self.assertIsNone(self.diagnostic(self.case(classname='com.finsec.fuse.OtherIT')))
+
+    def test_unknown_and_noncanonical_method_are_not_projected(self):
+        for name in [SECRET, self.method+'('+SECRET+')', self.method+'[1]', self.method+'() '+SECRET]:
+            self.assertIsNone(self.diagnostic(self.case(name=name)))
+
+    def test_unapproved_manifest_identity_is_not_projected(self):
+        self.manifest = {}
+        self.assertIsNone(self.diagnostic(self.case()))
+
+    def test_wrong_frame_class_helper_or_file_is_unknown(self):
+        for stack in [self.frame(classname='com.finsec.fuse.OtherIT'), self.frame(helper=SECRET),
+                      self.frame(filename='Other.java'), self.frame(filename=SECRET),
+                      self.frame(helper='prepareExtra')]:
+            self.assertEqual(self.diagnostic(self.case(stack))['stage'], 'UNKNOWN')
+
+    def test_malformed_oversized_and_unmapped_line_are_unknown(self):
+        for line in ['0', '-1', '0211', '1.5', 'true', SECRET, '9999999', '999999', '209']:
+            self.assertEqual(self.diagnostic(self.case(self.frame(line=line)))['stage'], 'UNKNOWN')
+
+    def test_untrusted_stage_text_and_embedded_frames_never_leak(self):
+        for stack in ['PREPARE_TOMCAT_VERSION '+SECRET, SECRET+self.frame(), self.frame()+SECRET,
+                      'FUSE_API_GUARD_STAGE:'+SECRET]:
+            self.assertEqual(self.diagnostic(self.case(stack))['stage'], 'UNKNOWN')
+
+    def test_duplicate_and_conflicting_frames_are_unknown(self):
+        for stack in [self.frame()+'\n'+self.frame(), self.frame()+'\n'+self.frame(line='213')]:
+            self.assertEqual(self.diagnostic(self.case(stack))['stage'], 'UNKNOWN')
+
+    def test_canary_surrounding_valid_frame_is_not_emitted(self):
+        self.assertEqual(self.diagnostic(self.case(SECRET+'\n'+self.frame()+'\n'+SECRET))['stage'], 'PREPARE_TOMCAT_VERSION')
+
+    def test_missing_source_is_not_projected(self):
+        self.source.unlink()
+        self.assertIsNone(self.diagnostic(self.case()))
+
+    def test_hash_mismatched_source_is_not_projected(self):
+        self.source.write_bytes(self.source_bytes+b'\n')
+        self.assertIsNone(self.diagnostic(self.case()))
+
+    def test_symlink_source_is_not_projected(self):
+        self.source.unlink()
+        self.source.symlink_to(self.original_source.resolve())
+        self.assertIsNone(self.diagnostic(self.case()))
+
+    def test_symlink_source_parent_is_not_projected(self):
+        original = self.source.parent
+        target = original.with_name('actual')
+        original.rename(target)
+        original.symlink_to(target)
+        self.assertIsNone(self.diagnostic(self.case()))
+
+    def test_oversized_source_is_not_projected(self):
+        self.source.write_bytes(b'x'*(report.MAX_XML_BYTES+1))
+        self.assertIsNone(self.diagnostic(self.case()))
+
+    def report_root(self, cases):
+        root = self.root/'reports'
+        (root/'integrationTest').mkdir(parents=True)
+        suite = ET.Element('testsuite', name=report.API_DIAGNOSTIC_CLASS, tests=str(len(cases)), failures=str(len(cases)), errors='0', skipped='0')
+        suite.extend(cases)
+        (root/'integrationTest/TEST-api.xml').write_bytes(ET.tostring(suite))
+        return root
+
+    def test_summary_schema_counts_and_failure_remain_unchanged(self):
+        root=self.report_root([self.case()]); diagnostics=[]
+        with patch.object(report, 'source_manifest', return_value=self.manifest):
+            before=report.summarize(root)
+            after=report.summarize(root, diagnostics)
+        self.assertEqual(before, after)
+        self.assertEqual(after['tasks']['integrationTest']['status'], 'FAIL')
+        self.assertEqual(diagnostics, [{'method':self.method,'stage':'PREPARE_TOMCAT_VERSION'}])
+
+    def test_invalid_report_does_not_emit_partial_diagnostics(self):
+        root=self.report_root([self.case()]);diagnostics=[]
+        (root/'integrationTest/TEST-z-invalid.xml').write_text('<!DOCTYPE bad>')
+        with patch.object(report, 'source_manifest', return_value=self.manifest):
+            summary=report.summarize(root,diagnostics)
+        self.assertEqual(summary['tasks']['integrationTest']['status'],'INVALID_REPORT')
+        self.assertEqual(diagnostics,[])
+
+    def test_diagnostic_rows_are_bounded(self):
+        root=self.report_root([self.case() for _ in range(report.MAX_FAILURE_IDS+5)]);diagnostics=[]
+        with patch.object(report,'source_manifest',return_value=self.manifest):
+            summary=report.summarize(root,diagnostics)
+        self.assertEqual(len(diagnostics),report.MAX_FAILURE_IDS)
+        self.assertEqual(summary['tasks']['integrationTest']['failures'],report.MAX_FAILURE_IDS+5)
+
+    def test_cli_stdout_only_projection_never_changes_artifact_or_exit(self):
+        root=self.report_root([self.case(SECRET+'\n'+self.frame()+'\n'+SECRET)])
+        output=self.root/'safe-summary.json'
+        run=subprocess.run([sys.executable,str(Path(report.__file__)), '--input',str(root),'--output',str(output)],capture_output=True,text=True)
+        self.assertNotEqual(run.returncode,0)
+        self.assertEqual(run.stderr,'')
+        self.assertNotIn(SECRET,run.stdout+run.stderr+output.read_text())
+        rows=[json.loads(line) for line in run.stdout.splitlines()]
+        self.assertEqual(len(rows),2)
+        self.assertEqual(rows[0],json.loads(output.read_text()))
+        self.assertEqual(rows[1]['schemaVersion'],'FUSE-API-PATH-GUARD-DIAGNOSTICS-1')
+        self.assertEqual(rows[1]['failures'],[{'method':self.method,'stage':'PREPARE_TOMCAT_VERSION'}])
+        self.assertNotIn('failures',rows[0])
+
+
 if __name__ == '__main__':
     unittest.main()
