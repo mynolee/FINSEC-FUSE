@@ -1,0 +1,352 @@
+{
+  "$defs": {
+    "CaseOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "caseId": {
+          "title": "Caseid",
+          "type": "string"
+        },
+        "environment": {
+          "enum": [
+            "BASELINE",
+            "FUSE"
+          ],
+          "title": "Environment",
+          "type": "string"
+        },
+        "repeat": {
+          "minimum": 1,
+          "title": "Repeat",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "COMPLETED",
+            "ERROR"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "state": {
+          "title": "State",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "ALLOW",
+            "WAIT_APPROVAL",
+            "DENY",
+            "ERROR"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "reasonCodes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasoncodes",
+          "type": "array"
+        },
+        "attackInduced": {
+          "title": "Attackinduced",
+          "type": "boolean"
+        },
+        "policyBlocked": {
+          "title": "Policyblocked",
+          "type": "boolean"
+        },
+        "forbiddenPaymentCount": {
+          "minimum": 0,
+          "title": "Forbiddenpaymentcount",
+          "type": "integer"
+        },
+        "forbiddenPaidAmountKrw": {
+          "minimum": 0,
+          "title": "Forbiddenpaidamountkrw",
+          "type": "integer"
+        },
+        "actualDownstreamDepth": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Actualdownstreamdepth",
+          "type": "integer"
+        },
+        "normalExpectedReached": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Normalexpectedreached"
+        },
+        "unrelatedNormalExpected": {
+          "minimum": 0,
+          "title": "Unrelatednormalexpected",
+          "type": "integer"
+        },
+        "unrelatedNormalCompleted": {
+          "minimum": 0,
+          "title": "Unrelatednormalcompleted",
+          "type": "integer"
+        },
+        "securityCheckDurationMs": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Securitycheckdurationms"
+        },
+        "quarantineLatencyMs": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quarantinelatencyms"
+        },
+        "trace": {
+          "additionalProperties": true,
+          "title": "Trace",
+          "type": "object"
+        },
+        "exclusionReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Exclusionreason"
+        },
+        "fixtureHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Fixturehash",
+          "type": "string"
+        },
+        "pairedInputVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pairedinputversion"
+        },
+        "pairedInputHash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pairedinputhash"
+        },
+        "inputSnapshotHash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inputsnapshothash"
+        },
+        "responseByteHash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Responsebytehash"
+        },
+        "modelOutputHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Modeloutputhash",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "promptVersion": {
+          "title": "Promptversion",
+          "type": "string"
+        },
+        "policyVersion": {
+          "title": "Policyversion",
+          "type": "string"
+        },
+        "mockReviewerVersion": {
+          "title": "Mockreviewerversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "caseId",
+        "environment",
+        "repeat",
+        "status",
+        "state",
+        "decision",
+        "reasonCodes",
+        "attackInduced",
+        "policyBlocked",
+        "forbiddenPaymentCount",
+        "forbiddenPaidAmountKrw",
+        "actualDownstreamDepth",
+        "normalExpectedReached",
+        "unrelatedNormalExpected",
+        "unrelatedNormalCompleted",
+        "trace",
+        "exclusionReason",
+        "fixtureHash",
+        "modelOutputHash",
+        "model",
+        "promptVersion",
+        "policyVersion",
+        "mockReviewerVersion"
+      ],
+      "title": "CaseOutput",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "reportVersion": {
+      "const": "FUSE-EVALUATION-2",
+      "default": "FUSE-EVALUATION-2",
+      "title": "Reportversion",
+      "type": "string"
+    },
+    "inputReportVersion": {
+      "default": "FUSE-EVALUATION-2",
+      "title": "Inputreportversion",
+      "type": "string"
+    },
+    "experimentId": {
+      "title": "Experimentid",
+      "type": "string"
+    },
+    "fixtureSetId": {
+      "title": "Fixturesetid",
+      "type": "string"
+    },
+    "fixtureHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Fixturehash",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "COMPLETED",
+        "FAILED",
+        "INTERRUPTED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "modelMode": {
+      "enum": [
+        "REPLAY",
+        "LIVE"
+      ],
+      "title": "Modelmode",
+      "type": "string"
+    },
+    "resultsSource": {
+      "const": "JAVA_POSTGRES_EXECUTION",
+      "title": "Resultssource",
+      "type": "string"
+    },
+    "syntheticModelOutputs": {
+      "title": "Syntheticmodeloutputs",
+      "type": "boolean"
+    },
+    "liveRobustnessMeasured": {
+      "title": "Liverobustnessmeasured",
+      "type": "boolean"
+    },
+    "plannedCaseIds": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Plannedcaseids",
+      "type": "array"
+    },
+    "repeatCount": {
+      "maximum": 10,
+      "minimum": 1,
+      "title": "Repeatcount",
+      "type": "integer"
+    },
+    "caseOutputs": {
+      "items": {
+        "$ref": "#/$defs/CaseOutput"
+      },
+      "title": "Caseoutputs",
+      "type": "array"
+    },
+    "metrics": {
+      "additionalProperties": true,
+      "title": "Metrics",
+      "type": "object"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "experimentId",
+    "fixtureSetId",
+    "fixtureHash",
+    "status",
+    "modelMode",
+    "resultsSource",
+    "syntheticModelOutputs",
+    "liveRobustnessMeasured",
+    "plannedCaseIds",
+    "repeatCount",
+    "caseOutputs",
+    "metrics",
+    "limitations"
+  ],
+  "title": "EvaluationReport",
+  "type": "object"
+}
