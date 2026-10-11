@@ -7,6 +7,7 @@ and Compose versions before relying on their runtime behavior.
 
 ## Default REPLAY boundary
 
+After the separately approved [fresh setup](../README.md) and private token handoff,
 `docker compose up --build` keeps the four application workloads on three
 explicit internal bridge networks:
 
@@ -42,17 +43,19 @@ docker compose -f compose.yaml -f compose.dev.yaml up --build
 ```
 
 Do not use that debugging override on a shared deployment. Browser clients use
-the frontend `/api/` route and never need direct Python access. The standalone
-non-Docker development workflow is unaffected by these Compose files.
+the frontend `/api/` route and never need direct Python access. A standalone host-Java launch also requires the explicit offline setup and
+mandatory shipped-main compatibility gate; these files do not publish its DB route.
 
 REPLAY is literal in the base file, as is disabled LIVE experimentation.
 Ambient `.env` model keys and mode changes do not turn it into LIVE. Each
 service receives an explicit configuration allowlist; `.env` is not wholesale
 injected into any container. The provider key is absent from Java, PostgreSQL,
 and the frontend. Python receives neither DB/staff credentials nor signing
-material. Java still receives the migration credential because this demo
-runs Flyway at startup; the runtime DB identity remains `fuse_runtime`.
-Separating migration into a one-shot identity is outside this Compose change.
+material. The normal Java runtime identity is `fuse_runtime`; it receives no
+main/auth database migration-owner connectivity and cannot enable Flyway startup
+migration. Explicit one-shot migration/token services are defined only in the
+admin overlay below. The distinct experiment-owner connection remains an existing
+separate-database boundary.
 
 ## Dedicated ingress exception and host-port verification
 
@@ -211,3 +214,11 @@ On a Docker-enabled isolated test host, separately collect:
 
 Without those observations, actual network isolation, LIVE egress filtering,
 and container startup remain **NOT_RUN**, even when all static checks pass.
+
+## Explicit offline administration
+
+`compose.admin.yaml` adds only profiled, one-shot migration and token-admin services. They join the internal data network, publish no ports, do not depend on/start application services, have no default operation and never restart automatically. Ordinary `docker compose up` does not load this overlay. The migration image does not mount private files. The token image mounts only an existing owner-owned 0700 output directory, never the signing key or entire `.secrets` directory. Runtime roots remain read-only, capability-free and non-root.
+
+Owner passwords are runtime environment inputs to these short-lived services, never image/build arguments. Only nonsecret UID/GID values configure the token image's real passwd identity. The web target remains the Dockerfile default and an explicit Compose target. Its main/auth database Flyway credentials are absent and migration is disabled; the existing distinct experiment database owner is unchanged.
+
+See [first installation](runtime-security.md#first-installation) for the separate migration, issuance and handoff operations. The admin entrypoints, UID collisions, non-10001 ownership, negative permission cases and new runtime compatibility gate require fresh disposable Compose verification. Source configuration alone is not runtime/network proof.

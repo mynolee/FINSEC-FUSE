@@ -96,3 +96,18 @@ BASELINE도 기본 MAC·엄격한 JSON·본문 해시를 검증합니다. FUSE �
 - 운영 성능·장기 부하·금융기관 보안 인증·운영 배포
 
 전체 프로젝트 완료율이나 AI 활용률은 이 시험 개수로 환산하지 않습니다.
+
+## Fresh setup and migration separation candidate
+
+The new standalone migration image, separately packaged unchanged token provisioner, mandatory shipped-main compatibility gate and V7 history privilege restriction have no execution result recorded in this document yet: **NOT_RUN**. Authored tests must execute the shipped jars and images on disposable PostgreSQL 16.15, including failed/uncertain migration, role/history privileges, configuration precedence, log privacy, non-10001 private output ownership, separate handoff, readiness and persistent stop/restart. Existing test-classpath CI initialization does not certify the new operator commands.
+
+This setup evidence is separate from complete API/DB/risk/job/audit acceptance and an independent teammate's README-only walkthrough. No source-only review is a compile, runtime, migration, credential-issuance or deployment PASS.
+
+Authored acceptance boundaries for this candidate (all execution **NOT_RUN**):
+
+- `MigrationContractTest`: explicit/ambiguous configuration, unsupported operations, exact packaged SQL set and effective property precedence; no connection.
+- `DatabaseMigratorIT`: owned PG16.15 fresh/duplicate/nonempty/default-ACL cases, logical catalog/data preservation, server read-only autocommit/non-autocommit, role membership, history and enumerated-object rejection. `RuntimeDatabaseRoleIT` additionally checks custom-role history mutation denial.
+- `ShippedEntrypointsIT`: all three actual jar manifests, zero-argument refusal, simultaneous migration processes with live HTTP-port observations, main-before-service class-loading refusal, effective-target overrides, controlled failing/killed migrations and lost cooperative lock. Fault SQL exists only in an owned temporary copy of the shipped test artifact.
+- `shipped-fresh-setup` CI job: actual image entrypoints on a newly owned project, main/auth owner exclusion from runtime, non-10001 token identity and duplicate UID/GID image case, private output refusal, separately issued tokens and synthetic-only handoff, REPLAY HTTP plus durable risk/payment/job/audit observations, ordered non-destructive stop/start and unchanged authority/history. Admin stdout, stderr and container logs are scanned for bootstrap and newly generated PREPARED/COMMITTED bearer canaries. Only a fixed source/image-bound aggregate is publishable.
+
+The existing combined browser job remains separate. Neither the two-workflow fresh-setup smoke nor existing aggregate suite counts alone establish the complete acceptance matrix and its variants. A later release receipt must identify the executed revision, actual results and remaining limits. Docker tags, dependency coordinates and deterministic archive ordering are not a claim of bit-identical images.

@@ -9,7 +9,7 @@ import sys
 
 AUTH_SETUP_GUIDANCE = (
     "Bootstrap does not initialize the durable demo auth ledger or authorize bearer values. "
-    "After separately approved database migration, explicitly provision fresh tokens to a new private output file, "
+    "Follow the explicit migration and separate token-admin container commands in docs/runtime-security.md; after approved migration, provision fresh tokens to a new private output file, "
     "then review and approve their configuration handoff before backend startup. "
     "Existing environment tokens are not imported; restart does not refresh their lifetime. "
     "See docs/runtime-security.md for setup, replacement, and fail-closed recovery."

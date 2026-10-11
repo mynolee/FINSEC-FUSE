@@ -34,25 +34,60 @@ The migration removes mutation privileges from the standard `fuse_runtime` role 
 
 ### First installation
 
-This is a manual operational sequence. Applying migrations, using owner connectivity, issuing credentials and replacing private configuration each require the operator's applicable approval. The bootstrap and Compose commands do not perform token administration.
+This is an explicit operator sequence for a NEW standard local database, not an upgrade/reset procedure. Database access, migration, issuance and private configuration handoff each need their applicable approval. These documented commands do not authorize the assistant to operate an existing database.
 
-1. As a non-root developer, run `./scripts/bootstrap-dev.sh` to prepare private base configuration and the signing key. Its generated bearer values have no durable authority. An existing valid `.env` and key are preserved byte-for-byte.
-2. Prepare the database connection and apply the repository migrations through `V6__durable_demo_tokens.sql` with separately approved migration tooling. This repository does not provide an offline migrate-only command. Do this before normal backend startup; the token provisioner requires the migrated tables and does not run Flyway or application services.
-3. Provide `FUSE_DB_URL`, `FUSE_MIGRATION_USERNAME` and `FUSE_MIGRATION_PASSWORD` to the short-lived provisioner through an approved private environment. It does not load `.env`. Keep Gradle debug/environment tracing disabled and use `--no-daemon` so this administrative invocation does not reuse a persistent build daemon. Never put passwords or bearer values in command arguments, shell history, logs or reports. Use a reachable database address for this process; the default Compose database has no published host port.
-4. Run the provisioner as a non-root owner. Choose an absolute normalized path for a new output file under an existing owner-owned directory with mode 0700. The output must not already exist. Symlinks and unsafe permissions are rejected; the new credential file is mode 0600. The following example assumes that `/private/fuse-auth` has already been prepared by the operator:
+Prerequisites are a non-root Linux/POSIX user, Bash, Python 3, Docker Engine and Compose. Host Java is not required for the container recipe. The supported UID/GID range for the token-admin image is 1–2147483646. Existing base files remain private and unchanged; the bootstrap bearer values do not carry authority.
 
 ```sh
-./gradlew --no-daemon demoTokenProvision --args='init-fresh --new-install --output /private/fuse-auth/initial-tokens.env'
+./scripts/bootstrap-dev.sh
+docker compose -f compose.yaml -f compose.admin.yaml build migration token-admin
+docker compose up --detach --wait postgres
+docker compose -f compose.yaml -f compose.admin.yaml run --rm --no-deps migration migrate-fresh --new-install
 ```
 
-`init-fresh` requires empty migrated auth tables. It creates fresh credentials for customers 101–104, the reviewer, security operator, developer and KYC service. Reviewer/security initial scopes use `FUSE_REVIEWER_CUSTOMERS` / `FUSE_SECURITY_CUSTOMERS`, defaulting to customers 101–104; keep those declarations consistent with the backend configuration. Existing bearer environment values are never imported.
+Keep applications and other administrators stopped during migration. The standalone Java main accepts only `migrate-fresh --new-install`. It uses existing explicit owner connectivity, fixed `classpath:db/migration`, the public schema and the seven packaged SQL migrations. It requires the standard `fuse` database owned by `fuse_owner`, with the bootstrap runtime role and exact per-schema default grants already present. Before any migration it rejects runtime superuser/elevated role membership, database/schema CREATE authority or ownership. It refuses unrelated user objects, previous history and nonempty/partial installations. No clean, repair, baseline, arbitrary migration locations, schema creation, upgrade or automatic retry is available. All connections have bounded connection/socket/lock/statement timeouts. A cooperative advisory lock coordinates this command, not arbitrary database administrators.
 
-5. Confirm the process reports success and the private output's final status marker is COMMITTED. The earlier PREPARED marker remains in the file. The output contains the operation ID, fingerprints and generated environment assignments. Do not display or paste the whole file to inspect its status. Separately review and approve copying the required assignments into the intended private runtime configuration. The provisioner never edits an existing `.env` or secret file. The `FUSE_SERVICE_TOKEN` handoff must remain consistent between the backend and the KYC adapter.
-6. Start the normal services with `docker compose up --build` and check `/actuator/health/readiness`. There is no Compose provisioning service or startup retry that creates authority. Issuance time starts when the database issues the token, before this configuration handoff and startup.
+The command applies V1–V7 and exits without Spring, HTTP, schedulers, workers, provider/model clients, application startup recovery, demo seed or token issuance. V1's `execution_gate` row is a structural sentinel, not a seeded customer/workflow. A fixed `Migration COMPLETE` receipt requires confirmed migration and post-validation; it contains no connection details. A failure must not be treated as a rollback or successful setup.
+
+After confirmed migration, separately approve issuance to a new private output:
+
+```sh
+mkdir -m 700 .secrets/auth-output
+docker compose -f compose.yaml -f compose.admin.yaml run --rm --no-deps token-admin init-fresh --new-install --output /private-output/initial-tokens.env
+python3 -c 'from pathlib import Path; import sys; ok=Path(".secrets/auth-output/initial-tokens.env").read_bytes().splitlines()[-1:]==[b"# status=COMMITTED"]; print("COMMITTED" if ok else "NOT_CONFIRMED"); sys.exit(0 if ok else 1)'
+```
+
+The output directory must be new, owner-owned and mode 0700. Compose must not create a missing bind directory. The token-admin image creates a real non-root passwd identity with the bootstrap UID/GID at build time, including when an image already contains that numeric identity. It mounts only the output directory. Its unchanged provisioner rejects symlinks, unsafe ownership and existing files; outputs are 0600 and exclusive. Do not run it as root, override its image user, relax permissions, display the credential file or pass credentials in arguments. Rebuild the image after an explicitly reviewed identity change.
+
+`init-fresh` still requires empty migrated auth tables and generates fresh credentials for customers 101–104, reviewer, security operator, developer and KYC service. Scope declarations default to customers 101–104 and must match the backend. It never imports bootstrap/environment bearer values. Migration and issuance are separate invocations; neither command starts the other.
+
+After success and a final COMMITTED marker, separately review and approve copying the required assignments into the intended private `.env` using a private editor. The PREPARED marker remains earlier in the file. Do not print the whole file to inspect its status. Preserve consistency of `FUSE_SERVICE_TOKEN` between backend and adapter. No operator command automatically edits an existing `.env`.
+
+```sh
+docker compose up --build --detach --wait
+```
+
+Check `/actuator/health/readiness` and the documented adapter readiness. The standard backend receives no main/auth migration-owner password. Its separate experiment-owner connection remains restricted to the distinct experiment database and existing owned sandbox code. Merely selecting the admin profile or starting either admin image without explicit operation arguments cannot initialize a database or issue authority.
+
+### Runtime schema admission
+
+The shipped `FuseApplication.main` installs a mandatory initializer after Spring prepares effective configuration and before context refresh, bean construction, server startup, seed or startup recovery. It cannot be disabled by profile, CLI or environment flags. It rejects effective Flyway migration, SQL initialization, main/auth owner credentials and alternative datasource URL/credential/schema/JNDI mechanisms. The actual runtime database, login/session identity and default schema must match the checked configuration. The first identity probe uses catalog-qualified functions and requires the effective schema search order to be exactly `pg_catalog,public`; a public-first explicit catalog path or other schema is rejected before contract queries.
+
+Every validator connection is nonpooled and server-enforced read-only, including autocommit, with fixed timeouts. Validation requires the exact V1–V7 successful SQL history and packaged checksums, with no baseline, future, pending or unknown migration. It checks the enumerated public tables, validated primary-key presence, named enabled integrity triggers, function signatures, critical column names and runtime/auth/history privileges. It does not compare arbitrary DBA function bodies, column types or every unique/check/foreign-key definition. There is no fallback to migration, repair or a read/write validator.
+
+V7 preserves V1–V6 and historical rows, revokes PUBLIC/runtime table and column mutation privileges on Flyway history and retains runtime SELECT. It operates in Flyway's current schema so owned custom-schema fixtures remain valid. The standard runtime has no role memberships or main-database/schema/object ownership. Custom roles require explicit privilege review and must meet this same contract.
+
+The supported boundary is the shipped web main and its container. Trusted internal `ExperimentSandbox` and test builders deliberately do not invoke that main and retain their own owned disposable-database/schema setup. Their tests do not prove this product-main gate; shipped-jar and Compose process tests are required. Arbitrary external Java bootstrap code is outside this boundary.
+
+### Fresh migration failures
+
+Nonzero exit, process loss, lock-session loss or missing success receipt means NOT_CONFIRMED. No cleanup, repair, baseline, credential issuance or automatic retry follows. Preserve private diagnostics and inspect the approved database's history and state. Grouping transactional migrations does not prove that a failed attempt leaves no Flyway housekeeping objects. The fresh command refuses retained history/partial objects; a completely rolled-back or lost database cannot prove its earlier existence. A deliberate retry therefore requires prior reconciliation and renewed operator judgment even when the database appears empty.
+
+Existing V6-or-earlier installations need a separately approved upgrade/backup procedure and migration tool before starting this web artifact. The fresh-only command intentionally cannot upgrade them. Do not remove history, delete tombstones or destroy a volume to make a migration or token operation succeed. For ordinary stop/restart, use `docker compose stop`, then `docker compose start --wait --wait-timeout 60 postgres`, the same start command for `agent`, and `docker compose start backend frontend ingress`, followed by readiness checks. Token issuance/expiry/revocation must survive unchanged.
 
 ### Replacement, revocation and scope
 
-All commands below use the same standalone `DemoTokenProvisioner` and approved owner environment. They do not start Spring, a web server, schedulers or demo seed. Their nonsecret selectors are actor IDs or lowercase 64-character SHA-256 fingerprints, never bearer tokens. Do not publish private output files.
+All commands below use the same standalone `DemoTokenProvisioner` and approved owner environment. The examples are an optional host-Java 21 route and require independently approved reachable database connectivity; the default Compose database is not published to the host. For the container route, use the token-admin service with the same operation arguments and a new `/private-output/` filename for every issuance. They do not start Spring, a web server, schedulers or demo seed. Their nonsecret selectors are actor IDs or lowercase 64-character SHA-256 fingerprints, never bearer tokens. Do not publish private output files.
 
 To issue an additional credential:
 

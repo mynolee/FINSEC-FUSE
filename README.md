@@ -14,20 +14,66 @@ KYC 제안 → 독립 증거 검증 → 대출 추천 → 직원의 정확한 �
 
 ## 로컬 실행
 
-Docker Engine와 Compose가 필요합니다. 최초 설치에서는 DB 마이그레이션과 모의 토큰 발급을 별도 단계로 진행합니다. 저장소 루트에서 비공개 기본 설정부터 준비하세요.
+비-root Linux/POSIX 사용자, Bash, Python 3, Docker Engine와 Compose가 필요합니다. 아래 컨테이너 절차에는 호스트 Java가 필요하지 않습니다. 기존 DB를 업그레이드하거나 초기화하는 명령이 아닙니다. 기존·부분 적용 DB가 있으면 중단하고 별도 검토하세요.
+
+1. 비공개 기본 설정과 서명 키를 준비하고 관리 이미지를 빌드합니다. 기존 유효 설정은 보존되며 생성된 토큰 값에는 아직 인증 권한이 없습니다.
 
 ```sh
 ./scripts/bootstrap-dev.sh
+docker compose -f compose.yaml -f compose.admin.yaml build migration token-admin
 ```
 
-부트스트랩이 만든 토큰 값에는 아직 인증 권한이 없습니다. 다음 순서를 따라야 합니다.
+2. 승인한 새 로컬 DB만 시작한 뒤 마이그레이션 명령을 명시적으로 실행합니다. 이 단계 동안 다른 앱·관리자가 해당 DB를 사용하면 안 됩니다.
 
-1. 운영자가 승인한 DB 연결과 마이그레이션 절차로 `V6__durable_demo_tokens.sql`까지 적용합니다. 마이그레이션만으로 토큰이 발급되지는 않습니다.
-2. [모의 토큰 초기 발급](docs/runtime-security.md#first-installation)의 독립 실행 명령으로 새 토큰을 새 비공개 파일에 발급합니다.
-3. 발급 성공을 확인한 뒤 소유자가 출력 파일의 토큰을 사용할 설정으로 옮길지 검토·승인합니다. 기존 `.env`는 자동 수정되지 않습니다.
-4. 설정 반영이 끝나면 `docker compose up --build`로 서비스를 시작하고 준비 상태를 확인합니다.
+```sh
+docker compose up --detach --wait postgres
+docker compose -f compose.yaml -f compose.admin.yaml run --rm --no-deps migration migrate-fresh --new-install
+```
 
-기존 환경에서 업그레이드할 때도 이전 토큰을 자동 가져오지 않습니다. 원래 발급·만료·폐기 이력이 없는 토큰에 새 유효기간을 부여할 수 없으므로 새 발급과 설정 교체가 필요합니다. Compose 시작·재시작은 토큰 발급이나 복구를 실행하지 않습니다. DB 연결 준비, 별도 마이그레이션, 토큰 교체는 운영자가 승인한 절차로 수행하세요.
+독립 명령은 고정된 V1–V7을 적용하고 종료합니다. HTTP, Spring, seed, 작업자, 모델, 시작 복구나 토큰 발급을 실행하지 않습니다. `Migration COMPLETE`가 확인되어야 다음 단계로 진행합니다. 실패·응답 손실·부분 적용은 자동 재시도나 삭제 사유가 아닙니다. [실패 처리](docs/runtime-security.md#fresh-migration-failures)를 따라 상태를 먼저 대조하세요.
+
+3. 새 비공개 출력 디렉터리를 만들고, 별도로 승인한 토큰 발급을 실행합니다. 이미 같은 이름의 디렉터리/출력 파일이 있으면 덮어쓰지 마세요.
+
+```sh
+mkdir -m 700 .secrets/auth-output
+docker compose -f compose.yaml -f compose.admin.yaml run --rm --no-deps token-admin init-fresh --new-install --output /private-output/initial-tokens.env
+python3 -c 'from pathlib import Path; import sys; ok=Path(".secrets/auth-output/initial-tokens.env").read_bytes().splitlines()[-1:]==[b"# status=COMMITTED"]; print("COMMITTED" if ok else "NOT_CONFIRMED"); sys.exit(0 if ok else 1)'
+```
+
+4. 발급 성공과 COMMITTED 확인 후, 소유자가 새 파일의 필요한 토큰 값을 기존 비공개 `.env`에 반영할지 별도로 검토·승인합니다. 비공개 편집기로만 다루고 파일 전체를 터미널·채팅·로그에 출력하지 마세요. 백엔드와 adapter의 `FUSE_SERVICE_TOKEN`은 같아야 합니다. 이 절차는 기존 `.env`를 자동 변경하지 않습니다.
+5. 설정 반영 후 일반 서비스를 시작하고 아래 준비 상태를 확인합니다.
+
+```sh
+docker compose up --build --detach --wait
+python3 - <<'PYTHON'
+import json, time, urllib.request
+http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+deadline = time.monotonic() + 180
+while time.monotonic() < deadline:
+    try:
+        with http.open("http://127.0.0.1:8080/actuator/health/readiness", timeout=3) as response:
+            if json.load(response).get("status") == "UP":
+                print("READY")
+                break
+    except Exception:
+        pass
+    time.sleep(1)
+else:
+    raise SystemExit("NOT_READY: stop and review private diagnostics; do not repeat migration or issuance")
+PYTHON
+```
+
+기본 웹 런타임은 main/auth DB 마이그레이션 소유자 자격정보를 받지 않습니다. 별도 실험 DB의 소유자 연결은 기존 격리 실험에만 유지합니다. 일반 실행 main은 Spring 서비스가 만들어지기 전에 읽기 전용으로 마이그레이션 이력·체크섬과 명시된 객체/권한 호환성을 확인합니다. 임의의 DBA 변경을 모두 탐지한다는 의미는 아닙니다.
+
+중지는 `docker compose stop`입니다. 재개할 때는 DB와 어댑터 준비를 먼저 확인한 뒤 웹 서비스를 시작합니다.
+
+```sh
+docker compose start --wait --wait-timeout 60 postgres
+docker compose start --wait --wait-timeout 60 agent
+docker compose start backend frontend ingress
+```
+
+재개 후 위의 180초 준비 상태 검사를 다시 실행합니다. 일반 중지·재시작에서 `down --volumes`를 사용하지 마세요. 재시작은 토큰을 발급하거나 유효기간을 늘리지 않습니다. 만료되면 [명시적 교체 절차](docs/runtime-security.md#replacement-revocation-and-scope)가 필요합니다. 기존 V6 이하 DB의 업그레이드는 이 fresh-only 명령으로 지원하지 않으며, 소유자가 별도로 승인한 도구·백업·절차로 V7까지 적용해야 합니다.
 
 - 운영 화면: http://localhost:5173
 - 백엔드 준비 상태: http://localhost:8080/actuator/health/readiness
