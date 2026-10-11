@@ -1,18 +1,20 @@
 spring:
   application:
     name: finsec-fuse
+  sql:
+    init:
+      mode: never
   datasource:
-    url: ${FUSE_DB_URL:jdbc:postgresql://localhost:5432/finsec_fuse}
-    username: ${FUSE_DB_USERNAME:fuse_runtime}
+    url: ${FUSE_DB_URL:}
+    username: ${FUSE_DB_USERNAME:}
     password: ${FUSE_DB_PASSWORD:}
     hikari:
       maximum-pool-size: 12
       connection-timeout: 5000
       connection-init-sql: "SET lock_timeout = '2s'; SET statement_timeout = '5s'"
   flyway:
-    enabled: ${FUSE_MIGRATE:true}
-    user: ${FUSE_MIGRATION_USERNAME:${FUSE_DB_USERNAME:fuse_runtime}}
-    password: ${FUSE_MIGRATION_PASSWORD:${FUSE_DB_PASSWORD:}}
+    # The shipped main validates read-only; only a separately invoked administrator migrates.
+    enabled: false
   jackson:
     deserialization:
       fail-on-unknown-properties: true
