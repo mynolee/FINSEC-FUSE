@@ -423,5 +423,46 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(self.java.read_text(), SOURCE)
 
 
+class ControllerAdviceMetadataTests(unittest.TestCase):
+    METHODS = (
+        'aliasAnonymousSaturationDoesNotBlockValidCanonicalCallerOnSameIp',
+        'canonicalAndAliasHeaderChecksRemainAheadOfBodies',
+        'canonicalOversizedBodiesEnforceLengthAndStreamingBoundsBeforeMvc',
+        'unauthenticatedCanonicalAndAliasesRejectBeforeAnyBodyParsing',
+        'validBearerAliasesRemainOutsideRawAllowlistForBothFramings',
+    )
+
+    def source(self):
+        root = Path(__file__).resolve().parents[1]
+        return (root / 'backend/src/test/java/com/finsec/fuse/integration/PublicApiCanonicalPathGuardIT.java').read_text()
+
+    def parse(self, source):
+        return inv.source_methods(inv.scrub_java(source), 'PublicApiCanonicalPathGuardIT',
+                                  'com/finsec/fuse/integration/PublicApiCanonicalPathGuardIT.java')
+
+    def test_actual_nested_advice_maps_exact_five_methods(self):
+        source = self.source()
+        self.assertLess(source.index('@ControllerAdvice'), source.index('@Test @Timeout'))
+        self.assertIn('@TestConfiguration(proxyBeanMethods=false)', source)
+        self.assertEqual(dict.fromkeys(self.METHODS), self.parse(source)[1]['methods'])
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(dict.fromkeys(self.METHODS), inv.source_manifest(root / 'backend/src/test/java')[
+            'com.finsec.fuse.integration.PublicApiCanonicalPathGuardIT'])
+
+    def test_advice_untrusted_spellings_stay_unsupported(self):
+        source = self.source()
+        official = 'import org.springframework.web.bind.annotation.ControllerAdvice;'
+        variants = {
+            'wildcard': source.replace(official, 'import org.springframework.web.bind.annotation.*;'),
+            'qualified': source.replace('@ControllerAdvice', '@org.springframework.web.bind.annotation.ControllerAdvice'),
+            'shadowed': source + '\n@interface ControllerAdvice {}\n',
+            'untrusted': source.replace(official, 'import untrusted.ControllerAdvice;'),
+            'composed': source.replace(official, 'import untrusted.ComposedAdvice;').replace('@ControllerAdvice', '@ComposedAdvice'),
+        }
+        for kind, text in variants.items():
+            with self.subTest(kind=kind):
+                self.assertIsNone(self.parse(text)[1])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -144,7 +144,7 @@ def source_methods(code, stem, relative):
         'org.springframework.test.context.ActiveProfiles',
     } | {
         'org.springframework.web.bind.annotation.' + name for name in
-        ('RestController', 'GetMapping', 'PostMapping', 'PathVariable', 'RequestParam', 'RequestHeader')
+        ('ControllerAdvice', 'RestController', 'GetMapping', 'PostMapping', 'PathVariable', 'RequestParam', 'RequestHeader')
     }
     implicit = {'Override', 'SuppressWarnings', 'Deprecated', 'SafeVarargs', 'FunctionalInterface'}
     for annotation in re.findall(r'@([\w.]+)', code):

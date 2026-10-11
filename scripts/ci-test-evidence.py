@@ -52,6 +52,17 @@ DEADLINE_SOURCE = 'backend/src/test/java/com/finsec/fuse/integration/DefaultKycH
 DEADLINE_METHODS = ('defaultHttpDeadlineFailsOnceThenAllowsAnIndependentBoundResponse',)
 
 
+API_PATH_GUARD_CLASS = 'com.finsec.fuse.integration.PublicApiCanonicalPathGuardIT'
+API_PATH_GUARD_SOURCE = 'backend/src/test/java/com/finsec/fuse/integration/PublicApiCanonicalPathGuardIT.java'
+API_PATH_GUARD_METHODS = tuple(sorted((
+    'aliasAnonymousSaturationDoesNotBlockValidCanonicalCallerOnSameIp',
+    'canonicalAndAliasHeaderChecksRemainAheadOfBodies',
+    'canonicalOversizedBodiesEnforceLengthAndStreamingBoundsBeforeMvc',
+    'unauthenticatedCanonicalAndAliasesRejectBeforeAnyBodyParsing',
+    'validBearerAliasesRemainOutsideRawAllowlistForBothFramings',
+)))
+
+
 class Invalid(ValueError):
     pass
 
@@ -375,8 +386,14 @@ def default_kyc_deadline_evidence(root, inventory, source, run_id, attempt):
                                  'FUSE-DEFAULT-KYC-DEADLINE-METHODS-1', False)
 
 
+def api_path_guard_evidence(root, inventory, source, run_id, attempt):
+    return fixed_method_evidence(root, inventory, source, run_id, attempt,
+                                 API_PATH_GUARD_CLASS, API_PATH_GUARD_SOURCE, API_PATH_GUARD_METHODS,
+                                 'FUSE-API-PATH-GUARD-METHODS-1', False)
+
+
 def execute(command, root, artifacts, head, run_id, attempt, require_public_read_rate=False,
-            require_default_kyc_deadline=False):
+            require_default_kyc_deadline=False, require_api_path_guard=False):
     require(type(head) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head))
     require(all(type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item) for item in (run_id, attempt)))
     root, artifacts = Path(root).absolute(), Path(artifacts).absolute()
@@ -399,7 +416,8 @@ def execute(command, root, artifacts, head, run_id, attempt, require_public_read
     required = required_method_evidence(root, inventory, source, run_id, attempt)
     rate = public_read_rate_evidence(root, inventory, source, run_id, attempt) if require_public_read_rate else None
     deadline = default_kyc_deadline_evidence(root, inventory, source, run_id, attempt) if require_default_kyc_deadline else None
-    projections = [item for item in (required, rate, deadline) if item is not None]
+    api_path_guard = api_path_guard_evidence(root, inventory, source, run_id, attempt) if require_api_path_guard else None
+    projections = [item for item in (required, rate, deadline, api_path_guard) if item is not None]
     passing = [item for item in projections if item['status'] == 'PASS']
     # All independently reconciled Java projections must attest identical raw bytes.
     require(all(item['rawReportSets'] == passing[0]['rawReportSets'] for item in passing))
@@ -441,8 +459,9 @@ def main():
         parser.add_argument('--run-attempt', required=True)
         parser.add_argument('--require-public-read-rate', action='store_true')
         parser.add_argument('--require-default-kyc-deadline', action='store_true')
+        parser.add_argument('--require-api-path-guard', action='store_true')
         args = parser.parse_args()
-        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline)
+        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard)
         print('EVIDENCE_COMPLETE' if complete else 'EVIDENCE_INCOMPLETE')
         return 0
     except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, subprocess.SubprocessError):
