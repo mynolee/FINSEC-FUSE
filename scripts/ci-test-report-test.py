@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Offline mutation checks for bounded backend failure identifiers."""
 import copy
+import contextlib
+import io
 import importlib.util
 import json
 from pathlib import Path
@@ -582,6 +584,95 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
         self.assertEqual(rows[1]['schemaVersion'],'FUSE-API-PATH-GUARD-DIAGNOSTICS-1')
         self.assertEqual(rows[1]['failures'],[{'method':self.method,'stage':'PREPARE_TOMCAT_VERSION','reason':'MATCHED_FRAME'}])
         self.assertNotIn('failures',rows[0])
+
+
+class MigrationDiagnosticTests(unittest.TestCase):
+    classname = 'com.finsec.fuse.migration.DatabaseMigratorIT'
+    method = 'freshMigrationLeavesOnlyStructuralRowsAndReadOnlyHistoryPrivileges'
+
+    def case(self, classname=None, method=None, stack=None):
+        case = ET.Element('testcase', classname=classname or self.classname, name=(method or self.method) + '()')
+        ET.SubElement(case, 'failure', message=SECRET, type=SECRET).text = stack or SECRET
+        return case
+
+    def reports(self, directory, cases):
+        folder = Path(directory) / 'integrationTest'; folder.mkdir(exist_ok=True)
+        suite = ET.Element('testsuite', tests=str(len(cases)), failures=str(sum(c.find('failure') is not None for c in cases)),
+                           errors='0', skipped=str(sum(c.find('skipped') is not None for c in cases)))
+        suite.extend(cases)
+        path = folder / 'TEST-synthetic.xml'; path.write_bytes(ET.tostring(suite)); return path
+
+    def test_exact_pinned_source_methods_are_reviewed_and_frames_are_bounded(self):
+        self.assertEqual(4, len(report.MIGRATION_DIAGNOSTIC_SOURCES))
+        for classname, (digest, methods) in report.MIGRATION_DIAGNOSTIC_SOURCES.items():
+            path = report.SOURCE_ROOT / (classname.replace('.', '/') + '.java')
+            self.assertEqual(digest, report.hashlib.sha256(path.read_bytes()).hexdigest())
+            declared = set(report.re.findall(r'@Test void ([A-Za-z0-9_]+)\(', path.read_text()))
+            self.assertTrue(set(methods) <= declared)
+            self.assertEqual(len(methods), len(set(methods)))
+        low, high, _ = report.source_locations()[self.classname][self.method]
+        case = self.case(stack=f'{SECRET}\n at app//{self.classname}.{self.method}(DatabaseMigratorIT.java:{low + 1})\n{SECRET}')
+        row = report.migration_diagnostic(case)
+        self.assertEqual((row['class'], row['method'], row['status'], row['count'], row['sourceLine']),
+                         (self.classname, self.method, 'failed', 1, low + 1))
+        self.assertNotIn(SECRET, json.dumps(row))
+
+    def test_forged_identity_and_skipped_or_mixed_status_never_publish(self):
+        for classname, method in ((SECRET, self.method), (self.classname + '/../' + SECRET, self.method),
+                                  (self.classname, SECRET), (self.classname, self.method + '\n' + SECRET),
+                                  (self.classname, self.method + '(PRIVATE_CANARY)')):
+            self.assertIsNone(report.migration_diagnostic(self.case(classname, method)))
+        for tag in ('skipped', 'error', 'failure'):
+            case = self.case(); ET.SubElement(case, tag)
+            self.assertIsNone(report.migration_diagnostic(case))
+
+    def test_unknown_frames_emit_no_report_text_or_out_of_range_line(self):
+        for stack in (SECRET, f'at {self.classname}.{self.method}(DatabaseMigratorIT.java:999999)',
+                      f'at {self.classname}.{self.method}(/PRIVATE_CANARY/DatabaseMigratorIT.java:127)',
+                      f'at {self.classname}.{self.method}(DatabaseMigratorIT.java:127) {SECRET}'):
+            row = report.migration_diagnostic(self.case(stack=stack))
+            self.assertIsNone(row['sourceLine']); self.assertNotIn(SECRET, json.dumps(row))
+
+    def test_source_change_missing_or_symlinked_path_is_not_authority(self):
+        original = report.SOURCE_ROOT / (self.classname.replace('.', '/') + '.java')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); path = root / (self.classname.replace('.', '/') + '.java'); path.parent.mkdir(parents=True)
+            with patch.object(report, 'SOURCE_ROOT', root):
+                self.assertIsNone(report.migration_diagnostic(self.case()))
+                path.write_bytes(original.read_bytes() + b'\n// changed\n')
+                self.assertIsNone(report.migration_diagnostic(self.case()))
+                path.unlink(); path.symlink_to(original)
+                self.assertIsNone(report.migration_diagnostic(self.case()))
+
+    def test_duplicate_cases_keep_count_failure_and_suppress_ambiguous_projection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.reports(directory, [self.case(), self.case()])
+            rows = []; summary = report.summarize(Path(directory), migration_diagnostics=rows)
+            self.assertEqual(rows, [])
+            self.assertEqual(summary, report.summarize(Path(directory)))
+            self.assertEqual(summary['tasks']['integrationTest']['unknownFailureIds'], 2)
+            self.assertEqual(summary['tasks']['integrationTest']['status'], 'FAIL')
+
+    def test_malformed_xml_retains_invalid_gate_without_advisory_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.reports(directory, [self.case()]); path.write_text('<PRIVATE_CANARY')
+            rows = []; summary = report.summarize(Path(directory), migration_diagnostics=rows)
+            self.assertEqual(rows, []); self.assertEqual(summary['tasks']['integrationTest']['status'], 'INVALID_REPORT')
+
+    def test_inprocess_main_prints_only_safe_projection_and_preserves_unknown_failure_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.reports(directory, [self.case()]); output = Path(directory) / 'summary.json'
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with patch.object(sys, 'argv', ['ci-test-report.py', '--input', directory, '--output', str(output)]), \
+                    contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                result = report.main()
+            self.assertNotEqual(0, result); self.assertEqual('', stderr.getvalue())
+            rows = [json.loads(line) for line in stdout.getvalue().splitlines()]
+            self.assertEqual(rows[0], json.loads(output.read_text()))
+            self.assertEqual(rows[0]['tasks']['integrationTest']['unknownFailureIds'], 1)
+            self.assertEqual(rows[1]['schemaVersion'], 'FUSE-MIGRATION-TEST-DIAGNOSTICS-1')
+            self.assertEqual(rows[1]['failures'][0]['method'], self.method)
+            self.assertNotIn(SECRET, stdout.getvalue() + stderr.getvalue() + output.read_text())
 
 
 if __name__ == '__main__':

@@ -236,8 +236,79 @@ def api_guard_diagnostic(case, manifest):
             'reason': reason}
 
 
-def summarize(root: Path, api_diagnostics=None) -> dict:
+# Advisory only: reviewed source hashes authorize this small fixed vocabulary.
+# Do not relax the generic inventory parser or replace its unknown-failure counts.
+MIGRATION_DIAGNOSTIC_SOURCES = {
+    'com.finsec.fuse.migration.DatabaseMigratorIT': (
+        '4ea606eed524a1871d6d13a1b415f03019c554cf9d36cff473debf91123e6642', (
+            'fixedSnapshotQueriesCoverExactlyTheReviewedTablesAndExplicitFixture',
+            'freshMigrationLeavesOnlyStructuralRowsAndReadOnlyHistoryPrivileges',
+            'nonemptyHistoryFunctionTypeCollationOperatorAndExtraSchemaAreNotFresh',
+            'invalidBootstrapRuntimeAuthorityIsRejectedBeforeAnyMigration',
+            'everyValidatorConnectionIsServerReadOnlyIncludingAutocommitAndCannotUnwrap',
+            'historyMutationMissingObjectsWrongSchemaAndNoInheritOwnerMembershipFailClosed',
+        )),
+    'com.finsec.fuse.migration.ShippedEntrypointsIT': (
+        '4ca52aece4f9350b1df70b1ec6be2a0dedc39061aa4f5eb230f9b9e0a2a51a51', (
+            'manifestsSelectSeparateMainsAndZeroArgumentAdminsFailWithoutServices',
+            'shippedMigrationCompletesWithoutApplicationStartupAndConcurrentFreshAttemptRefuses',
+            'shippedWebMainRejectsAbsentSchemaAndOverrideBeforeSeedRecoveryOrHttp',
+            'failedMigrationAndKilledProcessNeverReportCompletionOrIssueAuthority',
+            'lossOfCooperativeLockIsNotSuccessEvenWhenMigrationCommits',
+        )),
+    'com.finsec.fuse.migration.MigrationContractTest': (
+        '6242643a2a088ca2422989b5ca3a15c0c583b694a6881d596ce04a0d233551ef', (
+            'canonicalEffectiveRuntimeConfigurationIsPrivateAndHasNoFallback',
+            'migrationsSqlInitializersAndAlternateTargetsCannotBypassTheMainGate',
+            'finalPropertyPrecedenceIsValidatedAndProfilesNeverDisableTheGate',
+            'urlPropertiesCredentialsAndAmbiguousTargetsAreRejected',
+            'unsupportedOperationsFailBeforeAnyConnectionOrCredentialUse',
+            'theResourceBoundaryContainsOnlyTheReviewedSevenSqlMigrations',
+            'pinnedFlywayOptionsUseExplicitEmptyArraysWithoutOpeningAConnection',
+            'fixedEmptyDataQueryCoversEveryReviewedNonstructuralTableExactlyOnce',
+        )),
+    'com.finsec.fuse.integration.RuntimeDatabaseRoleIT': (
+        'a3af21ae583b4d09774767e5bd17cc4a3304113e80ca243cd2f5fc3b3502fd69', (
+            'runtimeCanReadButCannotMutateMigrationHistory',
+        )),
+}
+
+
+def migration_diagnostic(case):
+    """Return source-owned IDs/line numbers only; never echo report text or paths."""
+    classname = case.get('classname', '')
+    expected = MIGRATION_DIAGNOSTIC_SOURCES.get(classname)
+    if expected is None or case.find('skipped') is not None:
+        return None
+    matches = [method for method in expected[1] if case.get('name') == method + '()']
+    failures, errors = case.findall('failure'), case.findall('error')
+    if len(matches) != 1 or len(failures) + len(errors) != 1:
+        return None
+    canonical_class = next(key for key in MIGRATION_DIAGNOSTIC_SOURCES if key == classname)
+    method = matches[0]
+    source = SOURCE_ROOT / (canonical_class.replace('.', '/') + '.java')
+    try:
+        raw = inventory_module().read_bytes(source, [0])
+        if hashlib.sha256(raw).hexdigest() != expected[0]:
+            return None
+        bounds = source_locations().get(canonical_class, {}).get(method)
+    except (OSError, UnicodeError, ValueError):
+        return None
+    line = None
+    if bounds is not None:
+        frame = re.compile(r'\s*at (?:app//)?' + re.escape(canonical_class + '.' + method) +
+                           r'\(' + re.escape(source.name) + r':([1-9][0-9]{0,5})\)\s*')
+        for text in ((failures + errors)[0].text or '').splitlines():
+            match = frame.fullmatch(text)
+            if match and bounds[0] <= int(match[1]) <= bounds[1]:
+                line = int(match[1]); break
+    return {'class': canonical_class, 'method': method, 'status': 'failed' if failures else 'error',
+            'count': 1, 'sourceLine': line, 'sourceSha256': expected[0]}
+
+
+def summarize(root: Path, api_diagnostics=None, migration_diagnostics=None) -> dict:
     tasks = {}
+    migration_all_rows, migration_seen = [], {}
     try:
         manifest = source_manifest()
     except (OSError, UnicodeError, ValueError):
@@ -246,6 +317,7 @@ def summarize(root: Path, api_diagnostics=None) -> dict:
         counts = dict(tests=0, failures=0, errors=0, skipped=0)
         ids, unknown, omitted = [], 0, 0
         diagnostic_rows = []
+        migration_rows = []
         invalid = False
         files = []
         try:
@@ -281,6 +353,16 @@ def summarize(root: Path, api_diagnostics=None) -> dict:
                     if sum(case.find(tag) is not None for case in cases) > int(suite.get(key, '0')):
                         raise ValueError()
                 for case in cases:
+                    if migration_diagnostics is not None:
+                        expected = MIGRATION_DIAGNOSTIC_SOURCES.get(case.get('classname', ''))
+                        if expected is not None:
+                            for method in expected[1]:
+                                if case.get('name') == method + '()':
+                                    identity = (case.get('classname'), method)
+                                    migration_seen[identity] = migration_seen.get(identity, 0) + 1
+                        diagnostic = migration_diagnostic(case)
+                        if diagnostic is not None and len(migration_rows) < MAX_FAILURE_IDS:
+                            migration_rows.append(diagnostic)
                     if case.find('failure') is None and case.find('error') is None:
                         continue
                     if task == 'integrationTest' and api_diagnostics is not None and len(diagnostic_rows) < MAX_FAILURE_IDS:
@@ -302,10 +384,15 @@ def summarize(root: Path, api_diagnostics=None) -> dict:
             ids, unknown, omitted = [], 0, 0
         if not invalid and api_diagnostics is not None:
             api_diagnostics.extend(diagnostic_rows)
+        if not invalid and migration_diagnostics is not None:
+            migration_all_rows.extend(migration_rows)
         tasks[task] = {'status': 'INVALID_REPORT' if invalid else
                       'NOT_RUN' if not files or counts['tests'] == 0 else
                       'FAIL' if counts['failures'] or counts['errors'] else 'PASS', **counts,
                       'failureIds': ids, 'unknownFailureIds': unknown, 'omittedFailureIds': omitted}
+    if migration_diagnostics is not None:
+        migration_diagnostics.extend([row for row in migration_all_rows
+            if migration_seen[(row['class'], row['method'])] == 1][:MAX_FAILURE_IDS])
     return {'schemaVersion': 'FUSE-TEST-COUNTS-1', 'tasks': tasks,
             'scope': 'Current checkout only; counts do not replace Compose/browser or LIVE verification.'}
 
@@ -316,7 +403,8 @@ def main() -> int:
     parser.add_argument('--output', type=Path, default=Path('safe-artifacts/backend-test-summary.json'))
     args = parser.parse_args()
     diagnostics = []
-    summary = summarize(args.input, diagnostics)
+    migration_diagnostics = []
+    summary = summarize(args.input, diagnostics, migration_diagnostics)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(summary, indent=2) + '\n')
     print(json.dumps(summary))
@@ -325,6 +413,10 @@ def main() -> int:
                           'sourceSha256': API_DIAGNOSTIC_SOURCE_SHA256,
                           'class': API_DIAGNOSTIC_CLASS, 'failures': diagnostics,
                           'scope': 'Advisory failed-test stack stage only; no assertion cause or PASS claim.'}))
+    if migration_diagnostics:
+        print(json.dumps({'schemaVersion': 'FUSE-MIGRATION-TEST-DIAGNOSTICS-1',
+                          'failures': migration_diagnostics,
+                          'scope': 'Advisory source-hash-bound failed-test IDs only; original counts and unknown IDs are unchanged.'}))
     return int(any(part['status'] != 'PASS' or part['skipped'] for part in summary['tasks'].values()))
 
 
