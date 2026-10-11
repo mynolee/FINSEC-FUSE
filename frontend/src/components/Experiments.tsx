@@ -495,10 +495,14 @@ function CreateExperiment({
   const repeatCount = isLive ? 3 : 1;
   const caseCount = fixture === 'mvp-security-v1' ? MVP_CASES.length : 60;
   const [checked, setChecked] = useState(false);
-  const command = useCommand(api, (result) => {
-    if (result.experimentId && result.decision !== 'ERROR' && result.decision !== 'DENY')
-      onCreated(result.experimentId);
-  });
+  const command = useCommand(
+    api,
+    (result) => {
+      if (result.experimentId && result.decision !== 'ERROR' && result.decision !== 'DENY')
+        onCreated(result.experimentId);
+    },
+    '/experiments',
+  );
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!checked || (isLive && !liveConsent)) return;
@@ -515,109 +519,116 @@ function CreateExperiment({
       <p className="muted">
         DEVELOPER 역할과 demo/test 환경에서만 실행할 수 있어요. 업무 DB와 분리된 실험 공간을 사용합니다.
       </p>
-      <form onSubmit={submit}>
-        <fieldset disabled={command.pending || command.retryable}>
-          <label htmlFor="fixture-set">등록된 사례 묶음</label>
-          <select
-            id="fixture-set"
-            value={fixture}
-            onChange={(e) => {
-              setFixture(e.target.value);
-              setChecked(false);
-              setLiveConsent(false);
-              command.reset();
-            }}
-          >
-            <option value="mvp-security-v1">핵심 6개 사례</option>
-            <option value="security-evaluation-v1">전체 평가 · 공격 40개 + 정상 20개</option>
-          </select>
-          <label htmlFor="experiment-model-mode">모델 모드</label>
-          <select
-            id="experiment-model-mode"
-            value={modelMode}
-            onChange={(event) => {
-              setModelMode(event.target.value as 'REPLAY' | 'LIVE');
-              setLiveConsent(false);
-              setChecked(false);
-              command.reset();
-            }}
-          >
-            <option value="REPLAY">REPLAY · 저장된 후보 응답 재생 (기본)</option>
-            <option value="LIVE">LIVE · 외부 모델 응답 캡처 (선택 · 비용 가능)</option>
-          </select>
-          <KeyValues
-            items={[
-              ['비교 모드', 'PAIRED · 같은 후보 출력을 양쪽에 사용'],
-              [
-                '모델 모드',
-                isLive ? 'LIVE · 사례·반복마다 한 캡처를 양쪽에 공유' : 'REPLAY · 등록된 응답 재생',
-              ],
-              ['반복 횟수', `${repeatCount}회 (고정)`],
-              [
-                '환경 실행 계획',
-                `${caseCount * 2 * repeatCount}개 · ${caseCount}개 사례 × ${repeatCount}회 × 두 환경`,
-              ],
-              ['직원 승인 가정', '양쪽에 동일한 Mock 직원 규칙 적용'],
-            ]}
-          />
-          {isLive ? (
-            <>
-              <div className="notice warning" id="live-cost-warning">
-                <div>
-                  <strong>외부 모델 호출 비용이 발생할 수 있어요.</strong>
-                  <p>
-                    선택한 {caseCount}개 사례를 3회씩 실행하며, 사례·반복마다 한 번 캡처한 응답을 두 환경이
-                    공유합니다. 지원되지 않는 사례는 제외될 수 있어요.
-                  </p>
-                  <p>
-                    서버에 설정된 모델 제공자에게 등록된 합성 사례 문서와 Mock 확인 자료가 전달됩니다.
-                    제공자·모델·요금은 서버 설정에서 확인하세요. 브라우저에는 제공자 키를 입력하지 않습니다.
-                  </p>
-                  <p>
-                    서버의 FUSE_EXPERIMENT_LIVE_ENABLED=true 설정과 제공자 연결이 필요합니다. 요청 접수만으로
-                    호출 또는 평가 완료를 뜻하지 않아요.
-                  </p>
-                </div>
-              </div>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={liveConsent}
-                  onChange={(event) => setLiveConsent(event.target.checked)}
-                  required
-                  aria-describedby="live-cost-warning"
-                />
-                선택한 사례 입력의 외부 모델 전송과 발생 가능한 비용을 확인했으며 LIVE 실행에 동의합니다.
-              </label>
-            </>
-          ) : (
-            <div className="notice info">
-              REPLAY는 저장된 합성 후보 응답을 사용하며 이 실험을 위한 외부 모델 호출을 요청하지 않습니다.
-              실제 모델 공격 성공률로 해석하지 마세요.
-            </div>
-          )}
-          <p className="field-help">
-            호출·캡처 실패와 공격 유도 실패는 양쪽의 공통 평가 분모에서 제외하며 방어 성공으로 세지 않습니다.
-          </p>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={(e) => setChecked(e.target.checked)}
-              required
+      {!command.retryable && (
+        <form onSubmit={submit}>
+          <fieldset disabled={command.pending || command.retryable}>
+            <label htmlFor="fixture-set">등록된 사례 묶음</label>
+            <select
+              id="fixture-set"
+              value={fixture}
+              onChange={(e) => {
+                setFixture(e.target.value);
+                setChecked(false);
+                setLiveConsent(false);
+                command.reset();
+              }}
+            >
+              <option value="mvp-security-v1">핵심 6개 사례</option>
+              <option value="security-evaluation-v1">전체 평가 · 공격 40개 + 정상 20개</option>
+            </select>
+            <label htmlFor="experiment-model-mode">모델 모드</label>
+            <select
+              id="experiment-model-mode"
+              value={modelMode}
+              onChange={(event) => {
+                setModelMode(event.target.value as 'REPLAY' | 'LIVE');
+                setLiveConsent(false);
+                setChecked(false);
+                command.reset();
+              }}
+            >
+              <option value="REPLAY">REPLAY · 저장된 후보 응답 재생 (기본)</option>
+              <option value="LIVE">LIVE · 외부 모델 응답 캡처 (선택 · 비용 가능)</option>
+            </select>
+            <KeyValues
+              items={[
+                ['비교 모드', 'PAIRED · 같은 후보 출력을 양쪽에 사용'],
+                [
+                  '모델 모드',
+                  isLive ? 'LIVE · 사례·반복마다 한 캡처를 양쪽에 공유' : 'REPLAY · 등록된 응답 재생',
+                ],
+                ['반복 횟수', `${repeatCount}회 (고정)`],
+                [
+                  '환경 실행 계획',
+                  `${caseCount * 2 * repeatCount}개 · ${caseCount}개 사례 × ${repeatCount}회 × 두 환경`,
+                ],
+                ['직원 승인 가정', '양쪽에 동일한 Mock 직원 규칙 적용'],
+              ]}
             />
-            실험 전용 Mock 업무 실행을 요청합니다.
-          </label>
-          <div className="form-actions">
-            <button className="button secondary" type="button" onClick={onClose}>
-              취소
-            </button>
-            <button className="button primary" type="submit" disabled={!checked || (isLive && !liveConsent)}>
-              {isLive ? '비용 확인 후 LIVE 실험 접수' : '비교 실험 접수'}
-            </button>
-          </div>
-        </fieldset>
-      </form>
+            {isLive ? (
+              <>
+                <div className="notice warning" id="live-cost-warning">
+                  <div>
+                    <strong>외부 모델 호출 비용이 발생할 수 있어요.</strong>
+                    <p>
+                      선택한 {caseCount}개 사례를 3회씩 실행하며, 사례·반복마다 한 번 캡처한 응답을 두 환경이
+                      공유합니다. 지원되지 않는 사례는 제외될 수 있어요.
+                    </p>
+                    <p>
+                      서버에 설정된 모델 제공자에게 등록된 합성 사례 문서와 Mock 확인 자료가 전달됩니다.
+                      제공자·모델·요금은 서버 설정에서 확인하세요. 브라우저에는 제공자 키를 입력하지 않습니다.
+                    </p>
+                    <p>
+                      서버의 FUSE_EXPERIMENT_LIVE_ENABLED=true 설정과 제공자 연결이 필요합니다. 요청
+                      접수만으로 호출 또는 평가 완료를 뜻하지 않아요.
+                    </p>
+                  </div>
+                </div>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={liveConsent}
+                    onChange={(event) => setLiveConsent(event.target.checked)}
+                    required
+                    aria-describedby="live-cost-warning"
+                  />
+                  선택한 사례 입력의 외부 모델 전송과 발생 가능한 비용을 확인했으며 LIVE 실행에 동의합니다.
+                </label>
+              </>
+            ) : (
+              <div className="notice info">
+                REPLAY는 저장된 합성 후보 응답을 사용하며 이 실험을 위한 외부 모델 호출을 요청하지 않습니다.
+                실제 모델 공격 성공률로 해석하지 마세요.
+              </div>
+            )}
+            <p className="field-help">
+              호출·캡처 실패와 공격 유도 실패는 양쪽의 공통 평가 분모에서 제외하며 방어 성공으로 세지
+              않습니다.
+            </p>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(e) => setChecked(e.target.checked)}
+                required
+              />
+              실험 전용 Mock 업무 실행을 요청합니다.
+            </label>
+            <div className="form-actions">
+              <button className="button secondary" type="button" onClick={onClose}>
+                취소
+              </button>
+              <button
+                className="button primary"
+                type="submit"
+                disabled={!checked || (isLive && !liveConsent)}
+              >
+                {isLive ? '비용 확인 후 LIVE 실험 접수' : '비교 실험 접수'}
+              </button>
+            </div>
+          </fieldset>
+        </form>
+      )}
       <CommandFeedback command={command} />
       {command.error instanceof ApiError &&
         command.error.reasonCodes.some(

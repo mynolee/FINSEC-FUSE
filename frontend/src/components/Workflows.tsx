@@ -858,7 +858,7 @@ function Approval({
   const [comment, setComment] = useState('');
   const [decision, setDecision] = useState('APPROVE');
   const [checked, setChecked] = useState(false);
-  const command = useCommand(api, () => onDone());
+  const command = useCommand(api, () => onDone(), `/workflows/${workflow.workflowId}/approvals`);
   const changed = command.error instanceof ApiError && command.error.reasonCodes.includes('REVIEW_CHANGED');
   const data = preview.data;
   function reload() {
@@ -882,7 +882,7 @@ function Approval({
       </p>
       <ErrorNotice error={preview.error} retry={reload} />
       {preview.loading && <Loading />}
-      {data && (
+      {data && !command.retryable && !command.result && (
         <>
           <KeyValues
             items={[
@@ -955,11 +955,11 @@ function Approval({
               </div>
             </fieldset>
           </form>
-          <div className="notice info">
-            승인 접수는 지급 완료가 아닙니다. 실제 완료는 업무가 PAID로 바뀐 뒤 확인할 수 있어요.
-          </div>
         </>
       )}
+      <div className="notice info">
+        승인 접수는 지급 완료가 아닙니다. 실제 완료는 업무가 PAID로 바뀐 뒤 확인할 수 있어요.
+      </div>
       <CommandFeedback command={command} />
       {changed && (
         <button className="button primary" onClick={reload}>
