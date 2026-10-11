@@ -55,12 +55,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringBootVersion;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.web.servlet.ServletContextInitializer;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.core.MethodParameter;
-import org.springframework.core.Ordered;
+import org.springframework.core.PriorityOrdered;
 import org.springframework.core.SpringVersion;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.converter.HttpMessageConverter;
@@ -150,15 +150,15 @@ class PublicApiCanonicalPathGuardIT extends PaymentFixture {
             finally {probe.current.remove();observation.finished.countDown();}
         }
     }
-    // Register last but prepend the mapping, ahead of application filters even at MIN_VALUE.
-    static class ProbeInitializer implements ServletContextInitializer,Ordered {
-        private final Probe probe;
-        ProbeInitializer(Probe probe){this.probe=probe;}
-        public int getOrder(){return Ordered.LOWEST_PRECEDENCE;}
-        public void onStartup(ServletContext context) {
-            var registration=context.addFilter("canonicalPathPassiveProbe",new PassiveFilter(probe));
-            assertNotNull(registration);
-            registration.addMappingForUrlPatterns(EnumSet.of(DispatcherType.REQUEST),false,"/*");
+    // Priority ordering is applied within Boot's Filter registration group.
+    static class ProbeInitializer extends FilterRegistrationBean<PassiveFilter> implements PriorityOrdered {
+        ProbeInitializer(Probe probe) {
+            super(new PassiveFilter(probe));
+            setName("canonicalPathPassiveProbe");
+            setOrder(HIGHEST_PRECEDENCE);
+            setDispatcherTypes(EnumSet.of(DispatcherType.REQUEST));
+            setUrlPatterns(List.of("/*"));
+            setMatchAfter(false);
         }
     }
     @ControllerAdvice

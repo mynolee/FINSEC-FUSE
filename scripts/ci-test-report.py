@@ -129,7 +129,7 @@ def failure_id(case, manifest):
 
 # Advisory fixed-vocabulary diagnostics only; never evidence of a passing test.
 API_DIAGNOSTIC_CLASS = 'com.finsec.fuse.integration.PublicApiCanonicalPathGuardIT'
-API_DIAGNOSTIC_SOURCE_SHA256 = '420905789fbfa53ee91b15e3f297cdc7814a4ce3bb5d58eda49e7ea867aeba44'
+API_DIAGNOSTIC_SOURCE_SHA256 = '2d9844954945ee352ba709002718c5b59c7cf8be6a16d9911f2a88581c2b961a'
 API_DIAGNOSTIC_METHODS = (
     'aliasAnonymousSaturationDoesNotBlockValidCanonicalCallerOnSameIp',
     'canonicalAndAliasHeaderChecksRemainAheadOfBodies',
