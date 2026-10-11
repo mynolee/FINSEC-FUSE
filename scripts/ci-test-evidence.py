@@ -82,6 +82,75 @@ RECOVERY_STORED_SUCCESS_METHODS = tuple(sorted((
 )))
 
 
+# These literal contracts are reviewed against exact source bytes. They do not
+# expand the generic Java identity parser or make its inventory complete.
+MIGRATION_CONTRACTS = ({'classname': 'com.finsec.fuse.migration.MigrationContractTest',
+  'schema': 'FUSE-MIGRATION-CONTRACT-METHODS-1',
+  'source': 'backend/src/test/java/com/finsec/fuse/migration/MigrationContractTest.java',
+  'task': 'test',
+  'sha256': '6242643a2a088ca2422989b5ca3a15c0c583b694a6881d596ce04a0d233551ef',
+  'methods': ['canonicalEffectiveRuntimeConfigurationIsPrivateAndHasNoFallback',
+              'finalPropertyPrecedenceIsValidatedAndProfilesNeverDisableTheGate',
+              'fixedEmptyDataQueryCoversEveryReviewedNonstructuralTableExactlyOnce',
+              'migrationsSqlInitializersAndAlternateTargetsCannotBypassTheMainGate',
+              'pinnedFlywayOptionsUseExplicitEmptyArraysWithoutOpeningAConnection',
+              'theResourceBoundaryContainsOnlyTheReviewedSevenSqlMigrations',
+              'unsupportedOperationsFailBeforeAnyConnectionOrCredentialUse',
+              'urlPropertiesCredentialsAndAmbiguousTargetsAreRejected'],
+  'required': ['canonicalEffectiveRuntimeConfigurationIsPrivateAndHasNoFallback',
+               'finalPropertyPrecedenceIsValidatedAndProfilesNeverDisableTheGate',
+               'fixedEmptyDataQueryCoversEveryReviewedNonstructuralTableExactlyOnce',
+               'migrationsSqlInitializersAndAlternateTargetsCannotBypassTheMainGate',
+               'pinnedFlywayOptionsUseExplicitEmptyArraysWithoutOpeningAConnection',
+               'theResourceBoundaryContainsOnlyTheReviewedSevenSqlMigrations',
+               'unsupportedOperationsFailBeforeAnyConnectionOrCredentialUse',
+               'urlPropertiesCredentialsAndAmbiguousTargetsAreRejected']},
+ {'classname': 'com.finsec.fuse.migration.DatabaseMigratorIT',
+  'schema': 'FUSE-DATABASE-MIGRATOR-METHODS-1',
+  'source': 'backend/src/test/java/com/finsec/fuse/migration/DatabaseMigratorIT.java',
+  'task': 'integrationTest',
+  'sha256': '4ea606eed524a1871d6d13a1b415f03019c554cf9d36cff473debf91123e6642',
+  'methods': ['everyValidatorConnectionIsServerReadOnlyIncludingAutocommitAndCannotUnwrap',
+              'fixedSnapshotQueriesCoverExactlyTheReviewedTablesAndExplicitFixture',
+              'freshMigrationLeavesOnlyStructuralRowsAndReadOnlyHistoryPrivileges',
+              'historyMutationMissingObjectsWrongSchemaAndNoInheritOwnerMembershipFailClosed',
+              'invalidBootstrapRuntimeAuthorityIsRejectedBeforeAnyMigration',
+              'nonemptyHistoryFunctionTypeCollationOperatorAndExtraSchemaAreNotFresh'],
+  'required': ['everyValidatorConnectionIsServerReadOnlyIncludingAutocommitAndCannotUnwrap',
+               'fixedSnapshotQueriesCoverExactlyTheReviewedTablesAndExplicitFixture',
+               'freshMigrationLeavesOnlyStructuralRowsAndReadOnlyHistoryPrivileges',
+               'historyMutationMissingObjectsWrongSchemaAndNoInheritOwnerMembershipFailClosed',
+               'invalidBootstrapRuntimeAuthorityIsRejectedBeforeAnyMigration',
+               'nonemptyHistoryFunctionTypeCollationOperatorAndExtraSchemaAreNotFresh']},
+ {'classname': 'com.finsec.fuse.migration.ShippedEntrypointsIT',
+  'schema': 'FUSE-SHIPPED-ENTRYPOINTS-METHODS-1',
+  'source': 'backend/src/test/java/com/finsec/fuse/migration/ShippedEntrypointsIT.java',
+  'task': 'integrationTest',
+  'sha256': '4ca52aece4f9350b1df70b1ec6be2a0dedc39061aa4f5eb230f9b9e0a2a51a51',
+  'methods': ['failedMigrationAndKilledProcessNeverReportCompletionOrIssueAuthority',
+              'lossOfCooperativeLockIsNotSuccessEvenWhenMigrationCommits',
+              'manifestsSelectSeparateMainsAndZeroArgumentAdminsFailWithoutServices',
+              'shippedMigrationCompletesWithoutApplicationStartupAndConcurrentFreshAttemptRefuses',
+              'shippedWebMainRejectsAbsentSchemaAndOverrideBeforeSeedRecoveryOrHttp'],
+  'required': ['failedMigrationAndKilledProcessNeverReportCompletionOrIssueAuthority',
+               'lossOfCooperativeLockIsNotSuccessEvenWhenMigrationCommits',
+               'manifestsSelectSeparateMainsAndZeroArgumentAdminsFailWithoutServices',
+               'shippedMigrationCompletesWithoutApplicationStartupAndConcurrentFreshAttemptRefuses',
+               'shippedWebMainRejectsAbsentSchemaAndOverrideBeforeSeedRecoveryOrHttp']},
+ {'classname': 'com.finsec.fuse.integration.RuntimeDatabaseRoleIT',
+  'schema': 'FUSE-RUNTIME-MIGRATION-HISTORY-METHODS-1',
+  'source': 'backend/src/test/java/com/finsec/fuse/integration/RuntimeDatabaseRoleIT.java',
+  'task': 'integrationTest',
+  'sha256': '3253050bbcc7f531a1c80022680fa242919ad8e05da1673493822d692db2d065',
+  'methods': ['runtimeAndExperimentRolesCannotConnectToEachOthersDatabase',
+              'runtimeCanReadButCannotMutateMigrationHistory',
+              'runtimeCompletesMockPaymentButCannotRewriteAppendOnlyHistory',
+              'runtimeHasNormalDmlAndFutureOwnerSequencePrivileges',
+              'runtimeIsSeparateFromMigrationOwnerAndCannotDdlOrBypassHistoryTriggers',
+              'runtimeReadsReadyAuthenticationButCannotAdministerItsLedger'],
+  'required': ['runtimeCanReadButCannotMutateMigrationHistory']})
+
+
 class Invalid(ValueError):
     pass
 
@@ -297,7 +366,8 @@ def reports(summary, inventory, root, tracked):
 
 
 def fixed_method_evidence(root, inventory, source, run_id, attempt,
-                          target_class, target_source, target_methods, schema, allow_absent):
+                          target_class, target_source, target_methods, schema, allow_absent,
+                          target_task='integrationTest', reviewed_source=None, known_methods=None):
     """One fixed regression contract, independent of global identity completeness.
 
     Caller has validated the full checkout and sanitized reports. Raw report
@@ -324,7 +394,14 @@ def fixed_method_evidence(root, inventory, source, run_id, attempt,
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     manifest = module.source_manifest(root / 'backend/src/test/java')
-    require(manifest.get(target_class) == dict.fromkeys(target_methods))
+    if reviewed_source is None:
+        require(manifest.get(target_class) == dict.fromkeys(target_methods))
+        target_manifest = manifest
+    else:
+        # A fixed, exact-byte-reviewed exception, never an inventory mapping.
+        require(digest(target_bytes)['sha256'] == reviewed_source)
+        require(target_task in TASKS and set(target_methods) <= set(known_methods))
+        target_manifest = {target_class: dict.fromkeys(known_methods)}
     observed, report_digests = set(), {}
     for task in sorted(TASKS):
         directory = root / 'backend/build/test-results' / task
@@ -361,11 +438,13 @@ def fixed_method_evidence(root, inventory, source, run_id, attempt,
                 if suite == target_class:
                     require(classname == target_class)
                 if classname == target_class:
-                    require(suite == target_class and task == 'integrationTest')
-                    require(resolved is not None and resolved[2] == 'single')
-                    require(resolved[1] in target_methods and outcome == 'passed')
-                    require(resolved[1] not in observed)
-                    observed.add(resolved[1])
+                    require(suite == target_class and task == target_task)
+                    fixed = module.identity(classname, name, target_manifest)
+                    require(fixed is not None and fixed[2] == 'single')
+                    require(fixed[1] not in observed)
+                    observed.add(fixed[1])
+                    if fixed[1] in target_methods:
+                        require(outcome == 'passed')
         require(sum(counts.values()) > 0)
         reconstructed = {'status': 'VALID', 'complete': not sum(unmapped.values()),
                          'counts': counts, 'mapped': mapped, 'unmapped': unmapped,
@@ -378,7 +457,7 @@ def fixed_method_evidence(root, inventory, source, run_id, attempt,
         report_digest = hashlib.sha256(b'FUSE-RAW-REPORT-SET-1\0' + len(files).to_bytes(8, 'big') +
                                        b''.join(sorted(report_records))).hexdigest()
         report_digests[task] = {'files': len(files), 'sha256': report_digest}
-    require(observed == set(target_methods))
+    require(set(target_methods) <= observed and observed <= set(target_manifest.get(target_class, {})))
     return {'schemaVersion': schema, 'status': 'PASS',
             'class': target_class, 'sourceSha256': digest(target_bytes)['sha256'],
             'head': source['head'], 'tree': source['tree'],
@@ -432,9 +511,19 @@ def recovery_stored_success_evidence(root, inventory, source, run_id, attempt):
                                  'FUSE-RECOVERY-STORED-SUCCESS-METHODS-1', False)
 
 
+def migration_method_evidence(root, inventory, source, run_id, attempt):
+    return [dict(fixed_method_evidence(
+        root, inventory, source, run_id, attempt,
+        group['classname'], group['source'], group['required'],
+        group['schema'], False,
+        target_task=group['task'], reviewed_source=group['sha256'], known_methods=group['methods']), task=group['task'], source=group['source'])
+        for group in MIGRATION_CONTRACTS]
+
+
 def execute(command, root, artifacts, head, run_id, attempt, require_public_read_rate=False,
             require_default_kyc_deadline=False, require_api_path_guard=False,
-            require_rag_nonexistent_evidence=False, require_recovery_stored_success=False):
+            require_rag_nonexistent_evidence=False, require_recovery_stored_success=False,
+            require_migration_methods=False):
     require(type(head) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head))
     require(all(type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item) for item in (run_id, attempt)))
     root, artifacts = Path(root).absolute(), Path(artifacts).absolute()
@@ -461,6 +550,8 @@ def execute(command, root, artifacts, head, run_id, attempt, require_public_read
     rag = rag_nonexistent_evidence(root, inventory, source, run_id, attempt) if require_rag_nonexistent_evidence else None
     recovery = recovery_stored_success_evidence(root, inventory, source, run_id, attempt) if require_recovery_stored_success else None
     projections = [item for item in (required, rate, deadline, api_path_guard, rag, recovery) if item is not None]
+    if require_migration_methods:
+        projections.extend(migration_method_evidence(root, inventory, source, run_id, attempt))
     passing = [item for item in projections if item['status'] == 'PASS']
     # All independently reconciled Java projections must attest identical raw bytes.
     require(all(item['rawReportSets'] == passing[0]['rawReportSets'] for item in passing))
@@ -505,8 +596,9 @@ def main():
         parser.add_argument('--require-api-path-guard', action='store_true')
         parser.add_argument('--require-rag-nonexistent-evidence', action='store_true')
         parser.add_argument('--require-recovery-stored-success', action='store_true')
+        parser.add_argument('--require-migration-methods', action='store_true')
         args = parser.parse_args()
-        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard, args.require_rag_nonexistent_evidence, args.require_recovery_stored_success)
+        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard, args.require_rag_nonexistent_evidence, args.require_recovery_stored_success, args.require_migration_methods)
         print('EVIDENCE_COMPLETE' if complete else 'EVIDENCE_INCOMPLETE')
         return 0
     except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, subprocess.SubprocessError):
