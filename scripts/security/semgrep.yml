@@ -1,0 +1,41 @@
+rules:
+  - id: python-dynamic-code
+    languages: [python]
+    severity: ERROR
+    message: Dynamic code evaluation requires removal or independent review.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+      - pattern: pickle.loads(...)
+      - pattern: yaml.load(...)
+  - id: python-shell-command
+    languages: [python]
+    severity: ERROR
+    message: Shell execution is forbidden.
+    pattern-either:
+      - pattern: subprocess.$METHOD(..., shell=True, ...)
+      - pattern: os.system(...)
+  - id: java-process-execution
+    languages: [java]
+    severity: ERROR
+    message: Runtime command execution requires review.
+    pattern: Runtime.getRuntime().exec(...)
+  - id: java-sql-concatenation
+    languages: [java]
+    severity: ERROR
+    message: SQL must use bound parameters.
+    pattern-either:
+      - pattern: $S.executeQuery($A + $B)
+      - pattern: $S.executeUpdate($A + $B)
+  - id: javascript-dynamic-code
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Dynamic code evaluation is forbidden.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: react-unsafe-html
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Untrusted HTML must not be rendered.
+    pattern: <$TAG dangerouslySetInnerHTML={...} ... />

@@ -1,0 +1,108 @@
+{
+  "$defs": {
+    "KycProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "NOT_VERIFIED",
+            "NEEDS_REVIEW"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "evidenceIds": {
+          "items": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Evidenceids",
+          "type": "array"
+        },
+        "explanation": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Explanation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "evidenceIds",
+        "explanation"
+      ],
+      "title": "KycProposal",
+      "type": "object"
+    },
+    "ModelMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "promptVersion": {
+          "const": "KYC-PROMPT-1",
+          "default": "KYC-PROMPT-1",
+          "title": "Promptversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "title": "ModelMetadata",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Requestid",
+      "type": "string"
+    },
+    "workflowId": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Workflowid",
+      "type": "string"
+    },
+    "generation": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "title": "Generation",
+      "type": "integer"
+    },
+    "runId": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Runid",
+      "type": "string"
+    },
+    "inputSnapshotHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Inputsnapshothash",
+      "type": "string"
+    },
+    "proposal": {
+      "$ref": "#/$defs/KycProposal"
+    },
+    "modelMetadata": {
+      "$ref": "#/$defs/ModelMetadata"
+    }
+  },
+  "required": [
+    "requestId",
+    "workflowId",
+    "generation",
+    "runId",
+    "inputSnapshotHash",
+    "proposal",
+    "modelMetadata"
+  ],
+  "title": "KycResponse",
+  "type": "object"
+}
