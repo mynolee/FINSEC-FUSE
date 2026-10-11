@@ -54,6 +54,8 @@ jobs:
         run: python scripts/ci-required-method-evidence-test.py
       - name: Check required public read rate evidence without services
         run: python scripts/ci-public-read-rate-evidence-test.py
+      - name: Check required default KYC deadline evidence without services
+        run: python -B scripts/ci-default-kyc-deadline-evidence-test.py
       - name: Check private runtime log capture safeguards without services
         run: python scripts/runtime-log-privacy-test.py
       - name: Check local container-network harness safeguards without services
@@ -101,8 +103,8 @@ jobs:
         id: backend_evidence
         if: always()
         run: |
-          python scripts/ci-test-evidence.py bind --repository "$GITHUB_WORKSPACE" --artifacts safe-artifacts --head "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --require-public-read-rate
-          python scripts/ci-test-evidence.py verify --repository "$GITHUB_WORKSPACE" --artifacts safe-artifacts --head "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --require-public-read-rate
+          python scripts/ci-test-evidence.py bind --repository "$GITHUB_WORKSPACE" --artifacts safe-artifacts --head "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --require-public-read-rate --require-default-kyc-deadline
+          python scripts/ci-test-evidence.py verify --repository "$GITHUB_WORKSPACE" --artifacts safe-artifacts --head "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" --require-public-read-rate --require-default-kyc-deadline
       - name: Publish only validated counts, identity inventory and integrity binding
         if: always() && steps.backend_evidence.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -47,6 +47,11 @@ RATE_METHODS = tuple(sorted((
 )))
 
 
+DEADLINE_CLASS = 'com.finsec.fuse.integration.DefaultKycHttpTimeoutLifecycleIT'
+DEADLINE_SOURCE = 'backend/src/test/java/com/finsec/fuse/integration/DefaultKycHttpTimeoutLifecycleIT.java'
+DEADLINE_METHODS = ('defaultHttpDeadlineFailsOnceThenAllowsAnIndependentBoundResponse',)
+
+
 class Invalid(ValueError):
     pass
 
@@ -364,7 +369,14 @@ def public_read_rate_evidence(root, inventory, source, run_id, attempt):
                                  'FUSE-PUBLIC-READ-RATE-METHODS-1', False)
 
 
-def execute(command, root, artifacts, head, run_id, attempt, require_public_read_rate=False):
+def default_kyc_deadline_evidence(root, inventory, source, run_id, attempt):
+    return fixed_method_evidence(root, inventory, source, run_id, attempt,
+                                 DEADLINE_CLASS, DEADLINE_SOURCE, DEADLINE_METHODS,
+                                 'FUSE-DEFAULT-KYC-DEADLINE-METHODS-1', False)
+
+
+def execute(command, root, artifacts, head, run_id, attempt, require_public_read_rate=False,
+            require_default_kyc_deadline=False):
     require(type(head) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head))
     require(all(type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item) for item in (run_id, attempt)))
     root, artifacts = Path(root).absolute(), Path(artifacts).absolute()
@@ -386,9 +398,11 @@ def execute(command, root, artifacts, head, run_id, attempt, require_public_read
     complete = reports(parse(payloads[PAYLOADS[1]]), inventory, root, tracked)
     required = required_method_evidence(root, inventory, source, run_id, attempt)
     rate = public_read_rate_evidence(root, inventory, source, run_id, attempt) if require_public_read_rate else None
-    if rate is not None and required['status'] == 'PASS':
-        # Both independently reconciled projections must attest identical raw bytes.
-        require(required['rawReportSets'] == rate['rawReportSets'])
+    deadline = default_kyc_deadline_evidence(root, inventory, source, run_id, attempt) if require_default_kyc_deadline else None
+    projections = [item for item in (required, rate, deadline) if item is not None]
+    passing = [item for item in projections if item['status'] == 'PASS']
+    # All independently reconciled Java projections must attest identical raw bytes.
+    require(all(item['rawReportSets'] == passing[0]['rawReportSets'] for item in passing))
     expected = {'schemaVersion': SCHEMA, 'revision': source, 'run': {'id': run_id, 'attempt': attempt},
                 'artifacts': {name: digest(data) for name, data in payloads.items()}, 'complete': complete}
     if command == 'verify':
@@ -396,9 +410,8 @@ def execute(command, root, artifacts, head, run_id, attempt, require_public_read
         require(actual == expected)
         # Python equates booleans with integers; canonical JSON does not.
         require(json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True))
-        print(json.dumps(required, sort_keys=True))
-        if rate is not None:
-            print(json.dumps(rate, sort_keys=True))
+        for projection in projections:
+            print(json.dumps(projection, sort_keys=True))
     else:
         output = (json.dumps(expected, sort_keys=True, indent=2) + '\n').encode()
         require(len(output) <= LIMIT)
@@ -427,8 +440,9 @@ def main():
         parser.add_argument('--run-id', required=True)
         parser.add_argument('--run-attempt', required=True)
         parser.add_argument('--require-public-read-rate', action='store_true')
+        parser.add_argument('--require-default-kyc-deadline', action='store_true')
         args = parser.parse_args()
-        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate)
+        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline)
         print('EVIDENCE_COMPLETE' if complete else 'EVIDENCE_INCOMPLETE')
         return 0
     except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, subprocess.SubprocessError):
