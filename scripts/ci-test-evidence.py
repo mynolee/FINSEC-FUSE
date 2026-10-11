@@ -72,6 +72,16 @@ RAG_METHODS = tuple(sorted((
 RAG_FIXTURE = 'evaluation/tests/fixtures/rag-nonexistent-evidence-v1.json'
 
 
+RECOVERY_STORED_SUCCESS_CLASS = 'com.finsec.fuse.integration.PublicRecoveryStoredSuccessAuthorityIT'
+RECOVERY_STORED_SUCCESS_SOURCE = 'backend/src/test/java/com/finsec/fuse/integration/PublicRecoveryStoredSuccessAuthorityIT.java'
+RECOVERY_STORED_SUCCESS_METHODS = tuple(sorted((
+    'savedReleaseSuccessChecksCurrentAuthorityOwnershipAndParsedEquivalentBodies',
+    'changedReleaseRemediationConflictsWithoutPoisoningSavedSuccess',
+    'savedResumeSuccessChecksCurrentAuthorityOwnershipAndParsedEquivalentBodies',
+    'changedResumeSuccessReasonAndGenerationConflictWithoutPoisoningSavedSuccess',
+)))
+
+
 class Invalid(ValueError):
     pass
 
@@ -416,9 +426,15 @@ def rag_nonexistent_evidence(root, inventory, source, run_id, attempt):
     return projection
 
 
+def recovery_stored_success_evidence(root, inventory, source, run_id, attempt):
+    return fixed_method_evidence(root, inventory, source, run_id, attempt,
+                                 RECOVERY_STORED_SUCCESS_CLASS, RECOVERY_STORED_SUCCESS_SOURCE, RECOVERY_STORED_SUCCESS_METHODS,
+                                 'FUSE-RECOVERY-STORED-SUCCESS-METHODS-1', False)
+
+
 def execute(command, root, artifacts, head, run_id, attempt, require_public_read_rate=False,
             require_default_kyc_deadline=False, require_api_path_guard=False,
-            require_rag_nonexistent_evidence=False):
+            require_rag_nonexistent_evidence=False, require_recovery_stored_success=False):
     require(type(head) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head))
     require(all(type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item) for item in (run_id, attempt)))
     root, artifacts = Path(root).absolute(), Path(artifacts).absolute()
@@ -443,7 +459,8 @@ def execute(command, root, artifacts, head, run_id, attempt, require_public_read
     deadline = default_kyc_deadline_evidence(root, inventory, source, run_id, attempt) if require_default_kyc_deadline else None
     api_path_guard = api_path_guard_evidence(root, inventory, source, run_id, attempt) if require_api_path_guard else None
     rag = rag_nonexistent_evidence(root, inventory, source, run_id, attempt) if require_rag_nonexistent_evidence else None
-    projections = [item for item in (required, rate, deadline, api_path_guard, rag) if item is not None]
+    recovery = recovery_stored_success_evidence(root, inventory, source, run_id, attempt) if require_recovery_stored_success else None
+    projections = [item for item in (required, rate, deadline, api_path_guard, rag, recovery) if item is not None]
     passing = [item for item in projections if item['status'] == 'PASS']
     # All independently reconciled Java projections must attest identical raw bytes.
     require(all(item['rawReportSets'] == passing[0]['rawReportSets'] for item in passing))
@@ -487,8 +504,9 @@ def main():
         parser.add_argument('--require-default-kyc-deadline', action='store_true')
         parser.add_argument('--require-api-path-guard', action='store_true')
         parser.add_argument('--require-rag-nonexistent-evidence', action='store_true')
+        parser.add_argument('--require-recovery-stored-success', action='store_true')
         args = parser.parse_args()
-        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard, args.require_rag_nonexistent_evidence)
+        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard, args.require_rag_nonexistent_evidence, args.require_recovery_stored_success)
         print('EVIDENCE_COMPLETE' if complete else 'EVIDENCE_INCOMPLETE')
         return 0
     except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, subprocess.SubprocessError):
