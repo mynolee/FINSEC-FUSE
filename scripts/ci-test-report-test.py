@@ -514,6 +514,61 @@ class ApiGuardDiagnosticTests(unittest.TestCase):
             row=self.diagnostic(self.case(stack))
             self.assertEqual(row['reason'],'NO_TARGET_FRAME')
 
+    def direct_case(self, line='334', prefix='', method=None):
+        method=method or report.API_DIAGNOSTIC_DIRECT_METHOD
+        stack=self.frame(helper=method,line=line).replace('at ','at '+prefix)
+        return self.case(stack,name=report.API_DIAGNOSTIC_DIRECT_METHOD+'()')
+
+    def test_direct_assertions_have_separate_fixed_stages(self):
+        for line,stage in report.API_DIAGNOSTIC_DIRECT_STAGES.items():
+            for prefix in ['', 'app//']:
+                row=self.diagnostic(self.direct_case(str(line),prefix))
+                self.assertEqual(row,{'method':report.API_DIAGNOSTIC_DIRECT_METHOD,'stage':stage,'reason':'MATCHED_DIRECT_FRAME'})
+
+    def test_direct_fallback_requires_same_failed_method_identity(self):
+        case=self.direct_case();case.set('name',self.method+'()')
+        self.assertEqual(self.diagnostic(case)['reason'],'NO_TARGET_FRAME')
+
+    def test_direct_fallback_requires_exact_method_file_and_prefix(self):
+        for method in [SECRET,report.API_DIAGNOSTIC_DIRECT_METHOD+'Extra']:
+            self.assertEqual(self.diagnostic(self.direct_case(method=method))['reason'],'NO_TARGET_FRAME')
+        for prefix in ['other//','app/module/','app///']:
+            self.assertEqual(self.diagnostic(self.direct_case(prefix=prefix))['reason'],'NO_TARGET_FRAME')
+        case=self.direct_case();case.find('failure').text=case.find('failure').text.replace('.java:', '.txt:')
+        self.assertEqual(self.diagnostic(case)['reason'],'NO_TARGET_FRAME')
+
+    def test_direct_fallback_bounds_and_unknown_lines(self):
+        for line in ['0','0334','9999999','-1',SECRET]:
+            self.assertEqual(self.diagnostic(self.direct_case(line))['reason'],'NO_TARGET_FRAME')
+        for line in ['333','338','999999']:
+            self.assertEqual(self.diagnostic(self.direct_case(line))['reason'],'UNMAPPED_LINE')
+
+    def test_direct_duplicate_and_conflicting_frames_are_ambiguous(self):
+        for line in ['334','335','333']:
+            case=self.direct_case();case.find('failure').text+='\n'+self.direct_case(line).find('failure').text
+            row=self.diagnostic(case);self.assertEqual((row['stage'],row['reason']),('UNKNOWN','MULTIPLE_TARGET_FRAMES'))
+
+    def test_helper_frames_always_take_precedence(self):
+        for helper,stage,reason in [(self.frame(),'PREPARE_TOMCAT_VERSION','MATCHED_FRAME'),
+                                   (self.frame(line='209'),'UNKNOWN','UNMAPPED_LINE'),
+                                   (self.frame()+'\n'+self.frame(),'UNKNOWN','MULTIPLE_TARGET_FRAMES')]:
+            case=self.direct_case();case.find('failure').text+='\n'+helper
+            row=self.diagnostic(case);self.assertEqual((row['stage'],row['reason']),(stage,reason))
+
+    def test_direct_canary_content_and_source_mismatch_cannot_escape(self):
+        case=self.direct_case();case.find('failure').text=SECRET+'\n'+case.find('failure').text+'\n'+SECRET
+        self.assertEqual(self.diagnostic(case)['stage'],'POSITIVE_CONTROL_STATUS')
+        self.source.write_bytes(self.source_bytes+b'\n');self.assertIsNone(self.diagnostic(case))
+
+    def test_direct_stage_pins_bind_exact_assertions(self):
+        lines=self.source_bytes.decode().splitlines()
+        expected={334:'assertEquals(400,binding.response().statusCode());',
+                  335:'assertEquals(1,binding.observation().handlers.get());',
+                  336:'assertEquals(1,binding.observation().conversions.get());',
+                  337:'assertEquals(unknownField.getBytes(StandardCharsets.UTF_8).length,binding.observation().bytes.get());'}
+        self.assertEqual(set(expected),set(report.API_DIAGNOSTIC_DIRECT_STAGES))
+        for line,text in expected.items():self.assertEqual(lines[line-1].strip(),text)
+
     def test_cli_stdout_only_projection_never_changes_artifact_or_exit(self):
         root=self.report_root([self.case(SECRET+'\n'+self.frame()+'\n'+SECRET)])
         output=self.root/'safe-summary.json'

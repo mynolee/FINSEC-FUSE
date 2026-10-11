@@ -129,7 +129,7 @@ def failure_id(case, manifest):
 
 # Advisory fixed-vocabulary diagnostics only; never evidence of a passing test.
 API_DIAGNOSTIC_CLASS = 'com.finsec.fuse.integration.PublicApiCanonicalPathGuardIT'
-API_DIAGNOSTIC_SOURCE_SHA256 = '2d9844954945ee352ba709002718c5b59c7cf8be6a16d9911f2a88581c2b961a'
+API_DIAGNOSTIC_SOURCE_SHA256 = '12bfb3a298a2c7a64f492f1f334bb494bf30ad698f085cf5434c757653147065'
 API_DIAGNOSTIC_METHODS = (
     'aliasAnonymousSaturationDoesNotBlockValidCanonicalCallerOnSameIp',
     'canonicalAndAliasHeaderChecksRemainAheadOfBodies',
@@ -176,6 +176,15 @@ API_DIAGNOSTIC_STAGES = {
 }
 
 
+API_DIAGNOSTIC_DIRECT_METHOD = 'canonicalAndAliasHeaderChecksRemainAheadOfBodies'
+API_DIAGNOSTIC_DIRECT_STAGES = {
+    334: 'POSITIVE_CONTROL_STATUS',
+    335: 'POSITIVE_CONTROL_HANDLER',
+    336: 'POSITIVE_CONTROL_CONVERSION',
+    337: 'POSITIVE_CONTROL_BODY_BYTES',
+}
+
+
 def api_guard_diagnostic(case, manifest):
     """Project only fixed source-owned IDs; untrusted text is never returned."""
     if case.get('classname') != API_DIAGNOSTIC_CLASS:
@@ -202,11 +211,25 @@ def api_guard_diagnostic(case, manifest):
             if match:
                 stage = API_DIAGNOSTIC_STAGES.get((match[1], int(match[2])))
                 matches.append(stage)
+    # A helper frame, even unmapped/ambiguous, takes precedence over its test callsite.
+    direct = False
+    if not matches and identity['method'] == API_DIAGNOSTIC_DIRECT_METHOD:
+        direct = True
+        direct_frame = re.compile(r'\s*at (?:app//)?' + re.escape(API_DIAGNOSTIC_CLASS + '.' +
+                                  API_DIAGNOSTIC_DIRECT_METHOD) +
+                                  r'\(PublicApiCanonicalPathGuardIT\.java:([1-9][0-9]{0,5})\)\s*')
+        for failure in list(case.findall('failure')) + list(case.findall('error')):
+            for line in (failure.text or '').splitlines():
+                match = direct_frame.fullmatch(line)
+                if match:
+                    matches.append(API_DIAGNOSTIC_DIRECT_STAGES.get(int(match[1])))
     # Multiple recognized frames, including duplicates, are ambiguous.
     reason = ('NO_TARGET_FRAME' if not matches else 'MULTIPLE_TARGET_FRAMES' if len(matches) != 1
-              else 'UNMAPPED_LINE' if matches[0] is None else 'MATCHED_FRAME')
+              else 'UNMAPPED_LINE' if matches[0] is None else
+              'MATCHED_DIRECT_FRAME' if direct else 'MATCHED_FRAME')
     return {'method': identity['method'],
-            'stage': matches[0] if reason == 'MATCHED_FRAME' else 'UNKNOWN', 'reason': reason}
+            'stage': matches[0] if reason in {'MATCHED_FRAME', 'MATCHED_DIRECT_FRAME'} else 'UNKNOWN',
+            'reason': reason}
 
 
 def summarize(root: Path, api_diagnostics=None) -> dict:

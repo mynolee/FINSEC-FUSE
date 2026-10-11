@@ -332,7 +332,8 @@ class PublicApiCanonicalPathGuardIT extends PaymentFixture {
         String unknownField=SMALL.substring(0,SMALL.length()-1)+",\"unexpected\":true}";
         var binding=request(CANONICAL,state.token(),unknownField,false);
         assertEquals(400,binding.response().statusCode());
-        assertEquals(1,binding.observation().handlers.get());assertEquals(1,binding.observation().conversions.get());
+        assertEquals(1,binding.observation().handlers.get());
+        assertEquals(1,binding.observation().conversions.get());
         assertEquals(unknownField.getBytes(StandardCharsets.UTF_8).length,binding.observation().bytes.get());
         unchanged(state);
     }
