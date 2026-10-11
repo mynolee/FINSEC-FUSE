@@ -59,6 +59,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      target: backend
     # Local Compose bind secrets keep host ownership; the key stays mode 0600.
     user: "${FUSE_RUNTIME_UID:?Run scripts/bootstrap-dev.sh}:${FUSE_RUNTIME_GID:?Run scripts/bootstrap-dev.sh}"
     pids_limit: 512
@@ -70,12 +71,10 @@ services:
       SPRING_PROFILES_ACTIVE: demo
       FUSE_DEMO_SEED: ${FUSE_DEMO_SEED:-true}
       FUSE_WORKER_ENABLED: ${FUSE_WORKER_ENABLED:-true}
-      FUSE_MIGRATE: ${FUSE_MIGRATE:-true}
+      FUSE_MIGRATE: "false"
       FUSE_DB_URL: jdbc:postgresql://postgres:5432/fuse
       FUSE_DB_USERNAME: fuse_runtime
       FUSE_DB_PASSWORD: ${FUSE_DB_PASSWORD:?Run scripts/bootstrap-dev.sh}
-      FUSE_MIGRATION_USERNAME: fuse_owner
-      FUSE_MIGRATION_PASSWORD: ${FUSE_DB_OWNER_PASSWORD:?Run scripts/bootstrap-dev.sh}
       FUSE_KYC_BASE_URL: http://agent:8001
       FUSE_KYC_MODE: replay
       FUSE_SERVICE_TOKEN: ${FUSE_SERVICE_TOKEN:?Run scripts/bootstrap-dev.sh}

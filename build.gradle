@@ -113,6 +113,37 @@ tasks.register('demoTokenProvision', JavaExec) {
     mainClass = 'com.finsec.fuse.auth.DemoTokenProvisioner'
 }
 
+tasks.named('bootJar') {
+    mainClass = 'com.finsec.fuse.FuseApplication'
+}
+
+def databaseMigrationJar = tasks.register('databaseMigrationJar', org.springframework.boot.gradle.tasks.bundling.BootJar) {
+    description = 'Packages the standalone fresh-only database administrator; does not run it.'
+    group = 'build'
+    dependsOn tasks.named('classes')
+    archiveClassifier = 'migration'
+    mainClass = 'com.finsec.fuse.migration.DatabaseMigrator'
+    classpath = sourceSets.main.runtimeClasspath
+}
+
+def tokenAdminJar = tasks.register('tokenAdminJar', org.springframework.boot.gradle.tasks.bundling.BootJar) {
+    description = 'Packages the existing standalone token administrator; does not run it.'
+    group = 'build'
+    dependsOn tasks.named('classes')
+    archiveClassifier = 'token-admin'
+    mainClass = 'com.finsec.fuse.auth.DemoTokenProvisioner'
+    classpath = sourceSets.main.runtimeClasspath
+}
+
+integrationTest.configure {
+    dependsOn tasks.named('bootJar'), databaseMigrationJar, tokenAdminJar
+    doFirst {
+        systemProperty 'fuse.test.webJar', tasks.named('bootJar').get().archiveFile.get().asFile.absolutePath
+        systemProperty 'fuse.test.migrationJar', databaseMigrationJar.get().archiveFile.get().asFile.absolutePath
+        systemProperty 'fuse.test.tokenAdminJar', tokenAdminJar.get().archiveFile.get().asFile.absolutePath
+    }
+}
+
 tasks.register('writeTestClasspath') {
     description = 'Writes the complete test runtime classpath for the isolated HTTP smoke runner.'
     group = 'verification'

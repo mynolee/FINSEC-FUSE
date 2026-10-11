@@ -1,0 +1,50 @@
+# Explicit operator commands only. Merely selecting the profile does not select an operation.
+x-admin-hardening: &admin-hardening
+  profiles: [admin]
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+  pids_limit: 128
+  restart: "no"
+  networks: [data]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+services:
+  migration:
+    <<: *admin-hardening
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: migration
+    user: "10001:10001"
+    environment:
+      FUSE_DB_URL: jdbc:postgresql://postgres:5432/fuse
+      FUSE_MIGRATION_USERNAME: fuse_owner
+      FUSE_MIGRATION_PASSWORD: ${FUSE_DB_OWNER_PASSWORD:?Run scripts/bootstrap-dev.sh}
+  token-admin:
+    <<: *admin-hardening
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: token-admin
+      args:
+        FUSE_ADMIN_UID: ${FUSE_RUNTIME_UID:?Run scripts/bootstrap-dev.sh}
+        FUSE_ADMIN_GID: ${FUSE_RUNTIME_GID:?Run scripts/bootstrap-dev.sh}
+    # USER comes from the image's real passwd identity; never override it at runtime.
+    environment:
+      FUSE_DB_URL: jdbc:postgresql://postgres:5432/fuse
+      FUSE_MIGRATION_USERNAME: fuse_owner
+      FUSE_MIGRATION_PASSWORD: ${FUSE_DB_OWNER_PASSWORD:?Run scripts/bootstrap-dev.sh}
+      FUSE_REVIEWER_CUSTOMERS: ${FUSE_REVIEWER_CUSTOMERS:-customer-101,customer-102,customer-103,customer-104}
+      FUSE_SECURITY_CUSTOMERS: ${FUSE_SECURITY_CUSTOMERS:-customer-101,customer-102,customer-103,customer-104}
+    volumes:
+      - type: bind
+        source: ./.secrets/auth-output
+        target: /private-output
+        bind:
+          create_host_path: false
