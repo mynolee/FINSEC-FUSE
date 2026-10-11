@@ -26,6 +26,7 @@ CHECKS = ('images', 'plain_up_excludes_admins', 'no_argument_refusal', 'invalid_
           'separate_issuance', 'separate_handoff', 'replay_readiness', 'http_and_durable_outcomes',
           'stop_restart_preserves_authority', 'private_diagnostics', 'source_unchanged')
 MAIN_URL = 'jdbc:postgresql://postgres:5432/fuse'
+RUNTIME_SERVICES = ('postgres', 'agent', 'backend', 'frontend', 'ingress')
 REASONS = frozenset({'SCOPE_REJECTED', 'EXISTING_STATE', 'SOURCE_REJECTED', 'CONFIG_REJECTED',
                     'COMMAND_FAILED', 'ASSERTION_FAILED', 'PRIVATE_DIAGNOSTIC', 'CLEANUP_FAILED', 'EXECUTION_FAILED'})
 
@@ -193,6 +194,59 @@ def authority_snapshot(project):
                "SELECT row_to_json(h)::text FROM flyway_schema_history h ORDER BY installed_rank")
 
 
+def runtime_identity(project, *, running):
+    """Private identity oracle; names/IDs/mount paths never enter public diagnostics."""
+    containers, postgres = {}, None
+    for service in RUNTIME_SERVICES:
+        ids = quiet(compose(project) + ['ps', '--all', '--quiet', service]).decode().splitlines()
+        require(len(ids) == 1 and re.fullmatch(r'[0-9a-f]{64}', ids[0]), 'CONFIG_REJECTED')
+        rows = json.loads(docker('inspect', ids[0]))
+        require(type(rows) is list and len(rows) == 1 and type(rows[0]) is dict, 'CONFIG_REJECTED')
+        item = rows[0]
+        require(item.get('Id') == ids[0]
+                and item.get('Config', {}).get('Labels', {}).get('com.docker.compose.project') == project
+                and item.get('Config', {}).get('Labels', {}).get('com.docker.compose.service') == service
+                and item.get('State', {}).get('Running') is running, 'CONFIG_REJECTED')
+        if running and service in ('postgres', 'agent'):
+            require(item.get('State', {}).get('Health', {}).get('Status') == 'healthy', 'CONFIG_REJECTED')
+        containers[service] = ids[0]
+        if service == 'postgres':
+            postgres = item
+    require(len(set(containers.values())) == len(RUNTIME_SERVICES), 'CONFIG_REJECTED')
+    mounts = postgres.get('Mounts')
+    require(type(mounts) is list and all(type(item) is dict for item in mounts), 'CONFIG_REJECTED')
+    mounts = [item for item in mounts if item.get('Destination') == '/var/lib/postgresql/data']
+    require(len(mounts) == 1, 'CONFIG_REJECTED')
+    mount = mounts[0]
+    name = project + '_pgdata'
+    require(mount.get('Type') == 'volume' and mount.get('Name') == name and mount.get('RW') is True
+            and type(mount.get('Source')) is str and mount['Source'].startswith('/'), 'CONFIG_REJECTED')
+    volumes = json.loads(docker('volume', 'inspect', name))
+    require(type(volumes) is list and len(volumes) == 1 and type(volumes[0]) is dict, 'CONFIG_REJECTED')
+    volume = volumes[0]
+    require(volume.get('Name') == name and volume.get('Driver') == 'local' and volume.get('Scope') == 'local'
+            and volume.get('Labels', {}).get('com.docker.compose.project') == project
+            and volume.get('Labels', {}).get('com.docker.compose.volume') == 'pgdata'
+            and type(volume.get('CreatedAt')) is str and 1 <= len(volume['CreatedAt']) <= 128
+            and volume.get('Mountpoint') == mount['Source'], 'CONFIG_REJECTED')
+    # Docker named volumes expose no independent immutable ID. Compare their name,
+    # creation metadata and mount binding, together with every existing container ID.
+    return dict(containers=containers,
+                volume={key: volume[key] for key in ('Name', 'CreatedAt', 'Driver', 'Scope', 'Mountpoint')},
+                mount={key: mount[key] for key in ('Name', 'Source', 'Destination', 'Type', 'RW')})
+
+
+def restart_existing(project, checks):
+    identity = runtime_identity(project, running=True)
+    # Compose 2.38.2 stop uses reverse dependency order; start uses dependency
+    # order and the existing service_healthy dependencies. start has no --wait flags.
+    quiet(compose(project) + ['stop', *RUNTIME_SERVICES], timeout=90)
+    require(runtime_identity(project, running=False) == identity)
+    quiet(compose(project) + ['start', *RUNTIME_SERVICES], timeout=90)
+    readiness(checks)
+    require(runtime_identity(project, running=True) == identity)
+
+
 def marker(project):
     return {'schemaVersion': 'FUSE-FRESH-OWNERSHIP-1', 'project': project, 'head': os.environ['GITHUB_SHA']}
 
@@ -346,11 +400,7 @@ def execute(project, report, files, checks):
     for row, state, used in zip(api_rows, ('BLOCKED', 'PAID'), (10, 85)):
         require((row.get('state'), row.get('usedRisk'), row.get('reservedRisk')) == (state, used, 0))
     outcomes = durable_outcomes(project); report['checks']['http_and_durable_outcomes'] = 'PASS'
-    quiet(compose(project) + ['stop'], timeout=90)
-    quiet(compose(project) + ['start', '--wait', '--wait-timeout', '60', 'postgres'], timeout=90)
-    quiet(compose(project) + ['start', '--wait', '--wait-timeout', '60', 'agent'], timeout=90)
-    quiet(compose(project) + ['start', 'backend', 'frontend', 'ingress'], timeout=90)
-    readiness(checks)
+    restart_existing(project, checks)
     require(authority_snapshot(project) == authority and durable_outcomes(project) == outcomes)
     report['checks']['stop_restart_preserves_authority'] = 'PASS'
     log_out, log_err = run(compose(project) + ['logs', '--no-color'])

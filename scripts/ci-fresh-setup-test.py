@@ -105,8 +105,8 @@ class SourceWiringTests(unittest.TestCase):
         self.assertIn("['init-fresh', '--new-install', '--output', '/private-output/issued.env']", source)
         self.assertIn("ci-fresh-attempt.json", source)
         self.assertIn("observed == marker(project)", source)
-        self.assertIn("['stop']", source)
-        self.assertIn("['start', '--wait', '--wait-timeout', '60', 'postgres']", source)
+        self.assertIn("['stop', *RUNTIME_SERVICES]", source)
+        self.assertIn("['start', *RUNTIME_SERVICES]", source)
         self.assertIn("authority_snapshot(project) == authority", source)
         self.assertIn("log_out + log_err", source)
         self.assertIn("no_canaries(issued_diagnostics, list(tokens.values()))", source)
@@ -131,6 +131,92 @@ class SourceWiringTests(unittest.TestCase):
         self.assertNotIn('continue-on-error:', job)
         self.assertNotIn('path: safe-artifacts/\n', job)
         self.assertNotIn('.secrets', job)
+
+
+class RestartIdentityTests(unittest.TestCase):
+    project = 'fuse-fresh-123-1'
+
+    def fixture(self):
+        ids = {service: format(index + 1, '064x') for index, service in enumerate(fresh.RUNTIME_SERVICES)}
+        name = self.project + '_pgdata'
+        mount = dict(Type='volume', Name=name, Source='/synthetic/' + name,
+                     Destination='/var/lib/postgresql/data', RW=True)
+        rows = {service: dict(Id=ids[service], Config={'Labels': {
+                    'com.docker.compose.project': self.project, 'com.docker.compose.service': service}},
+                    State=dict(Running=True, Health={'Status': 'healthy'}), Mounts=[mount] if service == 'postgres' else [])
+                for service in ids}
+        volume = dict(Name=name, CreatedAt='2026-10-11T00:00:00Z', Driver='local', Scope='local',
+                      Mountpoint=mount['Source'], Labels={'com.docker.compose.project': self.project,
+                                                       'com.docker.compose.volume': 'pgdata'})
+        return ids, rows, volume
+
+    def snapshot(self, ids, rows, volume, *, running=True):
+        def inspect(*args, **kwargs):
+            if args[:2] == ('volume', 'inspect'):
+                return json.dumps([volume]).encode()
+            self.assertEqual(args[0], 'inspect')
+            return json.dumps([next(row for row in rows.values() if row['Id'] == args[1])]).encode()
+        with patch.object(fresh, 'quiet', side_effect=lambda args: (ids[args[-1]] + '\n').encode()), \
+                patch.object(fresh, 'docker', side_effect=inspect):
+            return fresh.runtime_identity(self.project, running=running)
+
+    def test_exact_ids_and_volume_creation_mount_binding_are_preserved(self):
+        ids, rows, volume = self.fixture()
+        active = self.snapshot(ids, rows, volume)
+        for row in rows.values(): row['State']['Running'] = False
+        self.assertEqual(active, self.snapshot(ids, rows, volume, running=False))
+        self.assertEqual(active['containers'], ids)
+        self.assertEqual(active['volume']['CreatedAt'], volume['CreatedAt'])
+        self.assertEqual(active['mount']['Source'], volume['Mountpoint'])
+
+    def test_malformed_duplicate_labels_health_and_volume_changes_refuse_without_private_text(self):
+        mutations = [lambda ids, rows, volume: ids.update(postgres=''),
+                     lambda ids, rows, volume: ids.update(postgres=ids['postgres'] + '\n' + ids['postgres']),
+                     lambda ids, rows, volume: rows['backend']['Config']['Labels'].update({'com.docker.compose.project': 'PRIVATE_CANARY'}),
+                     lambda ids, rows, volume: rows['agent']['Config']['Labels'].update({'com.docker.compose.service': 'postgres'}),
+                     lambda ids, rows, volume: rows['backend']['State'].update(Running=False),
+                     lambda ids, rows, volume: rows['agent']['State']['Health'].update(Status='unhealthy'),
+                     lambda ids, rows, volume: volume.update(Name='PRIVATE_CANARY'),
+                     lambda ids, rows, volume: volume.update(Mountpoint='/PRIVATE_CANARY'),
+                     lambda ids, rows, volume: rows['postgres']['Mounts'].append(dict(rows['postgres']['Mounts'][0]))]
+        for mutate in mutations:
+            ids, rows, volume = self.fixture(); mutate(ids, rows, volume)
+            with self.assertRaises(fresh.Failure) as failure:
+                self.snapshot(ids, rows, volume)
+            self.assertEqual('CONFIG_REJECTED', str(failure.exception))
+
+    def test_pinned_compose_2382_commands_use_existing_services_and_bounded_readiness(self):
+        identity = {'synthetic': 'identity'}; calls = []
+        with patch.object(fresh, 'runtime_identity', return_value=identity) as snapshots, \
+                patch.object(fresh, 'quiet', side_effect=lambda args, **kwargs: calls.append((args, kwargs))), \
+                patch.object(fresh, 'readiness') as ready:
+            fresh.restart_existing(self.project, 'checks')
+        prefix = fresh.compose(self.project)
+        self.assertEqual(calls, [(prefix + ['stop', *fresh.RUNTIME_SERVICES], {'timeout': 90}),
+                                (prefix + ['start', *fresh.RUNTIME_SERVICES], {'timeout': 90})])
+        self.assertEqual([call.kwargs for call in snapshots.call_args_list],
+                         [{'running': True}, {'running': False}, {'running': True}])
+        ready.assert_called_once_with('checks')
+        for name in ('README.md', 'docs/runtime-security.md'):
+            source = (fresh.ROOT / name).read_text()
+            self.assertIn('docker compose start postgres agent backend frontend ingress', source)
+            self.assertNotIn('docker compose start --wait', source)
+
+    def test_replaced_container_or_named_volume_identity_fails_restart(self):
+        ids, rows, volume = self.fixture(); original = self.snapshot(ids, rows, volume)
+        for changed in ('containers', 'volume', 'mount'):
+            altered = copy.deepcopy(original)
+            key = next(iter(altered[changed])); altered[changed][key] = 'PRIVATE_CANARY'
+            with patch.object(fresh, 'runtime_identity', side_effect=[original, original, altered]), \
+                    patch.object(fresh, 'quiet'), patch.object(fresh, 'readiness'), self.assertRaises(fresh.Failure):
+                fresh.restart_existing(self.project, 'checks')
+
+    def test_readiness_failure_cannot_report_success_or_change_identity(self):
+        with patch.object(fresh, 'runtime_identity', return_value={'same': True}) as snapshots, \
+                patch.object(fresh, 'quiet'), patch.object(fresh, 'readiness', side_effect=fresh.Failure('ASSERTION_FAILED')), \
+                self.assertRaises(fresh.Failure):
+            fresh.restart_existing(self.project, 'checks')
+        self.assertEqual(2, snapshots.call_count)
 
 
 class DiagnosticProjectionTests(unittest.TestCase):

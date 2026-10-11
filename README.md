@@ -65,12 +65,11 @@ PYTHON
 
 기본 웹 런타임은 main/auth DB 마이그레이션 소유자 자격정보를 받지 않습니다. 별도 실험 DB의 소유자 연결은 기존 격리 실험에만 유지합니다. 일반 실행 main은 Spring 서비스가 만들어지기 전에 읽기 전용으로 마이그레이션 이력·체크섬과 명시된 객체/권한 호환성을 확인합니다. 임의의 DBA 변경을 모두 탐지한다는 의미는 아닙니다.
 
-중지는 `docker compose stop`입니다. 재개할 때는 DB와 어댑터 준비를 먼저 확인한 뒤 웹 서비스를 시작합니다.
+중지와 재개는 기존 컨테이너를 대상으로 아래 명령을 사용합니다. Compose는 중지 시 역의존 순서, 시작 시 의존 순서를 따르며 백엔드는 DB와 어댑터의 healthcheck를 기다립니다. Compose 2.38.2의 `start`에는 `--wait` 옵션이 없으므로 아래 명령 뒤 준비 상태 검사를 별도로 실행합니다.
 
 ```sh
-docker compose start --wait --wait-timeout 60 postgres
-docker compose start --wait --wait-timeout 60 agent
-docker compose start backend frontend ingress
+docker compose stop postgres agent backend frontend ingress
+docker compose start postgres agent backend frontend ingress
 ```
 
 재개 후 위의 180초 준비 상태 검사를 다시 실행합니다. 일반 중지·재시작에서 `down --volumes`를 사용하지 마세요. 재시작은 토큰을 발급하거나 유효기간을 늘리지 않습니다. 만료되면 [명시적 교체 절차](docs/runtime-security.md#replacement-revocation-and-scope)가 필요합니다. 기존 V6 이하 DB의 업그레이드는 이 fresh-only 명령으로 지원하지 않으며, 소유자가 별도로 승인한 도구·백업·절차로 V7까지 적용해야 합니다.
