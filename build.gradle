@@ -121,6 +121,7 @@ def databaseMigrationJar = tasks.register('databaseMigrationJar', org.springfram
     description = 'Packages the standalone fresh-only database administrator; does not run it.'
     group = 'build'
     dependsOn tasks.named('classes')
+    targetJavaVersion = provider { java.targetCompatibility }
     archiveClassifier = 'migration'
     mainClass = 'com.finsec.fuse.migration.DatabaseMigrator'
     classpath = sourceSets.main.runtimeClasspath
@@ -130,6 +131,7 @@ def tokenAdminJar = tasks.register('tokenAdminJar', org.springframework.boot.gra
     description = 'Packages the existing standalone token administrator; does not run it.'
     group = 'build'
     dependsOn tasks.named('classes')
+    targetJavaVersion = provider { java.targetCompatibility }
     archiveClassifier = 'token-admin'
     mainClass = 'com.finsec.fuse.auth.DemoTokenProvisioner'
     classpath = sourceSets.main.runtimeClasspath

@@ -92,6 +92,7 @@ class ShippedEntrypointsIT {
                 "tokenAdmin", "com.finsec.fuse.auth.DemoTokenProvisioner").entrySet()) {
             try (JarFile jar = new JarFile(artifact(entry.getKey()).toFile())) {
                 assertEquals(entry.getValue(), jar.getManifest().getMainAttributes().getValue("Start-Class"));
+                assertEquals("21", jar.getManifest().getMainAttributes().getValue("Build-Jdk-Spec"));
                 assertTrue(jar.getManifest().getMainAttributes().getValue("Main-Class").endsWith("JarLauncher"));
             }
         }
@@ -162,16 +163,21 @@ class ShippedEntrypointsIT {
 
     private void assertUnseeded(DatabaseMigratorIT.Fixture fixture) throws SQLException {
         try (Connection c = fixture.owner(); Statement s = c.createStatement(); ResultSet rows = s.executeQuery(
-                "SELECT (SELECT count(*) FROM mock_profile)=0 AND (SELECT count(*) FROM workflow)=0 "
-                + "AND (SELECT count(*) FROM demo_auth_registry)=0 AND (SELECT count(*) FROM demo_token)=0")) {
+            """
+            SELECT (SELECT count(*) FROM mock_profile)=0 AND (SELECT count(*) FROM workflow)=0 \
+            AND (SELECT count(*) FROM demo_auth_registry)=0 AND (SELECT count(*) FROM demo_token)=0\
+            """)) {
             rows.next(); assertTrue(rows.getBoolean(1), "Rejected startup must not seed or issue authority");
         }
     }
 
     private void assertGroupedApplicationMigrationRolledBack(DatabaseMigratorIT.Fixture fixture) throws SQLException {
         try (Connection c = fixture.owner(); Statement s = c.createStatement()) {
-            try (ResultSet r = s.executeQuery("SELECT to_regclass('public.workflow') IS NULL AND to_regclass('public.execution_gate') IS NULL "
-                    + "AND to_regclass('public.demo_auth_registry') IS NULL AND to_regclass('public.demo_token') IS NULL")) {
+            try (ResultSet r = s.executeQuery(
+                """
+                SELECT to_regclass('public.workflow') IS NULL AND to_regclass('public.execution_gate') IS NULL \
+                AND to_regclass('public.demo_auth_registry') IS NULL AND to_regclass('public.demo_token') IS NULL\
+                """)) {
                 r.next(); assertTrue(r.getBoolean(1), "Grouped failed migration left application structures");
             }
             boolean history;
@@ -208,8 +214,10 @@ class ShippedEntrypointsIT {
         long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
         while (true) {
             try (Connection c = fixture.owner(); Statement s = c.createStatement(); ResultSet r = s.executeQuery(
-                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname='fuse' "
-                    + "AND application_name='FINSEC-MIGRATION-ADMIN' AND state='active' AND query LIKE '%pg_sleep%')")) {
+                """
+                SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname='fuse' \
+                AND application_name='FINSEC-MIGRATION-ADMIN' AND state='active' AND query LIKE '%pg_sleep%')\
+                """)) {
                 r.next(); if (r.getBoolean(1)) return;
             }
             assertTrue(System.nanoTime() < deadline, "Controlled migration barrier was not observed"); Thread.sleep(20);

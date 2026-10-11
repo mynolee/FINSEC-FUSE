@@ -111,6 +111,16 @@ class SourceWiringTests(unittest.TestCase):
         self.assertIn("log_out + log_err", source)
         self.assertIn("no_canaries(issued_diagnostics, list(tokens.values()))", source)
 
+    def test_custom_archives_use_the_java_toolchain_target_and_shipped_headers_are_checked(self):
+        build = (fresh.ROOT / 'build.gradle').read_text()
+        for task, following in [('databaseMigrationJar', 'def tokenAdminJar'), ('tokenAdminJar', 'integrationTest.configure')]:
+            block = build.split('def ' + task + ' = tasks.register(', 1)[1].split(following, 1)[0]
+            self.assertEqual(1, block.count('targetJavaVersion = provider { java.targetCompatibility }'))
+        main = build.split("tasks.named('bootJar') {", 1)[1].split('}', 1)[0]
+        self.assertEqual("mainClass = 'com.finsec.fuse.FuseApplication'", main.strip())
+        source = (fresh.ROOT / 'backend/src/test/java/com/finsec/fuse/migration/ShippedEntrypointsIT.java').read_text()
+        self.assertIn('assertEquals("21", jar.getManifest().getMainAttributes().getValue("Build-Jdk-Spec"))', source)
+
     def test_ci_job_only_uploads_validated_aggregate(self):
         workflow = (fresh.ROOT / '.github/workflows/ci.yml').read_text()
         job = workflow.split('  shipped-fresh-setup:\n', 1)[1].split('\n  combined-compose-browser:', 1)[0]
