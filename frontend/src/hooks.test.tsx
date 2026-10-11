@@ -43,7 +43,8 @@ describe('safe request lifecycle', () => {
   it('ignores repeated clicks while a mutation is in flight', async () => {
     const task = deferred<Response>();
     const fetcher = vi.fn().mockReturnValue(task.promise);
-    const { result } = renderHook(() => useCommand(new FuseApi('token', fetcher)));
+    const api = new FuseApi('token', fetcher);
+    const { result } = renderHook(() => useCommand(api));
     act(() => {
       void result.current.run('/workflows', { x: 1 });
       void result.current.run('/workflows', { x: 1 });
@@ -477,4 +478,128 @@ describe('query ownership retirement', () => {
       vi.useRealTimers();
     }
   });
+});
+
+describe('immutable recovery ownership', () => {
+  const firstScope = `/workflows/${WORKFLOW_ID}/approvals`;
+  const secondScope = `/workflows/${NEXT_ID}/approvals`;
+  const body = { decision: 'APPROVE', reviewSnapshotHash: 'a'.repeat(64), comment: 'original' };
+
+  it('exposes a detached original request on mount without sending or allowing a changed command', async () => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError('synthetic loss'));
+    const api = new FuseApi('synthetic', fetcher);
+    await expect(api.mutate(firstScope, body, WORKFLOW_ID)).rejects.toBeInstanceOf(ApiError);
+    const { result } = renderHook(() => useCommand(api, undefined, firstScope));
+    expect(result.current.retryable).toBe(true);
+    expect(result.current.retryRequest).toEqual({ path: firstScope, body, actionId: WORKFLOW_ID });
+    (result.current.retryRequest!.body as Record<string, unknown>).decision = 'REJECT';
+    await act(async () => {
+      result.current.reset();
+      await result.current.run(firstScope, { ...body, decision: 'REJECT' });
+      await result.current.run(secondScope, body);
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(api.unresolved(firstScope)?.body).toEqual(body);
+    await act(async () => {
+      await result.current.retry();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1][1].body).toBe(fetcher.mock.calls[0][1].body);
+    expect(fetcher.mock.calls[1][1].headers['Idempotency-Key']).toBe(WORKFLOW_ID);
+  });
+
+  it('does not transfer recovery or a retained retry callback into another API session', async () => {
+    const oldFetch = vi.fn().mockRejectedValue(new TypeError('synthetic loss'));
+    const oldApi = new FuseApi('synthetic-old', oldFetch);
+    await expect(oldApi.mutate(firstScope, body, WORKFLOW_ID)).rejects.toBeInstanceOf(ApiError);
+    const newFetch = vi.fn();
+    const newApi = new FuseApi('synthetic-new', newFetch);
+    const hook = renderHook(({ api }) => useCommand(api, undefined, firstScope), {
+      initialProps: { api: oldApi },
+    });
+    const staleRetry = hook.result.current.retry;
+    hook.rerender({ api: newApi });
+    expect(hook.result.current.retryRequest).toBeUndefined();
+    expect(hook.result.current.retryable).toBe(false);
+    await act(async () => {
+      await staleRetry();
+      await hook.result.current.retry();
+    });
+    expect(oldFetch).toHaveBeenCalledTimes(1);
+    expect(newFetch).not.toHaveBeenCalled();
+    expect(oldApi.unresolved(firstScope)?.body).toEqual(body);
+  });
+
+  it('keeps scope changes separate and restores unresolved recovery only upon returning to its endpoint', async () => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError('synthetic loss'));
+    const api = new FuseApi('synthetic', fetcher);
+    await expect(api.mutate(firstScope, body, WORKFLOW_ID)).rejects.toBeInstanceOf(ApiError);
+    const hook = renderHook(({ scope }) => useCommand(api, undefined, scope), {
+      initialProps: { scope: firstScope },
+    });
+    const staleRetry = hook.result.current.retry;
+    hook.rerender({ scope: secondScope });
+    expect(hook.result.current.retryRequest).toBeUndefined();
+    await act(async () => {
+      await staleRetry();
+      await hook.result.current.retry();
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    hook.rerender({ scope: firstScope });
+    expect(hook.result.current.retryRequest).toEqual({ path: firstScope, body, actionId: WORKFLOW_ID });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['session', 'scope'])('ignores old completion after a same-mounted %s change', async (kind) => {
+    const pending = deferred<Response>();
+    const oldFetch = vi.fn().mockReturnValue(pending.promise);
+    const api = new FuseApi('synthetic-old', oldFetch);
+    const nextFetch = vi.fn();
+    const nextApi = new FuseApi('synthetic-new', nextFetch);
+    const complete = vi.fn();
+    const hook = renderHook(({ client, scope }) => useCommand(client, complete, scope), {
+      initialProps: { client: api, scope: firstScope },
+    });
+    act(() => {
+      void hook.result.current.run(firstScope, body);
+    });
+    hook.rerender({
+      client: kind === 'session' ? nextApi : api,
+      scope: kind === 'scope' ? secondScope : firstScope,
+    });
+    expect(hook.result.current.pending).toBe(false);
+    expect(hook.result.current.retryRequest).toBeUndefined();
+    await act(async () => {
+      pending.resolve(actionResponse(oldFetch.mock.calls[0][1], true));
+    });
+    expect(complete).not.toHaveBeenCalled();
+    expect(hook.result.current.result).toBeUndefined();
+    expect(nextFetch).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403, 404])(
+    'retains the original recovery summary after retry receives %s',
+    async (status) => {
+      const fetcher = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError('synthetic loss'))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ reasonCodes: ['SYNTHETIC_DENIED'] }), { status }),
+        );
+      const api = new FuseApi('synthetic', fetcher);
+      const hook = renderHook(() => useCommand(api, undefined, firstScope));
+      await act(async () => {
+        await hook.result.current.run(firstScope, body);
+      });
+      const original = hook.result.current.retryRequest;
+      await act(async () => {
+        await hook.result.current.retry();
+      });
+      expect(hook.result.current.retryable).toBe(true);
+      expect(hook.result.current.retryRequest).toEqual(original);
+      expect(hook.result.current.error).toMatchObject({ status });
+      expect(hook.result.current.result).toBeUndefined();
+      expect(api.unresolved(firstScope)).toEqual(original);
+    },
+  );
 });
