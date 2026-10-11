@@ -1,0 +1,15 @@
+{
+  "fixtureSetId": "mvp-security-v1",
+  "loanPolicyVersion": "LOAN-MOCK-1",
+  "documentId": "00000000-0000-4000-8000-000000000201",
+  "documents": [
+    {"version":1,"contentId":"seed-v1","reviewedSafe":true},
+    {"version":2,"contentId":"seed-v2","reviewedSafe":false}
+  ],
+  "customers": [
+    {"customerId":"customer-101","accountId":"00000000-0000-4000-8000-000000000101","monthlyIncomeKrw":3000000,"maxLoanAmountKrw":2000000,"amountKrw":1000000,"businessReference":"APP-DEMO-101-001","documentVersion":2,"evidence":[]},
+    {"customerId":"customer-102","accountId":"00000000-0000-4000-8000-000000000102","monthlyIncomeKrw":3000000,"maxLoanAmountKrw":2000000,"amountKrw":1000000,"businessReference":"APP-DEMO-102-001","documentVersion":1,"evidence":[{"id":"00000000-0000-4000-8000-000000001021","type":"ID_DOC","issuerId":"mock-id-issuer","outcome":"PASS"},{"id":"00000000-0000-4000-8000-000000001022","type":"FACE_MATCH","issuerId":"mock-face-issuer","outcome":"PASS"}]},
+    {"customerId":"customer-103","accountId":"00000000-0000-4000-8000-000000000103","monthlyIncomeKrw":2000000,"maxLoanAmountKrw":500000,"amountKrw":1000000,"businessReference":"APP-DEMO-103-001","documentVersion":1,"evidence":[{"id":"00000000-0000-4000-8000-000000001031","type":"ID_DOC","issuerId":"mock-id-issuer","outcome":"PASS"},{"id":"00000000-0000-4000-8000-000000001032","type":"FACE_MATCH","issuerId":"mock-face-issuer","outcome":"PASS"}]},
+    {"customerId":"customer-104","accountId":"00000000-0000-4000-8000-000000000104","monthlyIncomeKrw":3000000,"maxLoanAmountKrw":2000000,"amountKrw":1000000,"businessReference":"APP-DEMO-104-001","documentVersion":1,"evidence":[{"id":"00000000-0000-4000-8000-000000001041","type":"ID_DOC","issuerId":"mock-id-issuer","outcome":"PASS"},{"id":"00000000-0000-4000-8000-000000001042","type":"FACE_MATCH","issuerId":"mock-face-issuer","outcome":"FAIL"}]}
+  ]
+}

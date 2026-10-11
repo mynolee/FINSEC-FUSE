@@ -1,0 +1,23 @@
+# Explicit LIVE-only override. No private bodies are copied into image layers.
+# Set both source paths in the operator's untracked .env before using this file.
+services:
+  agent:
+    environment:
+      FUSE_KYC_PROMPT_PATH: /run/fuse-private/kyc_prompt.txt
+    volumes:
+      - type: bind
+        source: ${FUSE_KYC_PROMPT_PATH:?Set the host private system file path}
+        target: /run/fuse-private/kyc_prompt.txt
+        read_only: true
+        bind:
+          create_host_path: false
+  backend:
+    environment:
+      FUSE_PRIVATE_DOCUMENTS_PATH: /run/fuse-private/evaluation-documents.json
+    volumes:
+      - type: bind
+        source: ${FUSE_PRIVATE_DOCUMENTS_PATH:?Set the host private reference map path}
+        target: /run/fuse-private/evaluation-documents.json
+        read_only: true
+        bind:
+          create_host_path: false
