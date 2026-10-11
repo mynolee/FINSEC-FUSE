@@ -8,13 +8,26 @@ export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>, enabled =
   const [loading, setLoading] = useState(enabled);
   const [updatedAt, setUpdatedAt] = useState<Date>();
   const [revision, setRevision] = useState(0);
-  const reload = useCallback(() => setRevision((n) => n + 1), []);
+  type QueryIdentity = { load: typeof load; enabled: boolean; revision: number };
+  const owner = useRef<(QueryIdentity & { dispose: () => void }) | undefined>(undefined);
+  const suspended = useRef<QueryIdentity | undefined>(undefined);
+  const reload = useCallback(() => {
+    owner.current?.dispose();
+    suspended.current = undefined;
+    setRevision((n) => n + 1);
+  }, []);
   useEffect(() => {
     setData(undefined);
     setError(undefined);
     setUpdatedAt(undefined);
   }, [load, enabled]);
   useEffect(() => {
+    const paused = suspended.current;
+    if (paused && paused.load === load && paused.enabled === enabled && paused.revision === revision) {
+      setLoading(false);
+      return;
+    }
+    suspended.current = undefined;
     if (!enabled) {
       setLoading(false);
       return;
@@ -22,6 +35,18 @@ export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>, enabled =
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
+    const current = {
+      load,
+      enabled,
+      revision,
+      dispose: () => {
+        // Retire ownership before abort: completed or abort-ignoring loads stay inert.
+        disposed = true;
+        controller.abort();
+        if (timer) clearTimeout(timer);
+      },
+    };
+    owner.current = current;
     async function fetchOnce() {
       setLoading(true);
       try {
@@ -48,14 +73,19 @@ export function useQuery<T>(load: (signal: AbortSignal) => Promise<T>, enabled =
     }
     void fetchOnce();
     return () => {
-      disposed = true;
-      controller.abort();
-      if (timer) clearTimeout(timer);
+      current.dispose();
+      if (owner.current === current) owner.current = undefined;
     };
   }, [load, enabled, interval, revision]);
   const clear = useCallback(() => {
+    const current = owner.current;
+    if (current) {
+      suspended.current = current;
+      current.dispose();
+    }
     setData(undefined);
     setUpdatedAt(undefined);
+    setLoading(false);
   }, []);
   return { data, error, loading, reload, updatedAt, clear };
 }
