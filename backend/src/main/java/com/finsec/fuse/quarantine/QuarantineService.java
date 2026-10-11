@@ -206,6 +206,8 @@ public class QuarantineService {
             case "SOURCE_VERSION" -> {
                 exists=db.one("select document_id from source_document_version where document_id=? and version=?",uuid(target,"document_id"),integer(target,"document_version")).isPresent();
                 for(var row:db.query("select distinct customer_id from application_registry where document_id=? and document_version=?",uuid(target,"document_id"),integer(target,"document_version")))customers.add(str(row,"customer_id"));
+                // A committed remediation selects a future consumer before fresh provenance exists.
+                for(var row:db.query("select distinct a.customer_id from workflow w join loan_application a on a.id=w.application_id where w.recovery_document_id=? and w.recovery_document_version=?",uuid(target,"document_id"),integer(target,"document_version")))customers.add(str(row,"customer_id"));
             }
             case "AGENT_VERSION" -> {
                 exists=db.one("select agent_id from agent_registry where agent_id=? and version=?",str(target,"agent_id"),integer(target,"agent_version")).isPresent();
