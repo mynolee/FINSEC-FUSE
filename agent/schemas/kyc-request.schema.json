@@ -1,0 +1,141 @@
+{
+  "$defs": {
+    "EvidenceFact": {
+      "additionalProperties": false,
+      "properties": {
+        "evidenceId": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Evidenceid",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "ID_DOC",
+            "FACE_MATCH"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidenceId",
+        "kind",
+        "result"
+      ],
+      "title": "EvidenceFact",
+      "type": "object"
+    },
+    "SourceDocument": {
+      "additionalProperties": false,
+      "properties": {
+        "documentId": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Documentid",
+          "type": "string"
+        },
+        "documentVersion": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Documentversion",
+          "type": "integer"
+        },
+        "contentHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Contenthash",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 16384,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "documentId",
+        "documentVersion",
+        "contentHash",
+        "text"
+      ],
+      "title": "SourceDocument",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Requestid",
+      "type": "string"
+    },
+    "workflowId": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Workflowid",
+      "type": "string"
+    },
+    "generation": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "title": "Generation",
+      "type": "integer"
+    },
+    "runId": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "title": "Runid",
+      "type": "string"
+    },
+    "customerId": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Customerid",
+      "type": "string"
+    },
+    "policyVersion": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Policyversion",
+      "type": "string"
+    },
+    "inputSnapshotHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Inputsnapshothash",
+      "type": "string"
+    },
+    "evidenceFacts": {
+      "items": {
+        "$ref": "#/$defs/EvidenceFact"
+      },
+      "maxItems": 10,
+      "title": "Evidencefacts",
+      "type": "array"
+    },
+    "documents": {
+      "items": {
+        "$ref": "#/$defs/SourceDocument"
+      },
+      "maxItems": 8,
+      "title": "Documents",
+      "type": "array"
+    }
+  },
+  "required": [
+    "requestId",
+    "workflowId",
+    "generation",
+    "runId",
+    "customerId",
+    "policyVersion",
+    "inputSnapshotHash",
+    "evidenceFacts",
+    "documents"
+  ],
+  "title": "KycRequest",
+  "type": "object"
+}

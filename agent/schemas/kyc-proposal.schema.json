@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "enum": [
+        "VERIFIED",
+        "NOT_VERIFIED",
+        "NEEDS_REVIEW"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "evidenceIds": {
+      "items": {
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Evidenceids",
+      "type": "array"
+    },
+    "explanation": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Explanation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "evidenceIds",
+    "explanation"
+  ],
+  "title": "KycProposal",
+  "type": "object"
+}
