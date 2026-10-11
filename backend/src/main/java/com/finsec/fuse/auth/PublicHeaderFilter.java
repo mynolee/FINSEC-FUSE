@@ -29,7 +29,7 @@ public final class PublicHeaderFilter extends OncePerRequestFilter {
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)throws IOException,ServletException {
         response.setHeader("X-Content-Type-Options","nosniff");response.setHeader("Referrer-Policy","no-referrer");response.setHeader("X-Frame-Options","DENY");
         response.setHeader("Content-Security-Policy","default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
-        if(!request.getRequestURI().startsWith("/api/")){chain.doFilter(request,response);return;}
+        if(!ApiRequestPaths.protectedApi(request)){chain.doFilter(request,response);return;}
         response.setHeader("Cache-Control","no-store");
         long bytes=2;
         for(String name:Collections.list(request.getHeaderNames()))for(String value:Collections.list(request.getHeaders(name))){bytes+=name.getBytes(StandardCharsets.UTF_8).length+value.getBytes(StandardCharsets.UTF_8).length+4;if(bytes>policy.httpHeaderMaxBytes()){PublicErrors.deny(json,response,431,"INVALID_REQUEST","Request headers exceed the allowed size");return;}}

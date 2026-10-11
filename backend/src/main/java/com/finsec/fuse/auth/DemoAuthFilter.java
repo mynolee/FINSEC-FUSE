@@ -22,7 +22,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public final class DemoAuthFilter extends OncePerRequestFilter {
     private final DevActorRegistry registry;private final AdmissionLimiter limiter;private final Json json;
     @Autowired public DemoAuthFilter(DevActorRegistry registry,AdmissionLimiter limiter,Json json){this.registry=registry;this.limiter=limiter;this.json=json;}
-    @Override protected boolean shouldNotFilter(HttpServletRequest request){return !request.getRequestURI().startsWith("/api/");}
+    @Override protected boolean shouldNotFilter(HttpServletRequest request){return !ApiRequestPaths.protectedApi(request);}
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain) throws IOException,ServletException {
         if(ambiguous(request,"Authorization")||ambiguous(request,"Idempotency-Key")) {
             if(!limiter.anonymous(request.getRemoteAddr())){rate(response);return;}

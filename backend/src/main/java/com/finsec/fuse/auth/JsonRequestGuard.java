@@ -21,7 +21,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public final class JsonRequestGuard extends OncePerRequestFilter {
     private final Json json;private final SecurityPolicy policy;
     public JsonRequestGuard(Json json,SecurityPolicy policy){this.json=json;this.policy=policy;}
-    @Override protected boolean shouldNotFilter(HttpServletRequest request){return !request.getRequestURI().startsWith("/api/");}
+    @Override protected boolean shouldNotFilter(HttpServletRequest request){return !ApiRequestPaths.protectedApi(request);}
     @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)throws IOException,ServletException {
         if(request.getHeader("Content-Encoding")!=null){reject(response,415,"UNSUPPORTED_MEDIA_TYPE","Compressed request bodies are unsupported");return;}
         if(request.getContentLengthLong()>policy.publicRequestMaxBytes()){reject(response,413,"REQUEST_TOO_LARGE","Request body exceeds the allowed size");return;}
