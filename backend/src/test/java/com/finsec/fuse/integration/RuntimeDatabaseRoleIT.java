@@ -79,6 +79,9 @@ class RuntimeDatabaseRoleIT {
             String runtime="\""+DATABASE.runtime()+"\"";
             statement.execute("REVOKE ALL ON demo_auth_registry,demo_token FROM "+runtime);
             statement.execute("GRANT SELECT ON demo_auth_registry,demo_token TO "+runtime);
+            // V7 mirrors V6's standard-role rule; this randomized role receives the explicit equivalent.
+            statement.execute("REVOKE ALL ON flyway_schema_history FROM "+runtime);
+            statement.execute("GRANT SELECT ON flyway_schema_history TO "+runtime);
             assertEquals(0L,count("demo_auth_registry"));
             assertEquals(0L,count("demo_token"));
             var empty=authenticationSnapshot();
@@ -188,6 +191,15 @@ class RuntimeDatabaseRoleIT {
         assertDenied("SELECT setval('runtime_sequence_probe_id_seq',99)","42501");
         assertDenied("ALTER SEQUENCE runtime_sequence_probe_id_seq RESTART WITH 99","42501");
         assertDenied("TRUNCATE runtime_sequence_probe","42501");
+    }
+
+    @Test void runtimeCanReadButCannotMutateMigrationHistory() throws Exception {
+        assertEquals(7L, db.number(db.required("SELECT count(*) AS n FROM flyway_schema_history WHERE success"), "n"));
+        for (String sql : new String[]{"DELETE FROM flyway_schema_history", "UPDATE flyway_schema_history SET success=false",
+                "TRUNCATE flyway_schema_history", "GRANT UPDATE ON flyway_schema_history TO PUBLIC",
+                "GRANT UPDATE(checksum) ON flyway_schema_history TO PUBLIC"})
+            assertDenied(sql, "42501");
+        assertEquals(7L, db.number(db.required("SELECT count(*) AS n FROM flyway_schema_history WHERE success"), "n"));
     }
 
     @Test void runtimeReadsReadyAuthenticationButCannotAdministerItsLedger() throws Exception {

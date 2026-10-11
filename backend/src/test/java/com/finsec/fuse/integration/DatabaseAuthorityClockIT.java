@@ -52,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * No equality-at-a-moving-clock assertion, provider call, real payment, or OS clock change.
  */
 @SpringBootTest(classes=FuseApplication.class, webEnvironment=SpringBootTest.WebEnvironment.MOCK,
-        properties={"fuse.demo-seed=true", "fuse.kyc-mode=replay", "fuse.worker-enabled=false"})
+        properties={"spring.flyway.enabled=true", "fuse.demo-seed=true", "fuse.kyc-mode=replay", "fuse.worker-enabled=false"})
 @ActiveProfiles("demo")
 @Timeout(30)
 class DatabaseAuthorityClockIT {

@@ -49,7 +49,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * clock change is involved. The demo profile intentionally avoids the mutable test clock.
  */
 @SpringBootTest(classes=FuseApplication.class, webEnvironment=SpringBootTest.WebEnvironment.MOCK,
-        properties={"fuse.demo-seed=true", "fuse.kyc-mode=replay", "fuse.worker-enabled=false"})
+        properties={"spring.flyway.enabled=true", "fuse.demo-seed=true", "fuse.kyc-mode=replay", "fuse.worker-enabled=false"})
 @ActiveProfiles("demo")
 @Timeout(30)
 class DatabaseClockKycCompletionIT {
