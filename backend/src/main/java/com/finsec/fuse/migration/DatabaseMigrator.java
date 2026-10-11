@@ -7,6 +7,40 @@ import java.util.Map;
 public final class DatabaseMigrator {
     private DatabaseMigrator() { }
     private static final long LOCK = 0x46494e5345430007L;
+    // Fixed SQL: every reviewed nonstructural table is checked without identifier interpolation.
+    static final String EMPTY_APPLICATION_TABLES = """
+            SELECT NOT EXISTS (
+                SELECT 1 FROM public.agent_registry
+                UNION ALL SELECT 1 FROM public.mock_account
+                UNION ALL SELECT 1 FROM public.mock_profile
+                UNION ALL SELECT 1 FROM public.application_registry
+                UNION ALL SELECT 1 FROM public.source_document_version
+                UNION ALL SELECT 1 FROM public.trusted_evidence
+                UNION ALL SELECT 1 FROM public.loan_application
+                UNION ALL SELECT 1 FROM public.workflow
+                UNION ALL SELECT 1 FROM public.workflow_stage
+                UNION ALL SELECT 1 FROM public.agent_run
+                UNION ALL SELECT 1 FROM public.agent_result
+                UNION ALL SELECT 1 FROM public.run_source_use
+                UNION ALL SELECT 1 FROM public.run_evidence_use
+                UNION ALL SELECT 1 FROM public.run_dependency
+                UNION ALL SELECT 1 FROM public.action_request
+                UNION ALL SELECT 1 FROM public.approval
+                UNION ALL SELECT 1 FROM public.workflow_job
+                UNION ALL SELECT 1 FROM public.delegation_grant
+                UNION ALL SELECT 1 FROM public.payment_reservation
+                UNION ALL SELECT 1 FROM public.risk_ledger
+                UNION ALL SELECT 1 FROM public.mock_payment
+                UNION ALL SELECT 1 FROM public.quarantine
+                UNION ALL SELECT 1 FROM public.audit_event
+                UNION ALL SELECT 1 FROM public.experiment
+                UNION ALL SELECT 1 FROM public.experiment_case_result
+                UNION ALL SELECT 1 FROM public.quarantine_workflow_hold
+                UNION ALL SELECT 1 FROM public.experiment_arm_binding
+                UNION ALL SELECT 1 FROM public.demo_auth_registry
+                UNION ALL SELECT 1 FROM public.demo_token
+            )
+            """;
 
     public static void main(String[] args) {
         try {
@@ -52,11 +86,8 @@ public final class DatabaseMigrator {
                     + "AND (SELECT count(*) FROM execution_gate WHERE id=1 AND epoch=0)=1")) {
                 if (!rows.next() || !rows.getBoolean(1)) throw MigrationContract.rejected();
             }
-            for (String table : MigrationContract.TABLES) {
-                if (table.equals("flyway_schema_history") || table.equals("execution_gate")) continue;
-                try (Statement query = lock.createStatement(); ResultSet rows = query.executeQuery("SELECT count(*)=0 FROM public.\"" + table + "\"")) {
-                    if (!rows.next() || !rows.getBoolean(1)) throw MigrationContract.rejected();
-                }
+            try (Statement query = lock.createStatement(); ResultSet rows = query.executeQuery(EMPTY_APPLICATION_TABLES)) {
+                if (!rows.next() || !rows.getBoolean(1)) throw MigrationContract.rejected();
             }
             // Losing the independent lock session is an unconfirmed outcome, even if Flyway committed.
             try (PreparedStatement query = lock.prepareStatement("SELECT pg_advisory_unlock(?)")) {

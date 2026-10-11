@@ -13,6 +13,40 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Each fixture owns a new PG16.15 process, standard roles and database. No inherited DB/environment. */
 class DatabaseMigratorIT {
     static final class Fixture implements AutoCloseable {
+        // Only the reviewed schema and the explicit nonfresh fixture are queried.
+        static final Map<String, String> ROW_QUERIES = Map.ofEntries(
+                Map.entry("execution_gate", "SELECT to_jsonb(t)::text FROM public.execution_gate t ORDER BY 1"),
+                Map.entry("agent_registry", "SELECT to_jsonb(t)::text FROM public.agent_registry t ORDER BY 1"),
+                Map.entry("mock_account", "SELECT to_jsonb(t)::text FROM public.mock_account t ORDER BY 1"),
+                Map.entry("mock_profile", "SELECT to_jsonb(t)::text FROM public.mock_profile t ORDER BY 1"),
+                Map.entry("application_registry", "SELECT to_jsonb(t)::text FROM public.application_registry t ORDER BY 1"),
+                Map.entry("source_document_version", "SELECT to_jsonb(t)::text FROM public.source_document_version t ORDER BY 1"),
+                Map.entry("trusted_evidence", "SELECT to_jsonb(t)::text FROM public.trusted_evidence t ORDER BY 1"),
+                Map.entry("loan_application", "SELECT to_jsonb(t)::text FROM public.loan_application t ORDER BY 1"),
+                Map.entry("workflow", "SELECT to_jsonb(t)::text FROM public.workflow t ORDER BY 1"),
+                Map.entry("workflow_stage", "SELECT to_jsonb(t)::text FROM public.workflow_stage t ORDER BY 1"),
+                Map.entry("agent_run", "SELECT to_jsonb(t)::text FROM public.agent_run t ORDER BY 1"),
+                Map.entry("agent_result", "SELECT to_jsonb(t)::text FROM public.agent_result t ORDER BY 1"),
+                Map.entry("run_source_use", "SELECT to_jsonb(t)::text FROM public.run_source_use t ORDER BY 1"),
+                Map.entry("run_evidence_use", "SELECT to_jsonb(t)::text FROM public.run_evidence_use t ORDER BY 1"),
+                Map.entry("run_dependency", "SELECT to_jsonb(t)::text FROM public.run_dependency t ORDER BY 1"),
+                Map.entry("action_request", "SELECT to_jsonb(t)::text FROM public.action_request t ORDER BY 1"),
+                Map.entry("approval", "SELECT to_jsonb(t)::text FROM public.approval t ORDER BY 1"),
+                Map.entry("workflow_job", "SELECT to_jsonb(t)::text FROM public.workflow_job t ORDER BY 1"),
+                Map.entry("delegation_grant", "SELECT to_jsonb(t)::text FROM public.delegation_grant t ORDER BY 1"),
+                Map.entry("payment_reservation", "SELECT to_jsonb(t)::text FROM public.payment_reservation t ORDER BY 1"),
+                Map.entry("risk_ledger", "SELECT to_jsonb(t)::text FROM public.risk_ledger t ORDER BY 1"),
+                Map.entry("mock_payment", "SELECT to_jsonb(t)::text FROM public.mock_payment t ORDER BY 1"),
+                Map.entry("quarantine", "SELECT to_jsonb(t)::text FROM public.quarantine t ORDER BY 1"),
+                Map.entry("audit_event", "SELECT to_jsonb(t)::text FROM public.audit_event t ORDER BY 1"),
+                Map.entry("experiment", "SELECT to_jsonb(t)::text FROM public.experiment t ORDER BY 1"),
+                Map.entry("experiment_case_result", "SELECT to_jsonb(t)::text FROM public.experiment_case_result t ORDER BY 1"),
+                Map.entry("quarantine_workflow_hold", "SELECT to_jsonb(t)::text FROM public.quarantine_workflow_hold t ORDER BY 1"),
+                Map.entry("experiment_arm_binding", "SELECT to_jsonb(t)::text FROM public.experiment_arm_binding t ORDER BY 1"),
+                Map.entry("demo_auth_registry", "SELECT to_jsonb(t)::text FROM public.demo_auth_registry t ORDER BY 1"),
+                Map.entry("demo_token", "SELECT to_jsonb(t)::text FROM public.demo_token t ORDER BY 1"),
+                Map.entry("flyway_schema_history", "SELECT to_jsonb(t)::text FROM public.flyway_schema_history t ORDER BY 1"),
+                Map.entry("unrelated", "SELECT to_jsonb(t)::text FROM public.unrelated t ORDER BY 1"));
         final EmbeddedPostgres postgres;
         final String url;
         final String ownerPassword = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "");
@@ -52,22 +86,23 @@ class DatabaseMigratorIT {
             List<String> rows = new ArrayList<>();
             try (Connection c = owner(); Statement s = c.createStatement()) {
                 for (String query : List.of(
-                        "SELECT 'namespace:'||row_to_json(n)::text FROM pg_namespace n WHERE nspname NOT IN ('pg_catalog','pg_toast','information_schema')",
-                        "SELECT 'class:'||row_to_json(c)::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public'",
-                        "SELECT 'function:'||pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'",
-                        "SELECT 'type:'||row_to_json(t)::text FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public'",
-                        "SELECT 'collation:'||row_to_json(o)::text FROM pg_collation o JOIN pg_namespace n ON n.oid=o.collnamespace WHERE n.nspname='public'",
-                        "SELECT 'operator:'||row_to_json(o)::text FROM pg_operator o JOIN pg_namespace n ON n.oid=o.oprnamespace WHERE n.nspname='public'",
-                        "SELECT 'default-acl:'||row_to_json(a)::text FROM pg_default_acl a")) {
-                    try (ResultSet r = s.executeQuery(query + " ORDER BY 1")) { while (r.next()) rows.add(r.getString(1)); }
+                        "SELECT 'namespace:'||row_to_json(n)::text FROM pg_namespace n WHERE nspname NOT IN ('pg_catalog','pg_toast','information_schema') ORDER BY 1",
+                        "SELECT 'class:'||row_to_json(c)::text FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' ORDER BY 1",
+                        "SELECT 'function:'||pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' ORDER BY 1",
+                        "SELECT 'type:'||row_to_json(t)::text FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public' ORDER BY 1",
+                        "SELECT 'collation:'||row_to_json(o)::text FROM pg_collation o JOIN pg_namespace n ON n.oid=o.collnamespace WHERE n.nspname='public' ORDER BY 1",
+                        "SELECT 'operator:'||row_to_json(o)::text FROM pg_operator o JOIN pg_namespace n ON n.oid=o.oprnamespace WHERE n.nspname='public' ORDER BY 1",
+                        "SELECT 'default-acl:'||row_to_json(a)::text FROM pg_default_acl a ORDER BY 1")) {
+                    try (ResultSet r = s.executeQuery(query)) { while (r.next()) rows.add(r.getString(1)); }
                 }
                 List<String> tables = new ArrayList<>();
                 try (ResultSet r = s.executeQuery("SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' ORDER BY c.relname")) {
                     while (r.next()) tables.add(r.getString(1));
                 }
                 for (String table : tables) {
-                    String identifier = "\"" + table.replace("\"", "\"\"") + "\"";
-                    try (ResultSet r = s.executeQuery("SELECT to_jsonb(t)::text FROM public." + identifier + " t ORDER BY 1")) {
+                    String query = ROW_QUERIES.get(table);
+                    if (query == null) throw new SQLException("Snapshot fixture relation is not approved");
+                    try (ResultSet r = s.executeQuery(query)) {
                         while (r.next()) rows.add("row:" + table + ":" + r.getString(1));
                     }
                 }
@@ -77,15 +112,26 @@ class DatabaseMigratorIT {
         @Override public void close() throws Exception { postgres.close(); }
     }
 
+    @Test void fixedSnapshotQueriesCoverExactlyTheReviewedTablesAndExplicitFixture() {
+        Set<String> expected = new HashSet<>(MigrationContract.TABLES);
+        expected.add("unrelated");
+        assertEquals(expected, Fixture.ROW_QUERIES.keySet());
+        for (var entry : Fixture.ROW_QUERIES.entrySet()) {
+            var queryTables = java.util.regex.Pattern.compile("FROM public\\.([a-z_]+)").matcher(entry.getValue())
+                    .results().map(match -> match.group(1)).toList();
+            assertEquals(List.of(entry.getKey()), queryTables);
+        }
+    }
+
     @Test void freshMigrationLeavesOnlyStructuralRowsAndReadOnlyHistoryPrivileges() throws Exception {
         try (var fixture = new Fixture()) {
             fixture.migrate();
             MigrationContract.validate(fixture.runtimeConfiguration(), "fuse_runtime");
             try (Connection c = fixture.owner(); Statement s = c.createStatement()) {
                 for (String table : MigrationContract.TABLES) {
-                    try (ResultSet r = s.executeQuery("SELECT count(*) FROM public.\"" + table + "\"")) {
-                        r.next(); assertEquals(table.equals("flyway_schema_history") ? 7 : table.equals("execution_gate") ? 1 : 0, r.getInt(1));
-                    }
+                    int count = 0;
+                    try (ResultSet r = s.executeQuery(Fixture.ROW_QUERIES.get(table))) { while (r.next()) count++; }
+                    assertEquals(table.equals("flyway_schema_history") ? 7 : table.equals("execution_gate") ? 1 : 0, count);
                 }
             }
             var before = fixture.snapshot();

@@ -90,4 +90,22 @@ class MigrationContractTest {
         MigrationContract.requirePackagedScripts();
         assertEquals(7, MigrationContract.SCRIPTS.size());
     }
+
+    @Test void pinnedFlywayOptionsUseExplicitEmptyArraysWithoutOpeningAConnection() {
+        var source = new BoundedPostgresDataSource(
+                BoundedPostgresDataSource.Configuration.parse("jdbc:postgresql://127.0.0.1:5432/fuse", "fuse_runtime", SYNTHETIC), true);
+        var configuration = MigrationContract.flyway(source);
+        assertEquals(0, configuration.getIgnoreMigrationPatterns().length);
+        assertArrayEquals(new String[0], configuration.getLoggers());
+    }
+
+    @Test void fixedEmptyDataQueryCoversEveryReviewedNonstructuralTableExactlyOnce() {
+        var expected = new java.util.HashSet<>(MigrationContract.TABLES);
+        expected.remove("flyway_schema_history");
+        expected.remove("execution_gate");
+        var actual = java.util.regex.Pattern.compile("FROM public\\.([a-z_]+)")
+                .matcher(DatabaseMigrator.EMPTY_APPLICATION_TABLES).results().map(match -> match.group(1)).toList();
+        assertEquals(expected.size(), actual.size());
+        assertEquals(expected, new java.util.HashSet<>(actual));
+    }
 }

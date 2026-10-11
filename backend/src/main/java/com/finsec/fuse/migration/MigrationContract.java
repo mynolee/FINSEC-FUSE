@@ -46,7 +46,7 @@ public final class MigrationContract {
                 .schemas("public").defaultSchema("public").createSchemas(false)
                 .cleanDisabled(true).baselineOnMigrate(false).outOfOrder(false).group(true)
                 .connectRetries(0).lockRetryCount(0).validateOnMigrate(true).validateMigrationNaming(true)
-                .ignoreMigrationPatterns().placeholderReplacement(false).skipDefaultCallbacks(true).loggers("none");
+                .ignoreMigrationPatterns(new String[0]).placeholderReplacement(false).skipDefaultCallbacks(true).loggers(new String[0]);
     }
 
     /** Reject additions, callbacks, Java migrations, duplicate roots and unsupported resource protocols. */
