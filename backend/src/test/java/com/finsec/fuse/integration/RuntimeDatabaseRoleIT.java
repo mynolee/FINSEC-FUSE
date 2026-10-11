@@ -195,11 +195,53 @@ class RuntimeDatabaseRoleIT {
 
     @Test void runtimeCanReadButCannotMutateMigrationHistory() throws Exception {
         assertEquals(7L, db.number(db.required("SELECT count(*) AS n FROM flyway_schema_history WHERE success"), "n"));
+        var before = migrationAuthoritySnapshot();
+        assertRuntimeHistoryPrivileges();
         for (String sql : new String[]{"DELETE FROM flyway_schema_history", "UPDATE flyway_schema_history SET success=false",
-                "TRUNCATE flyway_schema_history", "GRANT UPDATE ON flyway_schema_history TO PUBLIC",
-                "GRANT UPDATE(checksum) ON flyway_schema_history TO PUBLIC"})
+                "TRUNCATE flyway_schema_history"}) {
             assertDenied(sql, "42501");
+            assertEquals(before, migrationAuthoritySnapshot());
+        }
+        // PostgreSQL 16.15 permits a non-owner with SELECT to attempt GRANT but
+        // issues privilege_not_granted (01007) and adds no privileges. A warning
+        // is not sufficient: prove the complete ACL/history state is unchanged.
+        for (String sql : new String[]{"GRANT UPDATE ON flyway_schema_history TO PUBLIC",
+                "GRANT UPDATE(checksum) ON flyway_schema_history TO PUBLIC"}) {
+            try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
+                statement.clearWarnings();
+                assertFalse(statement.execute(sql));
+                var warning = statement.getWarnings();
+                assertNotNull(warning, "Unauthorized GRANT must report a privilege warning");
+                int warnings = 0;
+                while (warning != null) {
+                    assertEquals("01007", warning.getSQLState());
+                    assertTrue(++warnings <= 4, "Unexpected warning chain length");
+                    warning = warning.getNextWarning();
+                }
+            }
+            assertEquals(before, migrationAuthoritySnapshot());
+            assertRuntimeHistoryPrivileges();
+        }
         assertEquals(7L, db.number(db.required("SELECT count(*) AS n FROM flyway_schema_history WHERE success"), "n"));
+    }
+
+    private Map<String,List<String>> migrationAuthoritySnapshot() {
+        return Map.of(
+            "history", db.jdbc().queryForList("SELECT to_jsonb(h)::text FROM public.flyway_schema_history h ORDER BY installed_rank", String.class),
+            "tableAcl", db.jdbc().queryForList("SELECT jsonb_build_object('owner',relowner,'acl',relacl)::text FROM pg_class WHERE oid='public.flyway_schema_history'::regclass", String.class),
+            "columnAcl", db.jdbc().queryForList("SELECT jsonb_build_object('number',attnum,'name',attname,'acl',attacl)::text FROM pg_attribute WHERE attrelid='public.flyway_schema_history'::regclass ORDER BY attnum", String.class));
+    }
+
+    private void assertRuntimeHistoryPrivileges() throws SQLException {
+        try (var connection = dataSource.getConnection()) {
+            assertEquals("true", value(connection, """
+                SELECT (has_table_privilege(current_user,'public.flyway_schema_history','SELECT')
+                    AND NOT has_table_privilege(current_user,'public.flyway_schema_history','INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+                    AND NOT has_any_column_privilege(current_user,'public.flyway_schema_history','INSERT,UPDATE,REFERENCES')
+                    AND NOT has_table_privilege(current_user,'public.flyway_schema_history','SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,DELETE WITH GRANT OPTION,TRUNCATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION,TRIGGER WITH GRANT OPTION')
+                    AND NOT has_any_column_privilege(current_user,'public.flyway_schema_history','SELECT WITH GRANT OPTION,INSERT WITH GRANT OPTION,UPDATE WITH GRANT OPTION,REFERENCES WITH GRANT OPTION'))::text
+                """));
+        }
     }
 
     @Test void runtimeReadsReadyAuthenticationButCannotAdministerItsLedger() throws Exception {

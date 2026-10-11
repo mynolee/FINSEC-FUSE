@@ -268,7 +268,7 @@ MIGRATION_DIAGNOSTIC_SOURCES = {
             'fixedEmptyDataQueryCoversEveryReviewedNonstructuralTableExactlyOnce',
         )),
     'com.finsec.fuse.integration.RuntimeDatabaseRoleIT': (
-        'a3af21ae583b4d09774767e5bd17cc4a3304113e80ca243cd2f5fc3b3502fd69', (
+        '3253050bbcc7f531a1c80022680fa242919ad8e05da1673493822d692db2d065', (
             'runtimeCanReadButCannotMutateMigrationHistory',
         )),
 }
