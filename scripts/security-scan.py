@@ -294,6 +294,94 @@ def execute(root, work, private_reports=None):
     return report
 
 
+DIAGNOSTIC_CHECKS = ('sast', 'secrets', 'python-sca', 'npm-sca', 'python-sbom', 'npm-sbom',
+                     'dependency-review', 'maven-sca', 'maven-inventory', 'maven-sbom', 'source-currentness')
+# This is a fail-closed report-size ceiling, not a truncation or an assumed result count.
+# Larger scanner inventories/findings require a separately reviewed projection contract.
+DIAGNOSTIC_COUNT_LIMIT = 1_000_000
+
+
+def diagnostic_report(report):
+    """Validate the existing summary, then expose only fixed enums and bounded counts."""
+    def require(value):
+        if not value:
+            raise ValueError('Invalid security summary')
+
+    def count(value):
+        require(type(value) is int and 0 <= value <= DIAGNOSTIC_COUNT_LIMIT)
+
+    require(type(report) is dict)
+    if set(report) == {'schemaVersion', 'status', 'reason', 'checks'}:
+        require(type(report['schemaVersion']) is int and report['schemaVersion'] == 1
+                and report['status'] == 'BLOCKED' and report['reason'] == 'SCAN_SETUP_ERROR'
+                and type(report['checks']) is dict and not report['checks'])
+        return json.dumps({'schemaVersion': 'FUSE-SECURITY-DIAGNOSTIC-1', 'status': 'BLOCKED',
+                           'failure': 'SCAN_SETUP_ERROR', 'checks': {}, 'planned': len(DIAGNOSTIC_CHECKS),
+                           'passed': 0, 'notRun': len(DIAGNOSTIC_CHECKS)}, sort_keys=True)
+    require(set(report) == {'schemaVersion', 'observedAt', 'scope', 'excluded', 'exceptions', 'exceptionExpiry',
+        'tools', 'checks', 'limitations', 'commit', 'treeBinding', 'candidateFiles', 'candidateSha256',
+        'manifestSha256', 'status'})
+    require(type(report['schemaVersion']) is int and report['schemaVersion'] == 1
+            and report['status'] in {'PASS', 'BLOCKED'} and report['scope'] == list(SCOPE)
+            and report['excluded'] == ['private inputs', 'private prompts', 'environment files', 'caches', 'generated outputs']
+            and report['exceptions'] == [] and report['exceptionExpiry'] is None
+            and type(report['observedAt']) is str
+            and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.+Z-]{8,32}', report['observedAt'])
+            and report['treeBinding'] == 'candidateSha256 and manifestSha256 bind the actual working tree; commit alone does not'
+            and report['limitations'] == ['Targeted local SAST rules are not comprehensive.',
+                'Scanners do not replace API, database, browser or independent security review.'])
+    require(report['commit'] is None or type(report['commit']) is str and re.fullmatch(r'[0-9a-f]{40}', report['commit']))
+    count(report['candidateFiles'])
+    require(type(report['candidateSha256']) is str and re.fullmatch(r'[0-9a-f]{64}', report['candidateSha256'])
+            and type(report['manifestSha256']) is dict and set(report['manifestSha256']) == set(MANIFESTS)
+            and all(type(value) is str and re.fullmatch(r'[0-9a-f]{64}', value) for value in report['manifestSha256'].values()))
+    require(type(report['tools']) is dict and set(report['tools']) == set(TOOLS) | {'npm', 'maven-sca'})
+    for name, expected in {**TOOLS, 'npm': '11.9.0'}.items():
+        tool = report['tools'][name]
+        require(type(tool) is dict and set(tool) == {'expected', 'observed', 'versionMatched'}
+                and tool['expected'] == expected and type(tool['versionMatched']) is bool
+                and (tool['observed'] is None or type(tool['observed']) is str
+                     and re.fullmatch(r'[A-Za-z0-9.+-]{1,64}', tool['observed']))
+                and tool['versionMatched'] is (tool['observed'] == expected))
+    require(report['tools']['maven-sca'] == {'observed': 'OSV API v1; local coordinate adapter 1'})
+    require(type(report['checks']) is dict and set(report['checks']) == set(DIAGNOSTIC_CHECKS))
+    checks = {}
+    for name in DIAGNOSTIC_CHECKS:
+        item = report['checks'][name]
+        standard = {'status', 'collected', 'findings', 'skipped', 'exitCode'}
+        require(type(item) is dict and (set(item) == standard or name == 'secrets'
+                and set(item) == standard | {'candidateFindings', 'reviewedFalsePositives'}))
+        require(type(item['status']) is str and item['status'] in {'PASS', 'FAIL', 'ERROR', 'NOT_RUN'})
+        for key in ('collected', 'findings', 'skipped'):
+            count(item[key])
+        code = item['exitCode']
+        require(code is None or type(code) is int and -255 <= code <= 255)
+        require(item['status'] == verdict(item['collected'], item['findings'], item['skipped'], code)['status'])
+        if 'candidateFindings' in item:
+            count(item['candidateFindings']); count(item['reviewedFalsePositives'])
+            require(item['candidateFindings'] == item['findings'] + item['reviewedFalsePositives'])
+        checks[name] = {key: item[key] for key in ('status', 'collected', 'findings', 'skipped')}
+    passed = sum(item['status'] == 'PASS' for item in checks.values())
+    require(report['status'] == ('PASS' if passed == len(DIAGNOSTIC_CHECKS) else 'BLOCKED'))
+    if report['status'] == 'PASS':
+        require(report['candidateFiles'] > 0 and report['commit'] is not None
+                and all(report['tools'][name]['versionMatched'] for name in (*TOOLS, 'npm')))
+    return json.dumps({'schemaVersion': 'FUSE-SECURITY-DIAGNOSTIC-1', 'status': report['status'],
+        'failure': 'NONE' if report['status'] == 'PASS' else 'CHECKS_BLOCKED', 'checks': checks,
+        'planned': len(DIAGNOSTIC_CHECKS), 'passed': passed,
+        'notRun': sum(item['status'] == 'NOT_RUN' for item in checks.values())}, sort_keys=True)
+
+
+def print_diagnostic(report):
+    try:
+        payload = diagnostic_report(report)
+    except Exception:
+        print('{"schemaVersion":"FUSE-SECURITY-DIAGNOSTIC-1","status":"INVALID"}')
+        return False
+    print(payload)
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--private-reports', help='Optional existing directory outside the repository; never uploaded')
@@ -312,10 +400,11 @@ def main():
             report = execute(ROOT, Path(directory), private_reports)
         except Exception:
             report = {'schemaVersion': 1, 'status': 'BLOCKED', 'reason': 'SCAN_SETUP_ERROR', 'checks': {}}
+    if not print_diagnostic(report):
+        return 1
     target = Path(args.output)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(report, indent=2) + '\n')
-    print('security-scan: ' + report['status'] + '; only aggregate report retained')
     return 0 if report['status'] == 'PASS' else 1
 
 

@@ -380,6 +380,27 @@ def public_report(report):
     return (json.dumps(report, sort_keys=True, indent=2) + '\n').encode()
 
 
+def diagnostic_report(report):
+    """Closed log projection; the exact CHECKS length bounds every emitted count."""
+    public_report(report)
+    passed = sum(report['checks'][name] == 'PASS' for name in CHECKS)
+    return json.dumps({'schemaVersion': 'FUSE-FRESH-DIAGNOSTIC-1', 'status': report['status'],
+        'failure': report['failure'] or 'NONE',
+        'checks': {name: report['checks'][name] for name in CHECKS},
+        'planned': len(CHECKS), 'passed': passed, 'notRun': len(CHECKS) - passed,
+        'cleanup': 'PASS' if report['cleanupVerified'] else 'NOT_CONFIRMED'}, sort_keys=True)
+
+
+def print_diagnostic(report):
+    try:
+        payload = diagnostic_report(report)
+    except Exception:
+        print('{"schemaVersion":"FUSE-FRESH-DIAGNOSTIC-1","status":"INVALID"}')
+        return False
+    print(payload)
+    return True
+
+
 def main():
     if sys.argv[1:] not in (['execute'], ['cleanup']):
         print('Usage: ci-fresh-setup.py execute|cleanup', file=sys.stderr); return 1
@@ -408,10 +429,11 @@ def main():
         payload = public_report(report)
         (ROOT / 'safe-artifacts').mkdir(mode=0o700, exist_ok=True)
         files.private_create(ROOT / 'safe-artifacts/fresh-setup-summary.json', payload)
-        print('Shipped fresh setup: ' + report['status'] + '; synthetic disposable CI; aggregate only.')
+        if not print_diagnostic(report):
+            return 1
         return int(report['status'] != 'PASS')
     except Exception:
-        print('Shipped fresh setup: FAIL; no completion claimed; private diagnostics withheld.', file=sys.stderr)
+        print('{"schemaVersion":"FUSE-FRESH-DIAGNOSTIC-1","status":"INVALID"}')
         return 1
 
 
