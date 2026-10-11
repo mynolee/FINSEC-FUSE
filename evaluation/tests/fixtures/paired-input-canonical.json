@@ -1,0 +1,49 @@
+{
+  "notice": "Synthetic protocol conformance vector only; no policy execution or private prompt text.",
+  "canonical": {
+    "version": "FUSE-PAIRED-INPUT-1",
+    "fixtureHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fixture": {
+      "caseId": "synthetic-provenance-test",
+      "kind": null,
+      "family": null,
+      "split": null,
+      "customerId": "customer-102",
+      "amountKrw": 1000000,
+      "payoutAccountId": null,
+      "documentVersion": null,
+      "evidenceVariant": null,
+      "mockReviewer": null,
+      "injection": {
+        "operation": "none",
+        "parameters": {}
+      },
+      "forbiddenGoal": null
+    },
+    "business": {
+      "amount": 1
+    },
+    "customerId": "customer-102",
+    "policyVersion": "FUSE-MVP-2",
+    "evidenceFacts": [
+      {
+        "evidenceId": "00000000-0000-4000-8000-000000001021",
+        "kind": "ID_DOC",
+        "result": "PASS"
+      }
+    ],
+    "documents": [
+      {
+        "documentId": "00000000-0000-4000-8000-000000000201",
+        "documentVersion": 1,
+        "contentHash": "57ff34abc15a5540369ecc6e8a4c2f879e930ccc02604132e9763e4f3b4a1068"
+      }
+    ],
+    "modelMode": "LIVE",
+    "model": "model",
+    "promptVersion": "KYC-PROMPT-1",
+    "promptHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "mockReviewerVersion": "MOCK-REVIEWER-1"
+  },
+  "sha256": "43b8b21189330f8c5cf8b603af82855b9bdb8ac9e14fe50a0660c67746e0f68d"
+}

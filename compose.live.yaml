@@ -1,0 +1,19 @@
+# Explicit LIVE opt-in; combine with compose.private.yaml for private assets.
+# This file does NOT install or certify a firewall. Provision and independently
+# verify the restricted network described in docs/compose-security.md first.
+services:
+  agent:
+    networks: [kyc, approved_model_egress]
+    environment:
+      FUSE_KYC_MODE: live
+      FUSE_LLM_MODEL: ${FUSE_LLM_MODEL:?Set the approved LIVE model}
+      FUSE_LLM_API_KEY: ${FUSE_LLM_API_KEY:?Set the private provider credential}
+      FUSE_LLM_BASE_URL: https://api.openai.com/v1
+  backend:
+    environment:
+      FUSE_KYC_MODE: live
+      FUSE_EXPERIMENT_LIVE_ENABLED: "true"
+networks:
+  approved_model_egress:
+    external: true
+    name: ${FUSE_LIVE_EGRESS_NETWORK:?Provision and verify the restricted model-egress network first}
