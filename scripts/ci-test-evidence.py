@@ -97,6 +97,9 @@ RAG_SUPPLIED_FIXTURE = 'evaluation/tests/fixtures/rag-supplied-document-stimulus
 SCHEDULED_KYC_CLASS = 'com.finsec.fuse.integration.ScheduledKycCapacityLifecycleIT'
 SCHEDULED_KYC_SOURCE = 'backend/src/test/java/com/finsec/fuse/integration/ScheduledKycCapacityLifecycleIT.java'
 SCHEDULED_KYC_METHODS = ('scheduledPollEnforcesFourSlotsAndReusesReleasedFailureCapacity',)
+HTTP_POOL_CLASS = 'com.finsec.fuse.http.InternalKycHttpPoolLifecycleIT'
+HTTP_POOL_SOURCE = 'backend/src/test/java/com/finsec/fuse/http/InternalKycHttpPoolLifecycleIT.java'
+HTTP_POOL_METHODS = ('interruptingFourHeldRequestsRecoversSameClientCapacityAndReusesHealthyConnection',)
 
 
 class Invalid(ValueError):
@@ -470,10 +473,17 @@ def scheduled_kyc_capacity_evidence(root, inventory, source, run_id, attempt):
                                  'FUSE-SCHEDULED-KYC-CAPACITY-METHODS-1', False)
 
 
+def http_pool_lifecycle_evidence(root, inventory, source, run_id, attempt):
+    return fixed_method_evidence(root, inventory, source, run_id, attempt,
+                                 HTTP_POOL_CLASS, HTTP_POOL_SOURCE, HTTP_POOL_METHODS,
+                                 'FUSE-HTTP-TRANSPORT-CANCELLATION-METHODS-1', False)
+
+
 def execute(command, root, artifacts, head, run_id, attempt, require_public_read_rate=False,
             require_default_kyc_deadline=False, require_api_path_guard=False,
             require_rag_nonexistent_evidence=False, require_recovery_stored_success=False,
-            require_rag_supplied_document=False, require_scheduled_kyc_capacity=False):
+            require_rag_supplied_document=False, require_scheduled_kyc_capacity=False,
+            require_http_pool_lifecycle=False):
     require(type(head) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head))
     require(all(type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item) for item in (run_id, attempt)))
     root, artifacts = Path(root).absolute(), Path(artifacts).absolute()
@@ -501,7 +511,8 @@ def execute(command, root, artifacts, head, run_id, attempt, require_public_read
     recovery = recovery_stored_success_evidence(root, inventory, source, run_id, attempt) if require_recovery_stored_success else None
     rag_supplied = rag_supplied_document_evidence(root, inventory, source, run_id, attempt) if require_rag_supplied_document else None
     scheduled_kyc = scheduled_kyc_capacity_evidence(root, inventory, source, run_id, attempt) if require_scheduled_kyc_capacity else None
-    projections = [item for item in (required, rate, deadline, api_path_guard, rag, recovery, rag_supplied, scheduled_kyc) if item is not None]
+    http_pool = http_pool_lifecycle_evidence(root, inventory, source, run_id, attempt) if require_http_pool_lifecycle else None
+    projections = [item for item in (required, rate, deadline, api_path_guard, rag, recovery, rag_supplied, scheduled_kyc, http_pool) if item is not None]
     passing = [item for item in projections if item['status'] == 'PASS']
     # All independently reconciled Java projections must attest identical raw bytes.
     require(all(item['rawReportSets'] == passing[0]['rawReportSets'] for item in passing))
@@ -548,8 +559,9 @@ def main():
         parser.add_argument('--require-recovery-stored-success', action='store_true')
         parser.add_argument('--require-rag-supplied-document', action='store_true')
         parser.add_argument('--require-scheduled-kyc-capacity', action='store_true')
+        parser.add_argument('--require-http-pool-lifecycle', action='store_true')
         args = parser.parse_args()
-        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard, args.require_rag_nonexistent_evidence, args.require_recovery_stored_success, args.require_rag_supplied_document, args.require_scheduled_kyc_capacity)
+        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard, args.require_rag_nonexistent_evidence, args.require_recovery_stored_success, args.require_rag_supplied_document, args.require_scheduled_kyc_capacity, args.require_http_pool_lifecycle)
         print('EVIDENCE_COMPLETE' if complete else 'EVIDENCE_INCOMPLETE')
         return 0
     except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, subprocess.SubprocessError):
