@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { resolve } from 'node:path';
 import type { TestResult, TestStep } from '@playwright/test/reporter';
-import { summarizeBrowserTest } from '../tests/e2e/safe-reporter';
+import {
+  BROWSER_TEST_INVENTORY,
+  summarizeBrowserRun,
+  summarizeBrowserTest,
+} from '../tests/e2e/safe-reporter';
 import {
   isEnforcedFrameAncestorDenial,
   MAX_CHECKPOINTS,
@@ -88,7 +92,14 @@ describe('public browser diagnostic allowlist', () => {
     ];
     for (const phase of phases) {
       const summary = summarizeBrowserTest(
-        { title: frameTitle },
+        {
+          title: frameTitle,
+          location: {
+            file: resolve(import.meta.dirname, '../tests/e2e/browser-security.spec.ts'),
+            line: 1,
+            column: 1,
+          },
+        },
         result({
           status: 'failed',
           annotations: [{ type: PHASE_ANNOTATION, description: phase }],
@@ -119,7 +130,7 @@ describe('public browser diagnostic allowlist', () => {
       location: { file, line: 40, column: 12 },
     };
     const summary = summarizeBrowserTest(
-      { title },
+      { title, location: { file, line: 1, column: 1 } },
       result({
         status: 'failed',
         annotations: [{ type: PHASE_ANNOTATION, description: 'REPLAY_JSON_COMPARE' }],
@@ -144,7 +155,7 @@ describe('public browser diagnostic allowlist', () => {
 
   it('rejects unknown titles, arbitrary annotations, other paths and invalid lines', () => {
     const summary = summarizeBrowserTest(
-      { title: PRIVATE },
+      { title: PRIVATE, location: { file, line: 1, column: 1 } },
       result({
         status: 'failed',
         duration: Infinity,
@@ -178,7 +189,7 @@ describe('public browser diagnostic allowlist', () => {
 
   it('bounds checkpoint history and preserves the active phase on a test timeout', () => {
     const summary = summarizeBrowserTest(
-      { title },
+      { title, location: { file, line: 1, column: 1 } },
       result({
         status: 'timedOut',
         annotations: [
@@ -201,7 +212,7 @@ describe('public browser diagnostic allowlist', () => {
   it('finds a nested assertion source without printing its dynamic title or error', () => {
     const error = { message: PRIVATE };
     const summary = summarizeBrowserTest(
-      { title },
+      { title, location: { file, line: 1, column: 1 } },
       result({
         status: 'failed',
         error,
@@ -221,7 +232,7 @@ describe('public browser diagnostic allowlist', () => {
 
   it('does not report an intermediate polling failure after the test passes', () => {
     const summary = summarizeBrowserTest(
-      { title },
+      { title, location: { file, line: 1, column: 1 } },
       result({
         steps: [
           step({ category: 'expect', error: { message: PRIVATE }, location: { file, line: 20, column: 1 } }),
@@ -230,5 +241,127 @@ describe('public browser diagnostic allowlist', () => {
     );
     expect(summary.diagnostics.failureCode).toBeNull();
     expect(summary.diagnostics.failureSource).toBeNull();
+  });
+});
+
+describe('closed browser acceptance inventory', () => {
+  const summaries = () =>
+    BROWSER_TEST_INVENTORY.map((item) =>
+      summarizeBrowserTest(
+        {
+          title: item.title,
+          location: { file: resolve(import.meta.dirname, '../tests/e2e', item.file), line: 1, column: 1 },
+        },
+        result(),
+      ),
+    );
+  it('retains eleven existing cases and identifies nine native synthetic boundary cases', () => {
+    expect(BROWSER_TEST_INVENTORY).toHaveLength(20);
+    expect(BROWSER_TEST_INVENTORY.filter((item) => item.file === 'recovery-boundaries.spec.ts')).toHaveLength(
+      9,
+    );
+    expect(new Set(BROWSER_TEST_INVENTORY.map((item) => item.title)).size).toBe(20);
+    expect(summarizeBrowserRun(summaries(), 'passed', 0, true)).toMatchObject({
+      status: 'passed',
+      plannedTestCount: 20,
+      observedTestCount: 20,
+      missingTestCount: 0,
+      duplicateTestCount: 0,
+      unknownTestCount: 0,
+      passed: 20,
+      skipped: 0,
+      failed: 0,
+    });
+  });
+  it('rejects every missing or duplicate identity even when the runner says passed', () => {
+    const all = summaries();
+    for (let index = 0; index < all.length; index += 1) {
+      expect(
+        summarizeBrowserRun(
+          all.filter((_, i) => i !== index),
+          'passed',
+          0,
+          true,
+        ),
+      ).toMatchObject({ status: 'INCOMPLETE', missingTestCount: 1 });
+      expect(summarizeBrowserRun([...all, all[index]], 'passed', 0, true)).toMatchObject({
+        status: 'INCOMPLETE',
+        duplicateTestCount: 1,
+      });
+    }
+  });
+  it('rejects an unknown identity and each valid title attributed to the wrong source', () => {
+    for (const item of BROWSER_TEST_INVENTORY) {
+      const wrong = summarizeBrowserTest(
+        {
+          title: item.title,
+          location: {
+            file: resolve(
+              import.meta.dirname,
+              '../tests/e2e',
+              item.file === 'console.spec.ts' ? 'fullstack.spec.ts' : 'console.spec.ts',
+            ),
+            line: 1,
+            column: 1,
+          },
+        },
+        result(),
+      );
+      expect(wrong.title).toBe('UNRECOGNIZED_TEST');
+      expect(summarizeBrowserRun([...summaries(), wrong], 'passed', 0, true)).toMatchObject({
+        status: 'INCOMPLETE',
+        unknownTestCount: 1,
+      });
+    }
+    const unknown = summarizeBrowserTest(
+      { title: PRIVATE, location: { file, line: 1, column: 1 } },
+      result(),
+    );
+    expect(JSON.stringify(unknown)).not.toContain(PRIVATE);
+    expect(summarizeBrowserRun([...summaries(), unknown], 'passed', 0, true).status).toBe('INCOMPLETE');
+  });
+  it('never turns test, infrastructure, runner failure or skipped integration into a pass', () => {
+    for (const status of ['failed', 'timedOut', 'interrupted'] as const) {
+      const all = summaries();
+      all[0] = { ...all[0], status };
+      expect(summarizeBrowserRun(all, 'passed', 0, true).status).toBe('failed');
+    }
+    expect(summarizeBrowserRun(summaries(), 'passed', 1, true).status).toBe('failed');
+    expect(summarizeBrowserRun(summaries(), 'failed', 0, true).status).toBe('failed');
+    const skipped = summaries();
+    skipped[0] = { ...skipped[0], status: 'skipped' };
+    expect(summarizeBrowserRun(skipped, 'passed', 0, true).status).toBe('INCOMPLETE');
+    expect(summarizeBrowserRun([], 'passed', 0, true).status).toBe('NOT_RUN');
+  });
+  it('reports only fixed recovery labels and bounded source lines without HTTP bodies or attachments', () => {
+    const item = BROWSER_TEST_INVENTORY.find((entry) =>
+      entry.title.startsWith('synthetic browser UNKNOWN APPROVE'),
+    )!;
+    const location = { file: resolve(import.meta.dirname, '../tests/e2e', item.file), line: 200, column: 1 };
+    const error = { message: PRIVATE, stack: PRIVATE, snippet: PRIVATE, location };
+    const summary = summarizeBrowserTest(
+      { title: item.title, location },
+      result({
+        status: 'failed',
+        error,
+        errors: [error],
+        annotations: [
+          { type: PHASE_ANNOTATION, description: 'UNKNOWN_EXACT_RETRY' },
+          { type: PHASE_ANNOTATION, description: PRIVATE },
+        ],
+        steps: [step({ category: 'expect', error, location })],
+        stdout: [PRIVATE],
+        stderr: [PRIVATE],
+        attachments: [{ name: PRIVATE, contentType: 'application/json', body: Buffer.from(PRIVATE) }],
+      }),
+    );
+    expect(summary.diagnostics).toMatchObject({
+      phase: 'UNKNOWN_EXACT_RETRY',
+      checkpoints: ['UNKNOWN_EXACT_RETRY'],
+      failureCode: 'ASSERTION_FAILED',
+      failureSource: { file: 'recovery-boundaries.spec.ts', line: 200 },
+    });
+    expect(JSON.stringify(summary)).not.toContain(PRIVATE);
+    expect(JSON.stringify(summary)).not.toContain(resolve(import.meta.dirname));
   });
 });

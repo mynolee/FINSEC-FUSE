@@ -10,25 +10,81 @@ import type {
 } from '@playwright/test/reporter';
 import { MAX_CHECKPOINTS, PHASE_ANNOTATION, PHASES, type Phase } from './diagnostic-contract';
 
-const TEST_TITLES = [
-  'potential impact displays exact API amount and count at 1440px',
-  'potential impact displays exact API amount and count at 390px',
-  'potential impact distinguishes zero from absent API values in the browser',
-  'SC-T07 untrusted customer text never creates executable DOM or network work',
-  'SC-T07 deployed UI enforces CSP, no-store, frame and referrer headers',
-  'SC-T07 hostile loopback parent cannot frame the deployed UI',
-  'desktop entry has no fabricated live data and supports keyboard login',
-  'mobile layout does not overflow and route history stays usable',
-  'real browser approval pays exactly once while missing evidence stays blocked',
-  'real browser quarantine impact, safe release and explicit recovery preserve history',
-  'real browser replay experiment exports match persisted API rows and metrics',
+// Closed single-project inventory; changing it requires source review. No dynamic test names.
+export const BROWSER_TEST_INVENTORY = [
+  {
+    title: 'potential impact displays exact API amount and count at 1440px',
+    file: 'potential-impact.spec.ts',
+  },
+  {
+    title: 'potential impact displays exact API amount and count at 390px',
+    file: 'potential-impact.spec.ts',
+  },
+  {
+    title: 'potential impact distinguishes zero from absent API values in the browser',
+    file: 'potential-impact.spec.ts',
+  },
+  {
+    title: 'SC-T07 untrusted customer text never creates executable DOM or network work',
+    file: 'browser-security.spec.ts',
+  },
+  {
+    title: 'SC-T07 deployed UI enforces CSP, no-store, frame and referrer headers',
+    file: 'browser-security.spec.ts',
+  },
+  { title: 'SC-T07 hostile loopback parent cannot frame the deployed UI', file: 'browser-security.spec.ts' },
+  { title: 'desktop entry has no fabricated live data and supports keyboard login', file: 'console.spec.ts' },
+  { title: 'mobile layout does not overflow and route history stays usable', file: 'console.spec.ts' },
+  {
+    title: 'real browser approval pays exactly once while missing evidence stays blocked',
+    file: 'fullstack.spec.ts',
+  },
+  {
+    title: 'real browser quarantine impact, safe release and explicit recovery preserve history',
+    file: 'fullstack.spec.ts',
+  },
+  {
+    title: 'real browser replay experiment exports match persisted API rows and metrics',
+    file: 'fullstack.spec.ts',
+  },
+  {
+    title: 'synthetic browser export HTTP 401 retires delayed RUNNING poll',
+    file: 'recovery-boundaries.spec.ts',
+  },
+  {
+    title: 'synthetic browser export HTTP 401 retires delayed COMPLETED poll',
+    file: 'recovery-boundaries.spec.ts',
+  },
+  {
+    title: 'synthetic browser export HTTP 403 retires delayed RUNNING poll',
+    file: 'recovery-boundaries.spec.ts',
+  },
+  {
+    title: 'synthetic browser export HTTP 403 retires delayed COMPLETED poll',
+    file: 'recovery-boundaries.spec.ts',
+  },
+  {
+    title: 'synthetic browser export HTTP 404 retires delayed RUNNING poll',
+    file: 'recovery-boundaries.spec.ts',
+  },
+  {
+    title: 'synthetic browser export HTTP 404 retires delayed COMPLETED poll',
+    file: 'recovery-boundaries.spec.ts',
+  },
+  {
+    title: 'synthetic browser UNKNOWN APPROVE preserves intent through dismissal and navigation',
+    file: 'recovery-boundaries.spec.ts',
+  },
+  {
+    title: 'synthetic browser UNKNOWN REJECT preserves intent through dismissal and navigation',
+    file: 'recovery-boundaries.spec.ts',
+  },
+  {
+    title: 'synthetic browser logout prevents old UNKNOWN command in replacement session',
+    file: 'recovery-boundaries.spec.ts',
+  },
 ] as const;
-const TEST_FILES = [
-  'browser-security.spec.ts',
-  'console.spec.ts',
-  'fullstack.spec.ts',
-  'potential-impact.spec.ts',
-] as const;
+const TEST_FILES = [...new Set(BROWSER_TEST_INVENTORY.map((item) => item.file))];
 const STATUSES = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'] as const;
 const RUN_STATUSES = ['passed', 'failed', 'timedout', 'interrupted'] as const;
 const MAX_SOURCE_LINE = 10000;
@@ -59,8 +115,11 @@ function diagnosticSteps(steps: TestStep[]) {
 }
 
 /** Do not serialize Playwright objects: their titles, params, errors and attachments may contain secrets. */
-export function summarizeBrowserTest(test: Pick<TestCase, 'title'>, result: TestResult) {
-  const title = TEST_TITLES.find((item) => item === test.title) ?? 'UNRECOGNIZED_TEST';
+export function summarizeBrowserTest(test: Pick<TestCase, 'title' | 'location'>, result: TestResult) {
+  const source = safeSource(test.location);
+  const title =
+    BROWSER_TEST_INVENTORY.find((item) => item.title === test.title && item.file === source?.file)?.title ??
+    'UNRECOGNIZED_TEST';
   const status = STATUSES.find((item) => item === result.status) ?? 'failed';
   const checkpoints = result.annotations
     .filter((item) => item.type === PHASE_ANNOTATION && PHASES.includes(item.description as Phase))
@@ -114,6 +173,46 @@ export function summarizeBrowserTest(test: Pick<TestCase, 'title'>, result: Test
   };
 }
 
+/** One result per fixed title: retries and additional projects require a reviewed contract change. */
+export function summarizeBrowserRun(
+  tests: ReturnType<typeof summarizeBrowserTest>[],
+  observedRunnerStatus: string,
+  infrastructureErrors: number,
+  integration: boolean,
+) {
+  const runnerStatus = RUN_STATUSES.find((item) => item === observedRunnerStatus) ?? 'failed';
+  const counts = BROWSER_TEST_INVENTORY.map(
+    (expected) => tests.filter((item) => item.title === expected.title).length,
+  );
+  const missingTestCount = counts.filter((count) => count === 0).length;
+  const duplicateTestCount = counts.reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+  const unknownTestCount = tests.filter((item) => item.title === 'UNRECOGNIZED_TEST').length;
+  const passed = tests.filter((item) => item.status === 'passed').length;
+  const skipped = tests.filter((item) => item.status === 'skipped').length;
+  const failed = tests.length - passed - skipped;
+  const incomplete =
+    missingTestCount > 0 || duplicateTestCount > 0 || unknownTestCount > 0 || (integration && skipped > 0);
+  return {
+    status:
+      tests.length === 0
+        ? 'NOT_RUN'
+        : incomplete
+          ? 'INCOMPLETE'
+          : failed > 0 || infrastructureErrors > 0
+            ? 'failed'
+            : runnerStatus,
+    runnerStatus,
+    plannedTestCount: BROWSER_TEST_INVENTORY.length,
+    observedTestCount: tests.length,
+    missingTestCount,
+    duplicateTestCount,
+    unknownTestCount,
+    passed,
+    skipped,
+    failed,
+  };
+}
+
 /** Public CI receives only fixed labels, bounded numbers and allowlisted test-source locations. */
 export default class SafeReporter implements Reporter {
   private tests: ReturnType<typeof summarizeBrowserTest>[] = [];
@@ -133,20 +232,17 @@ export default class SafeReporter implements Reporter {
     process.stderr.write('Browser infrastructure error; raw diagnostic text withheld.\n');
   }
   async onEnd(result: FullResult) {
-    const incomplete =
-      this.tests.length === 0 ||
-      this.tests.some((item) => item.title === 'UNRECOGNIZED_TEST') ||
-      (process.env.FUSE_E2E_INTEGRATION === '1' && this.tests.some((item) => item.status === 'skipped'));
-    const runnerStatus = RUN_STATUSES.find((item) => item === result.status) ?? 'failed';
+    const aggregate = summarizeBrowserRun(
+      this.tests,
+      result.status,
+      this.errors,
+      process.env.FUSE_E2E_INTEGRATION === '1',
+    );
     const summary = {
       schemaVersion: 'FUSE-BROWSER-SUMMARY-2',
-      status: this.tests.length === 0 ? 'NOT_RUN' : incomplete ? 'INCOMPLETE' : runnerStatus,
-      runnerStatus,
+      ...aggregate,
       durationMs: safeDuration(result.duration),
       infrastructureErrors: this.errors,
-      passed: this.tests.filter((item) => item.status === 'passed').length,
-      skipped: this.tests.filter((item) => item.status === 'skipped').length,
-      failed: this.tests.filter((item) => !['passed', 'skipped'].includes(item.status)).length,
       tests: this.tests,
       privacy:
         'Fixed phases/codes and test-source lines only; no error text, inputs, HTTP data or recordings.',
@@ -157,6 +253,6 @@ export default class SafeReporter implements Reporter {
     process.stdout.write(
       `Browser result: ${summary.status}; passed=${summary.passed}, failed=${summary.failed}, skipped=${summary.skipped}\n`,
     );
-    if (incomplete) return { status: 'failed' as const };
+    if (summary.status !== 'passed') return { status: 'failed' as const };
   }
 }
