@@ -96,6 +96,7 @@ def integrationTest = tasks.register('integrationTest', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     include integrationPatterns
+    inputs.file('evaluation/tests/fixtures/rag-nonexistent-evidence-v1.json')
     outputs.file('evaluation/exported_runs/java-replay-full/raw-java-report.json')
     shouldRunAfter tasks.named('test')
 }
