@@ -171,6 +171,17 @@ HTTP_POOL_SOURCE = 'backend/src/test/java/com/finsec/fuse/http/InternalKycHttpPo
 HTTP_POOL_METHODS = ('interruptingFourHeldRequestsRecoversSameClientCapacityAndReusesHealthyConnection',)
 
 
+RECOVERY_SOURCE_SCOPE_CLASS = 'com.finsec.fuse.quarantine.SecurityScopeIT'
+RECOVERY_SOURCE_SCOPE_SOURCE = 'backend/src/test/java/com/finsec/fuse/quarantine/SecurityScopeIT.java'
+RECOVERY_SOURCE_SCOPE_METHODS = tuple(sorted((
+    'securityRoleCannotApplyReadOrReleaseAnotherCustomersQuarantine',
+    'sourceAndAgentVersionScopesRequireEveryRegisteredPotentialCustomer',
+    'previouslyAuthorizedReplayCannotDiscloseARestrictedIncidentAfterScopeChanges',
+    'releasedRecoverySourceRequiresReplacementCustomerScopeBeforeResume',
+    'resumedRecoverySourceRequiresReplacementCustomerScopeBeforePrepare',
+    'fullScopeRecoverySourceQuarantineDoesNotInventActualConsumption',
+)))
+
 class Invalid(ValueError):
     pass
 
@@ -558,6 +569,12 @@ def http_pool_lifecycle_evidence(root, inventory, source, run_id, attempt):
                                  'FUSE-HTTP-TRANSPORT-CANCELLATION-METHODS-1', False)
 
 
+def recovery_source_scope_evidence(root, inventory, source, run_id, attempt):
+    return fixed_method_evidence(root, inventory, source, run_id, attempt,
+                                 RECOVERY_SOURCE_SCOPE_CLASS, RECOVERY_SOURCE_SCOPE_SOURCE, RECOVERY_SOURCE_SCOPE_METHODS,
+                                 'FUSE-RECOVERY-SOURCE-SCOPE-METHODS-1', False)
+
+
 def migration_method_evidence(root, inventory, source, run_id, attempt):
     return [dict(fixed_method_evidence(
         root, inventory, source, run_id, attempt,
@@ -571,7 +588,8 @@ def execute(command, root, artifacts, head, run_id, attempt, require_public_read
             require_default_kyc_deadline=False, require_api_path_guard=False,
             require_rag_nonexistent_evidence=False, require_recovery_stored_success=False,
             require_rag_supplied_document=False, require_scheduled_kyc_capacity=False,
-            require_http_pool_lifecycle=False, require_migration_methods=False):
+            require_http_pool_lifecycle=False, require_migration_methods=False,
+            require_recovery_source_scope=False):
     require(type(head) is str and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', head))
     require(all(type(item) is str and re.fullmatch(r'[1-9][0-9]{0,19}', item) for item in (run_id, attempt)))
     root, artifacts = Path(root).absolute(), Path(artifacts).absolute()
@@ -603,6 +621,8 @@ def execute(command, root, artifacts, head, run_id, attempt, require_public_read
     projections = [item for item in (required, rate, deadline, api_path_guard, rag, recovery, rag_supplied, scheduled_kyc, http_pool) if item is not None]
     if require_migration_methods:
         projections.extend(migration_method_evidence(root, inventory, source, run_id, attempt))
+    if require_recovery_source_scope:
+        projections.append(recovery_source_scope_evidence(root, inventory, source, run_id, attempt))
     passing = [item for item in projections if item['status'] == 'PASS']
     # All independently reconciled Java projections must attest identical raw bytes.
     require(all(item['rawReportSets'] == passing[0]['rawReportSets'] for item in passing))
@@ -651,8 +671,9 @@ def main():
         parser.add_argument('--require-scheduled-kyc-capacity', action='store_true')
         parser.add_argument('--require-http-pool-lifecycle', action='store_true')
         parser.add_argument('--require-migration-methods', action='store_true')
+        parser.add_argument('--require-recovery-source-scope', action='store_true')
         args = parser.parse_args()
-        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard, args.require_rag_nonexistent_evidence, args.require_recovery_stored_success, args.require_rag_supplied_document, args.require_scheduled_kyc_capacity, args.require_http_pool_lifecycle, args.require_migration_methods)
+        complete = execute(args.command, args.repository, args.artifacts, args.head, args.run_id, args.run_attempt, args.require_public_read_rate, args.require_default_kyc_deadline, args.require_api_path_guard, args.require_rag_nonexistent_evidence, args.require_recovery_stored_success, args.require_rag_supplied_document, args.require_scheduled_kyc_capacity, args.require_http_pool_lifecycle, args.require_migration_methods, args.require_recovery_source_scope)
         print('EVIDENCE_COMPLETE' if complete else 'EVIDENCE_INCOMPLETE')
         return 0
     except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, subprocess.SubprocessError):
