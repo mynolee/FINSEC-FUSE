@@ -38,11 +38,12 @@ class VirtualTypedWorkflowReadProjectionTest {
         return f;
     }
     static void typedSummary(Map<String,Object> dto,VirtualGrantContinuationFixture f){
-        assertEquals(Set.of("workflowId","generation","state","businessReference","customerId","amountKrw","payoutAccountId","usedRisk","reservedRisk","riskLimit","kycRuns","currentKycResultId","currentLoanResultId","reasonCodes","lastDecision","policyVersion","activeJob","activeQuarantines","canApprove","canResume","executionMode"),dto.keySet());
+        assertEquals(Set.of("workflowId","generation","state","businessReference","customerId","amountKrw","payoutAccountId","usedRisk","reservedRisk","riskLimit","kycRuns","currentKycResultId","currentLoanResultId","reasonCodes","lastDecision","policyVersion","activeJob","activeQuarantines","canApprove","canResume","resumeCapability","executionMode"),dto.keySet());
         assertEquals(f.terms.baseLimit(),dto.get("riskLimit"));
         assertEquals(f.oldRootCommand.identity().workflowId().toString(),dto.get("workflowId"));assertEquals(1,dto.get("generation"));
         assertEquals(f.newApplication.customerId(),dto.get("customerId"));assertEquals(VirtualGrantContinuationFixture.id(90001).toString(),dto.get("currentKycResultId"));
         assertEquals(Boolean.FALSE,dto.get("canApprove"),"Opaque typed result is not selected evidence for approval");
+        assertEquals("TYPED_READINESS_ONLY",dto.get("resumeCapability"));
         assertInstanceOf(Boolean.class,dto.get("canResume"));assertEquals(f.terms.kycPoints(),dto.get("usedRisk"));
         assertEquals(1,dto.get("kycRuns"));assertNull(dto.get("activeJob"));
         assertEquals(com.finsec.fuse.reimplementation.persistence.VirtualTransactionalStore.MODE,dto.get("executionMode"));

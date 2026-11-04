@@ -116,7 +116,7 @@ public final class TypedWorkflowReadProjection {
             out.put("riskLimit",limit);if("PAID".equals(w.get("state")))out.put("historicalApprovedRiskLimit",historical);
             out.put("activeJob",job);out.put("activeQuarantines",active);
             // No selected-evidence projection is available from opaque stored agent frames.
-            out.put("canApprove",false);out.put("canResume",canResume);out.put("executionMode",VirtualTransactionalStore.MODE);
+            out.put("canApprove",false);out.put("canResume",canResume);out.put("resumeCapability","TYPED_READINESS_ONLY");out.put("executionMode",VirtualTransactionalStore.MODE);
             return CanonicalJson.immutableObject(out);
         }catch(RuntimeException unconfirmed){throw bad();}
     }

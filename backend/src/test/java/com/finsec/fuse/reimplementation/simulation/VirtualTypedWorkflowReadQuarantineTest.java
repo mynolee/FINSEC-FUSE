@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 final class VirtualTypedWorkflowReadQuarantineTest {
     private static final Set<String> RESPONSE_FIELDS=Set.of("workflowId","generation","state","businessReference","customerId",
             "amountKrw","payoutAccountId","usedRisk","reservedRisk","riskLimit","kycRuns","currentKycResultId","currentLoanResultId",
-            "reasonCodes","lastDecision","policyVersion","activeJob","activeQuarantines","canApprove","canResume","executionMode");
+            "reasonCodes","lastDecision","policyVersion","activeJob","activeQuarantines","canApprove","canResume","resumeCapability","executionMode");
     static final class ObservedStore implements TransactionalStore {
         final VirtualTransactionalStore delegate=new VirtualTransactionalStore();
         int puts;
@@ -46,6 +46,7 @@ final class VirtualTypedWorkflowReadQuarantineTest {
         assertEquals(RESPONSE_FIELDS,detail.keySet());
         assertEquals(id(1).toString(),detail.get("workflowId"));assertNull(detail.get("activeJob"));
         assertEquals(Boolean.FALSE,detail.get("canApprove"));assertInstanceOf(Boolean.class,detail.get("canResume"));
+        assertEquals("TYPED_READINESS_ONLY",detail.get("resumeCapability"));
         assertInstanceOf(List.class,detail.get("activeQuarantines"));
         for(String key:List.of("body","result","currentKycResult","currentLoanResult","canonicalBytes","receiptDigest",
                 "typedStageAgents","claimsBytes","actionBytes","unsignedRootMaterial","inputSnapshotHash"))

@@ -681,6 +681,7 @@ public final class VirtualWorkflowService implements WorkflowHttpController.Comm
         result.put("canResume", List.of("BLOCKED", "ON_HOLD").contains(workflow.get("state"))
                 && resumeScopeClear(tx, workflow) && source(workflow).reviewedSafe() && workflow.get("activeJobId") == null
                 && integer(workflow, "kycRuns") < terms.maxAutomaticKycRuns());
+        result.put("resumeCapability", "LEGACY_HTTP");
         result.put("executionMode", VirtualTransactionalStore.MODE);
         return CanonicalJson.immutableObject(result);
     }
