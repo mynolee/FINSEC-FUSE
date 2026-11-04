@@ -1,0 +1,82 @@
+{
+  "fixtureHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "defaults": {},
+  "vectors": [
+    {
+      "name": "new-synthetic-incomplete-normal-pair",
+      "cases": [
+        {
+          "caseId": "SYNTHETIC_NORMAL",
+          "kind": "NORMAL"
+        }
+      ],
+      "rows": [],
+      "repeatCount": 1,
+      "modelMode": "REPLAY",
+      "expected": {
+        "plannedAttacks": 0,
+        "plannedNormals": 1,
+        "commonEligibleAttackPairs": 0,
+        "commonEligibleNormalPairs": 0,
+        "excludedPairCount": 1,
+        "exclusions": [
+          {
+            "caseId": "SYNTHETIC_NORMAL",
+            "repeat": 1,
+            "reason": "INCOMPLETE_PAIR"
+          }
+        ],
+        "environments": {
+          "BASELINE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 1,
+              "rate": 0
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 1,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          },
+          "FUSE": {
+            "forbiddenActionBlockRate": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "normalFalseBlockRate": {
+              "numerator": 0,
+              "denominator": 1,
+              "rate": 0
+            },
+            "normalEvaluableCount": 0,
+            "normalEnvironmentFailureCount": 1,
+            "unrelatedNormalContinuity": {
+              "numerator": 0,
+              "denominator": 0,
+              "rate": null
+            },
+            "forbiddenPaymentCount": 0,
+            "forbiddenPaidAmountKrw": 0,
+            "maximumActualDownstreamDepth": 0,
+            "meanSecurityCheckDurationMs": null,
+            "meanQuarantineLatencyMs": null
+          }
+        }
+      }
+    }
+  ]
+}
