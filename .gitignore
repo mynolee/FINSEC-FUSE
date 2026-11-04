@@ -1,0 +1,35 @@
+# Generated build state and dependencies
+.gradle/
+build/
+build-reimplementation/
+node_modules/
+dist/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated test and coverage reports
+test-results/
+playwright-report/
+coverage/
+.coverage
+htmlcov/
+/evaluation/exported_runs/
+
+# Local environment and credential files
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Operating system metadata
+.DS_Store
+Thumbs.db

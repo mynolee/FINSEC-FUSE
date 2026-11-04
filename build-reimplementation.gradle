@@ -1,0 +1,80 @@
+// Contract-library build; application packaging is configured separately in build.gradle.
+plugins {
+    id 'java'
+}
+
+group = 'com.finsec'
+version = '0.1.0-reimplementation'
+
+if (!gradle.startParameter.offline) {
+    throw new GradleException('This build requires --offline; execution also needs separately verified isolation.')
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    implementation platform('tools.jackson:jackson-bom:3.1.7')
+    constraints {
+        ['tomcat-embed-core', 'tomcat-embed-el', 'tomcat-embed-websocket'].each { module ->
+            implementation("org.apache.tomcat.embed:${module}:11.0.27")
+        }
+    }
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+layout.buildDirectory = layout.projectDirectory.dir('backend/build-reimplementation')
+
+sourceSets {
+    main {
+        java.srcDirs = ['backend/src/main/java']
+        resources.srcDirs = ['backend/src/main/resources']
+        // Only the reviewed recovered SQL is available in this candidate.
+        resources.include 'db/migration/*.sql'
+    }
+    test {
+        java.srcDirs = ['backend/src/test/java']
+        resources.srcDirs = ['backend/src/test/resources']
+    }
+}
+
+tasks.named('processResources') {
+    from('evaluation/fixtures') {
+        // This candidate has one newly authored public synthetic fixture.
+        include 'synthetic-public-v1.json'
+        into 'evaluation'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+    options.compilerArgs.add('-parameters')
+}
+
+tasks.named('test') {
+    description = 'New synthetic public contract-library tests; no Java/DB integration claim.'
+    inputs.file('evaluation/tests/fixtures/metrics-parity.json')
+    inputs.file('evaluation/tests/fixtures/paired-input-canonical.json')
+    inputs.file('evaluation/fixtures/synthetic-contract-boundaries-v2.json')
+    useJUnitPlatform()
+    workingDir = file('backend')
+    maxParallelForks = 1
+    reports {
+        junitXml.required = true
+        html.required = true
+    }
+    filter {
+        includeTestsMatching 'com.finsec.fuse.reimplementation.*Test'
+        failOnNoMatchingTests = true
+    }
+}
