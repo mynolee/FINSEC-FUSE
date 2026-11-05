@@ -56,7 +56,7 @@ describe('bounded inert JSON response boundary', () => {
   it('never copies or retains empty chunks while preserving subsequent valid bytes', async () => {
     let emptyCopies = 0;
     class EmptyChunk extends Uint8Array {
-      override slice(start?: number, end?: number): Uint8Array {
+      override slice(_start?: number, _end?: number): Uint8Array {
         emptyCopies += 1;
         throw new Error('EMPTY_CHUNK_COPIED');
       }
