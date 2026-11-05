@@ -13,7 +13,7 @@ def limits(**overrides):
 
 
 @pytest.mark.parametrize("value", [True, False, 0, -1, float("nan"), float("inf"),
-                                  -float("inf"), 10 ** 1000])
+                                  -float("inf"), pytest.param(10 ** 1000, id="huge-positive-integer")])
 def test_invalid_timeout_has_fixed_validation_error_without_cause(value):
     with pytest.raises(ValueError) as failure:
         limits(model_timeout_seconds=value)
