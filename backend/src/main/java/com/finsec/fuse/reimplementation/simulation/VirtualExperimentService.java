@@ -13,6 +13,10 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
+import com.finsec.fuse.reimplementation.simulation.VirtualExperimentMetricsProjection.ExpectedCase;
+import com.finsec.fuse.reimplementation.simulation.VirtualExperimentMetricsProjection.MeasuredArm;
+import com.finsec.fuse.reimplementation.simulation.VirtualExperimentMetricsProjection.ConfigBinding;
+import com.finsec.fuse.reimplementation.simulation.VirtualExperimentMetricsProjection.ArmBinding;
 import static com.finsec.fuse.reimplementation.simulation.SimulationRows.*;
 import static com.finsec.fuse.reimplementation.simulation.SimulationSpec.object;
 
@@ -68,11 +72,39 @@ public final class VirtualExperimentService {
         String mode();
         Observation evaluate(Environment environment, String caseId, int repeat, Map<String, Object> sharedProposal);
     }
+    /** Explicit opt-in precommitted measurements; no old Outcome is converted into an expected result. */
+    public record MeasuredFixture(String fixtureSetId, List<ExpectedCase> cases, ConfigBinding configuration,
+            Map<String, String> expectedPairedInputHashes, int maximumPairs) {
+        public MeasuredFixture {
+            SimulationSpec.synthetic(fixtureSetId); Objects.requireNonNull(configuration);
+            cases = List.copyOf(cases); expectedPairedInputHashes = Map.copyOf(expectedPairedInputHashes);
+            var ids = new java.util.LinkedHashSet<String>();
+            for (var c : cases) if (!ids.add(c.caseId())) throw SimulationFailure.invalid();
+            if (maximumPairs < 1 || !ids.equals(expectedPairedInputHashes.keySet())
+                    || expectedPairedInputHashes.values().stream().anyMatch(h -> !SimulationSpec.hash(h))) throw SimulationFailure.invalid();
+        }
+        @Override public String toString() { return "MeasuredFixture[REDACTED]"; }
+    }
+    /** A null arm explicitly means unavailable measurement, never a zero or guessed expectation. */
+    public record MeasuredObservation(Observation observation, MeasuredArm arm, String sharedProposalHash) {
+        public MeasuredObservation {
+            Objects.requireNonNull(observation); if (!SimulationSpec.hash(sharedProposalHash)) throw SimulationFailure.invalid();
+        }
+        @Override public String toString() { return "MeasuredObservation[REDACTED]"; }
+    }
+    public interface MeasuredPairEvaluator extends PairEvaluator {
+        List<MeasuredFixture> measuredFixtures();
+        MeasuredObservation evaluateMeasured(Environment environment, String caseId, int repeat,
+                Map<String, Object> immutableProposal, String sharedProposalHash);
+    }
+    private record MeasurementContext(Map<String, Object> plan) { }
+    private record EvaluatedArm(Observation observation, Map<String, Object> measurement) { }
     private final TransactionalStore store;
     private final ActionJournal journal;
     private final SimulationAccess access;
     private final Map<String, FixtureSet> fixtures;
     private final PairEvaluator evaluator;
+    private final Map<String, MeasuredFixture> measuredProfiles;
     private final Supplier<UUID> ids;
     private final VirtualDeliveryCoordinator.Notifications delivery;
 
@@ -89,6 +121,17 @@ public final class VirtualExperimentService {
         var registered = new LinkedHashMap<String, FixtureSet>();
         for (var set : List.copyOf(fixtures)) if (registered.putIfAbsent(set.fixtureSetId(), set) != null) throw SimulationFailure.invalid();
         this.fixtures = Map.copyOf(registered);
+        var profiles = new LinkedHashMap<String, MeasuredFixture>();
+        if (evaluator instanceof MeasuredPairEvaluator measured) {
+            for (var profile : List.copyOf(measured.measuredFixtures())) {
+                var fixture = registered.get(profile.fixtureSetId());
+                if (fixture == null || profiles.putIfAbsent(profile.fixtureSetId(), profile) != null
+                        || !new java.util.HashSet<>(fixture.cases().stream().map(Case::caseId).toList())
+                            .equals(new java.util.HashSet<>(profile.cases().stream().map(ExpectedCase::caseId).toList())))
+                    throw SimulationFailure.invalid();
+            }
+        }
+        measuredProfiles = Map.copyOf(profiles);
     }
 
     public Map<String, Object> create(ActorRef actor, UUID action, Plan plan) {
@@ -96,7 +139,8 @@ public final class VirtualExperimentService {
         if (!"REPLAY".equals(plan.modelMode())) throw SimulationFailure.unavailable(); // No live fallback.
         FixtureSet set = fixtures.get(plan.fixtureSetId());
         if (set == null || !set.cases().stream().map(Case::caseId).toList().containsAll(plan.caseIds())) throw SimulationFailure.invalid();
-        return notifyCreated(actor, journal.execute(actor.actorId(), action, "SIM_EXPERIMENT", CanonicalJson.sha256(plan.body()), tx -> {
+        var measurement = measurementPlan(plan);
+        return notifyCreated(actor, journal.execute(actor.actorId(), action, "SIM_EXPERIMENT", CanonicalJson.sha256(creationPayload(plan.body(), measurement)), tx -> {
             UUID id = fresh(tx, TABLE, ids);
             tx.put(TABLE, id.toString(), object("experimentId", id.toString(), "actorId", actor.actorId(), "status", "PENDING",
                     "fixtureSetId", plan.fixtureSetId(), "caseIds", plan.caseIds(), "repeatCount", plan.repeatCount(),
@@ -104,6 +148,11 @@ public final class VirtualExperimentService {
                     "fence", 0L, "activeClaim", null,
                     "caseOutputs", List.of(), "exclusions", List.of(), "modelMode", "REPLAY",
                     "syntheticModelOutputs", true, "liveRobustnessMeasured", false, "resultsSource", "VIRTUAL_SIMULATION"));
+            if (measurement != null) {
+                var row = require(tx, TABLE, id);
+                tx.put(TABLE, id.toString(), changed(row, "measurementPlan", measurement,
+                        "measurementCreateRequestId", action.toString(), "measuredArms", List.of()));
+            }
             return object("requestId", action.toString(), "workflowId", null, "generation", null, "state", "PENDING",
                     "decision", "ALLOW", "reasonCodes", List.of(), "message", "VIRTUAL_EXPERIMENT_ACCEPTED", "replayed", false,
                     "experimentId", id.toString(), "status", "PENDING", "totalRuns", Math.multiplyExact(2, Math.multiplyExact(plan.caseIds().size(), plan.repeatCount())));
@@ -117,6 +166,199 @@ public final class VirtualExperimentService {
         }
         return receipt;
     }
+
+    private Map<String, Object> measurementPlan(Plan request) {
+        var profile = measuredProfiles.get(request.fixtureSetId());
+        if (profile == null) return null;
+        if (request.caseIds().size() > profile.maximumPairs() / request.repeatCount()) throw SimulationFailure.invalid();
+        var kinds = new LinkedHashMap<String, ExpectedCase>();
+        for (var c : profile.cases()) kinds.put(c.caseId(), c);
+        var selected = new ArrayList<Map<String, Object>>();
+        var expected = new LinkedHashMap<String, Object>(); var shared = new LinkedHashMap<String, Object>();
+        for (String id : request.caseIds()) {
+            var c = kinds.get(id); if (c == null) throw SimulationFailure.invalid();
+            selected.add(object("caseId", id, "kind", c.kind().name()));
+            expected.put(id, profile.expectedPairedInputHashes().get(id));
+            var actual = fixtures.get(request.fixtureSetId()).cases().stream().filter(value -> id.equals(value.caseId())).findFirst().orElseThrow();
+            shared.put(id, CanonicalJson.sha256(actual.proposal()));
+        }
+        return object("version", 1, "fixtureSetId", request.fixtureSetId(), "cases", selected,
+                "configuration", configMap(profile.configuration()), "expectedPairedInputHashes", expected,
+                "sharedProposalHashes", shared, "maximumPairs", profile.maximumPairs());
+    }
+    private static Map<String, Object> creationPayload(Map<String, Object> original, Map<String, Object> measurement) {
+        return measurement == null ? original : changed(original, "measurementPlan", measurement);
+    }
+    private static Map<String, Object> configMap(ConfigBinding c) {
+        return object("fixtureHash", c.fixtureHash(), "mockReviewerVersion", c.mockReviewerVersion(),
+                "promptVersion", c.promptVersion(), "model", c.model(), "policyVersion", c.policyVersion());
+    }
+    private static ConfigBinding config(Object value) {
+        var c = metricMap(value);
+        if (!c.keySet().equals(Set.of("fixtureHash", "mockReviewerVersion", "promptVersion", "model", "policyVersion"))) throw SimulationFailure.unavailable();
+        return new ConfigBinding(metricText(c,"fixtureHash"),metricText(c,"mockReviewerVersion"),metricText(c,"promptVersion"),metricText(c,"model"),metricText(c,"policyVersion"));
+    }
+    private static Plan storedPlan(Map<String, Object> row) {
+        return new Plan(metricText(row,"fixtureSetId"), strings(row.get("caseIds")), "PAIRED", metricText(row,"modelMode"), metricInt(row.get("repeatCount")));
+    }
+    private static List<ExpectedCase> expectedCases(Map<String, Object> plan) {
+        var out = new ArrayList<ExpectedCase>();
+        for (var c : rows(plan.get("cases"))) {
+            if (!c.keySet().equals(Set.of("caseId","kind"))) throw SimulationFailure.unavailable();
+            out.add(new ExpectedCase(metricText(c,"caseId"),VirtualExperimentMetricsProjection.Kind.valueOf(metricText(c,"kind"))));
+        }
+        return List.copyOf(out);
+    }
+    private static Map<String, Object> verifiedMeasurementPlan(TransactionalStore.Tx tx, Map<String, Object> row) {
+        var plan = metricMap(row.get("measurementPlan"));
+        if (!plan.keySet().equals(Set.of("version","fixtureSetId","cases","configuration","expectedPairedInputHashes","sharedProposalHashes","maximumPairs"))
+                || !Integer.valueOf(1).equals(plan.get("version")) || !row.get("fixtureSetId").equals(plan.get("fixtureSetId"))) throw SimulationFailure.unavailable();
+        var expected = expectedCases(plan); var ids = expected.stream().map(ExpectedCase::caseId).toList();
+        if (!ids.equals(strings(row.get("caseIds"))) || new java.util.HashSet<>(ids).size() != ids.size()) throw SimulationFailure.unavailable();
+        config(plan.get("configuration"));
+        for (String key : List.of("expectedPairedInputHashes","sharedProposalHashes")) {
+            var hashes = metricMap(plan.get(key));
+            if (!hashes.keySet().equals(new java.util.HashSet<>(ids))
+                    || hashes.values().stream().anyMatch(h -> !(h instanceof String text) || !SimulationSpec.hash(text))) throw SimulationFailure.unavailable();
+        }
+        int cap = metricInt(plan.get("maximumPairs")), repeats = metricInt(row.get("repeatCount"));
+        if (cap < 1 || repeats < 1 || repeats > 10 || expected.size() > cap / repeats) throw SimulationFailure.unavailable();
+        UUID request = canonicalUuid(row.get("measurementCreateRequestId"));
+        var identity = new ActionJournal.ActionIdentity(metricText(row,"actorId"),request,"SIM_EXPERIMENT",
+                CanonicalJson.sha256(creationPayload(storedPlan(row).body(),plan)));
+        var global = tx.get(ActionJournal.TABLE,request.toString());
+        if (global == null || !global.keySet().equals(Set.of("actorId","requestId","operation","canonicalBodyHash","persistenceMode","durable","reply"))
+                || !identity.actorId().equals(global.get("actorId")) || !request.toString().equals(global.get("requestId"))
+                || !identity.operation().equals(global.get("operation")) || !identity.canonicalBodyHash().equals(global.get("canonicalBodyHash"))
+                || !VirtualTransactionalStore.MODE.equals(global.get("persistenceMode")) || !Boolean.FALSE.equals(global.get("durable"))) throw SimulationFailure.unavailable();
+        var reply = metricMap(global.get("reply"));
+        if (!request.toString().equals(reply.get("requestId")) || !row.get("experimentId").equals(reply.get("experimentId"))
+                || !"PENDING".equals(reply.get("status")) || !"ALLOW".equals(reply.get("decision"))
+                || !Integer.valueOf(Math.multiplyExact(2, Math.multiplyExact(ids.size(),repeats))).equals(reply.get("totalRuns"))) throw SimulationFailure.unavailable();
+        return CanonicalJson.immutableObject(plan);
+    }
+    private MeasurementContext measurementContext(ActorRef actor, Attempt attempt) {
+        return store.transaction(tx -> {
+            access.require(actor,SimulationAccess.Operation.EXPERIMENT,null,null);
+            var row = require(tx,TABLE,attempt.experimentId()); requireOwner(actor,row);
+            if (!row.containsKey("measurementPlan")) return null;
+            var plan = verifiedMeasurementPlan(tx,row);
+            if (!(evaluator instanceof MeasuredPairEvaluator) || !plan.equals(measurementPlan(storedPlan(row)))) throw SimulationFailure.unavailable();
+            if (!attempt.proposalHash().equals(metricMap(plan.get("sharedProposalHashes")).get(attempt.caseId()))) throw SimulationFailure.unavailable();
+            return new MeasurementContext(plan);
+        });
+    }
+    private EvaluatedArm evaluateArm(Attempt attempt, Environment environment, MeasurementContext context) {
+        if (!VirtualTransactionalStore.MODE.equals(evaluator.mode())) throw SimulationFailure.unavailable();
+        Observation observation; Map<String,Object> stored = null;
+        if (context == null) observation = Objects.requireNonNull(evaluator.evaluate(environment,attempt.caseId(),attempt.repeat(),attempt.proposal()));
+        else {
+            var measured = Objects.requireNonNull(((MeasuredPairEvaluator)evaluator).evaluateMeasured(environment,attempt.caseId(),attempt.repeat(),attempt.proposal(),attempt.proposalHash()));
+            if (!attempt.proposalHash().equals(measured.sharedProposalHash())) throw SimulationFailure.invalid();
+            observation = measured.observation(); var arm = measured.arm();
+            if (arm != null) {
+                validateArm(arm,context.plan(),attempt.caseId(),attempt.repeat(),environment,attempt.proposalHash());
+                if (observation.outcome() == Outcome.ENVIRONMENT_ERROR && arm.status() != VirtualExperimentMetricsProjection.Status.ERROR)
+                    throw SimulationFailure.invalid();
+                stored = armMap(arm,attempt.proposalHash());
+            }
+        }
+        if (!VirtualTransactionalStore.MODE.equals(evaluator.mode()) || !attempt.proposalHash().equals(CanonicalJson.sha256(attempt.proposal()))) throw SimulationFailure.unavailable();
+        return new EvaluatedArm(observation,stored);
+    }
+    private static void validateArm(MeasuredArm arm, Map<String,Object> plan, String caseId, int repeat,
+            Environment environment, String sharedHash) {
+        String expected = (String)metricMap(plan.get("expectedPairedInputHashes")).get(caseId);
+        if (!caseId.equals(arm.caseId()) || arm.repeat() != repeat || !environment.name().equals(arm.environment().name())
+                || !config(plan.get("configuration")).equals(arm.configuration())
+                || !sharedHash.equals(metricMap(plan.get("sharedProposalHashes")).get(caseId))
+                || expected == null || !expected.equals(arm.binding().expectedPairedInputHash())
+                || !expected.equals(arm.binding().pairedInputHash())) throw SimulationFailure.invalid();
+    }
+    private static Map<String,Object> armMap(MeasuredArm a,String sharedHash) {
+        var b=a.binding();
+        return object("caseId",a.caseId(),"repeat",a.repeat(),"environment",a.environment().name(),"status",a.status().name(),"decision",a.decision().name(),
+                "attackInduced",a.attackInduced(),"policyBlocked",a.policyBlocked(),"forbiddenPaymentCount",a.forbiddenPaymentCount(),
+                "forbiddenPaidAmountKrw",a.forbiddenPaidAmountKrw(),"actualDownstreamDepth",a.actualDownstreamDepth(),"normalExpectedReached",a.normalExpectedReached(),
+                "unrelatedNormalExpected",a.unrelatedNormalExpected(),"unrelatedNormalCompleted",a.unrelatedNormalCompleted(),
+                "securityCheckDurationMs",a.securityCheckDurationMs(),"quarantineLatencyMs",a.quarantineLatencyMs(),
+                "exclusionReason",a.exclusionReason()==null?null:a.exclusionReason().name(),"configuration",configMap(a.configuration()),"modelOutputHash",a.modelOutputHash(),
+                "binding",object("pairedInputVersion",b.pairedInputVersion(),"pairedInputHash",b.pairedInputHash(),"inputSnapshotHash",b.inputSnapshotHash(),
+                        "responseByteHash",b.responseByteHash(),"expectedPairedInputHash",b.expectedPairedInputHash()),"sharedProposalHash",sharedHash);
+    }
+    private static MeasuredArm arm(Map<String,Object> a) {
+        if (!a.keySet().equals(Set.of("caseId","repeat","environment","status","decision","attackInduced","policyBlocked","forbiddenPaymentCount",
+                "forbiddenPaidAmountKrw","actualDownstreamDepth","normalExpectedReached","unrelatedNormalExpected","unrelatedNormalCompleted","securityCheckDurationMs",
+                "quarantineLatencyMs","exclusionReason","configuration","modelOutputHash","binding","sharedProposalHash"))) throw SimulationFailure.unavailable();
+        var b=metricMap(a.get("binding"));
+        if(!b.keySet().equals(Set.of("pairedInputVersion","pairedInputHash","inputSnapshotHash","responseByteHash","expectedPairedInputHash")))throw SimulationFailure.unavailable();
+        var binding=new ArmBinding(nullableText(b.get("pairedInputVersion")),nullableText(b.get("pairedInputHash")),nullableText(b.get("inputSnapshotHash")),
+                nullableText(b.get("responseByteHash")),nullableText(b.get("expectedPairedInputHash")));
+        return new MeasuredArm(metricText(a,"caseId"),metricInt(a.get("repeat")),VirtualExperimentMetricsProjection.Environment.valueOf(metricText(a,"environment")),
+                VirtualExperimentMetricsProjection.Status.valueOf(metricText(a,"status")),VirtualExperimentMetricsProjection.Decision.valueOf(metricText(a,"decision")),
+                (Boolean)a.get("attackInduced"),(Boolean)a.get("policyBlocked"),metricInt(a.get("forbiddenPaymentCount")),metricLong(a.get("forbiddenPaidAmountKrw")),
+                metricInt(a.get("actualDownstreamDepth")),(Boolean)a.get("normalExpectedReached"),metricInt(a.get("unrelatedNormalExpected")),metricInt(a.get("unrelatedNormalCompleted")),
+                nullableTiming(a.get("securityCheckDurationMs")),nullableTiming(a.get("quarantineLatencyMs")),
+                a.get("exclusionReason")==null?null:VirtualExperimentMetricsProjection.Exclusion.valueOf(metricText(a,"exclusionReason")),
+                config(a.get("configuration")),metricText(a,"modelOutputHash"),binding);
+    }
+    private static Map<String,Object> appendMeasurements(Map<String,Object> row,Map<String,Object> finished,List<Map<String,Object>> added, UUID action) {
+        if (!row.containsKey("measurementPlan")) {
+            if (!added.isEmpty()) throw SimulationFailure.unavailable(); return finished;
+        }
+        var all=new ArrayList<>(rows(row.get("measuredArms")));
+        for(var value:added) all.add(changed(value,"producerActionId",action.toString()));
+        return changed(finished,"measuredArms",all);
+    }
+    private static Map<String,Object> measurementCompletion(UUID action,Map<String,Object> finished,List<Map<String,Object>> added,int pairIndex) {
+        var receipt=stepReceipt(action,finished);
+        return !finished.containsKey("measurementPlan") ? receipt : changed(receipt,"measurementPairHash",CanonicalJson.sha256(added),"measurementPairIndex",pairIndex);
+    }
+    private static Map<String,Object> publicAdvanceReceipt(Map<String,Object> value) {
+        var copy=new LinkedHashMap<String,Object>(value);copy.remove("measurementPairHash");copy.remove("measurementPairIndex");
+        return CanonicalJson.immutableObject(copy);
+    }
+    private static Map<String,Object> measuredMetrics(TransactionalStore.Tx tx,Map<String,Object> row) {
+        var plan=verifiedMeasurementPlan(tx,row);var observed=new ArrayList<MeasuredArm>();
+        var groups=new LinkedHashMap<UUID,List<Map<String,Object>>>();var indices=new LinkedHashMap<UUID,Integer>();
+        var cases=strings(row.get("caseIds"));int repeats=metricInt(row.get("repeatCount"));
+        for(var stored:rows(row.get("measuredArms"))) {
+            UUID producer=canonicalUuid(stored.get("producerActionId"));
+            var projected=new LinkedHashMap<String,Object>(stored);projected.remove("producerActionId");
+            var value=arm(projected);var env=Environment.valueOf(value.environment().name());
+            validateArm(value,plan,value.caseId(),value.repeat(),env,metricText(projected,"sharedProposalHash"));
+            int index=cases.indexOf(value.caseId());
+            if(index<0 || value.repeat()>repeats)throw SimulationFailure.unavailable();
+            int pair=Math.addExact(Math.multiplyExact(index,repeats),value.repeat()-1);
+            var previous=indices.putIfAbsent(producer,pair);if(previous!=null && previous!=pair)throw SimulationFailure.unavailable();
+            groups.computeIfAbsent(producer,key->new ArrayList<>()).add(CanonicalJson.immutableObject(projected));observed.add(value);
+        }
+        for(var group:groups.entrySet()) {
+            var action=advanceIdentity(metricText(row,"actorId"),group.getKey(),canonicalUuid(row.get("experimentId")));
+            var global=tx.get(ActionJournal.TABLE,action.requestId().toString());
+            if(global==null || !global.keySet().equals(Set.of("actorId","requestId","operation","canonicalBodyHash","persistenceMode","durable","reply"))
+                    || !action.actorId().equals(global.get("actorId")) || !action.requestId().toString().equals(global.get("requestId"))
+                    || !action.operation().equals(global.get("operation")) || !action.canonicalBodyHash().equals(global.get("canonicalBodyHash"))
+                    || !VirtualTransactionalStore.MODE.equals(global.get("persistenceMode")) || !Boolean.FALSE.equals(global.get("durable")))throw SimulationFailure.unavailable();
+            var receipt=metricMap(global.get("reply"));int pair=indices.get(group.getKey());
+            if(!receipt.keySet().equals(Set.of("requestId","experimentId","status","completedPairs","replayed","resultsSource","measurementPairHash","measurementPairIndex"))
+                    || !action.requestId().toString().equals(receipt.get("requestId")) || !row.get("experimentId").equals(receipt.get("experimentId"))
+                    || !Set.of("RUNNING","COMPLETED").contains(receipt.get("status")) || !Boolean.FALSE.equals(receipt.get("replayed"))
+                    || !"VIRTUAL_SIMULATION".equals(receipt.get("resultsSource")) || !Integer.valueOf(pair).equals(receipt.get("measurementPairIndex"))
+                    || !Integer.valueOf(Math.addExact(pair,1)).equals(receipt.get("completedPairs")) || pair>=metricInt(row.get("completedPairs"))
+                    || !CanonicalJson.sha256(group.getValue()).equals(receipt.get("measurementPairHash")))throw SimulationFailure.unavailable();
+        }
+        return VirtualExperimentMetricsProjection.project(expectedCases(plan),observed,repeats,metricInt(plan.get("maximumPairs")));
+    }
+    @SuppressWarnings("unchecked") private static Map<String,Object> metricMap(Object value) {
+        if (!(value instanceof Map<?,?> raw) || raw.keySet().stream().anyMatch(k -> !(k instanceof String))) throw SimulationFailure.unavailable();
+        return (Map<String,Object>)raw;
+    }
+    private static String metricText(Map<String,Object> row,String key) { var value=row.get(key);if(!(value instanceof String text)||text.isBlank())throw SimulationFailure.unavailable();return text; }
+    private static String nullableText(Object value) { if(value==null)return null;if(!(value instanceof String text))throw SimulationFailure.unavailable();return text; }
+    private static int metricInt(Object value) { if(!(value instanceof Integer n))throw SimulationFailure.unavailable();return n; }
+    private static long metricLong(Object value) { if(value instanceof Long n)return n;if(value instanceof Integer n)return n.longValue();throw SimulationFailure.unavailable(); }
+    private static Double nullableTiming(Object value) { if(value==null)return null;if(!(value instanceof Number n))throw SimulationFailure.unavailable();return n.doubleValue(); }
 
     public enum EffectDisposition { SIDE_EFFECT_FREE_CONFIRMED, UNCERTAIN }
     private enum ExecutionState { CLAIMED, EVALUATING, RECOVERY_BLOCKED }
@@ -143,10 +385,12 @@ public final class VirtualExperimentService {
         private final WorkPermit permit;
         private final List<Map<String, Object>> outputs;
         private final boolean error;
-        private EvaluatedPair(WorkPermit permit, List<Map<String, Object>> outputs, boolean error) {
+        private final List<Map<String, Object>> measurements;
+        private EvaluatedPair(WorkPermit permit, List<Map<String, Object>> outputs, boolean error, List<Map<String,Object>> measurements) {
             this.permit = permit;
             this.outputs = outputs.stream().map(CanonicalJson::immutableObject).toList();
             this.error = error;
+            this.measurements = measurements.stream().map(CanonicalJson::immutableObject).toList();
         }
         @Override public String toString() { return "EvaluatedPair[REDACTED]"; }
     }
@@ -154,7 +398,7 @@ public final class VirtualExperimentService {
         private final Map<String, Object> receipt;
         private final WorkPermit permit;
         private LeaseClaim(Map<String, Object> receipt, WorkPermit permit) {
-            this.receipt = CanonicalJson.immutableObject(receipt); this.permit = permit;
+            this.receipt = CanonicalJson.immutableObject(publicAdvanceReceipt(receipt)); this.permit = permit;
         }
         public Map<String, Object> receipt() { return receipt; }
         public WorkPermit permit() { return permit; }
@@ -165,7 +409,7 @@ public final class VirtualExperimentService {
         private final EvaluatedPair evaluatedPair;
         private EvaluationOutcome(Map<String, Object> saved, EvaluatedPair pair) {
             if ((saved == null) == (pair == null)) throw SimulationFailure.invalid();
-            savedReceipt = saved == null ? null : CanonicalJson.immutableObject(saved); evaluatedPair = pair;
+            savedReceipt = saved == null ? null : CanonicalJson.immutableObject(publicAdvanceReceipt(saved)); evaluatedPair = pair;
         }
         public Map<String, Object> savedReceipt() { return savedReceipt; }
         public EvaluatedPair evaluatedPair() { return evaluatedPair; }
@@ -227,6 +471,8 @@ public final class VirtualExperimentService {
         if (saved != null) return new EvaluationOutcome(saved, null);
         var outputs = new ArrayList<Map<String, Object>>(); boolean error = false;
         Attempt original = permit.attempt.original();
+        var measurement = measurementContext(actor,original);
+        var measurements = new ArrayList<Map<String,Object>>();
         for (Environment environment : Environment.values()) {
             saved = journal.reservedTransaction(tx -> {
                 access.require(actor, SimulationAccess.Operation.EXPERIMENT, null, null);
@@ -239,10 +485,9 @@ public final class VirtualExperimentService {
             if (saved != null) return new EvaluationOutcome(saved, null);
             Observation observation;
             try {
-                if (!VirtualTransactionalStore.MODE.equals(evaluator.mode())) throw SimulationFailure.unavailable();
-                observation = Objects.requireNonNull(evaluator.evaluate(environment, original.caseId(), original.repeat(), original.proposal()));
-                if (!VirtualTransactionalStore.MODE.equals(evaluator.mode())) throw SimulationFailure.unavailable();
-                if (!original.proposalHash().equals(CanonicalJson.sha256(original.proposal()))) throw SimulationFailure.invalid();
+                var evaluated = evaluateArm(original,environment,measurement);
+                observation = evaluated.observation();
+                if (evaluated.measurement() != null) measurements.add(evaluated.measurement());
             } catch (RuntimeException unavailable) {
                 observation = new Observation(Outcome.ENVIRONMENT_ERROR, Reason.ENVIRONMENT_UNAVAILABLE);
             }
@@ -251,7 +496,7 @@ public final class VirtualExperimentService {
                     "outcome", observation.outcome().name(), "reasonCodes", List.of(observation.reason().name()),
                     "sharedProposalHash", original.proposalHash(), "resultsSource", "VIRTUAL_SIMULATION"));
         }
-        return new EvaluationOutcome(null, new EvaluatedPair(permit, outputs, error));
+        return new EvaluationOutcome(null, new EvaluatedPair(permit, outputs, error, measurements));
     }
 
     public Map<String, Object> finalizeLeased(ActorRef actor, WorkPermit permit, EvaluatedPair pair, long now) {
@@ -262,7 +507,7 @@ public final class VirtualExperimentService {
         return journal.reservedTransaction(tx -> {
             access.require(actor, SimulationAccess.Operation.EXPERIMENT, null, null);
             var row = require(tx, TABLE, original.experimentId()); requireOwner(actor, row);
-            var saved = tx.completed(identity); if (saved != null) return saved;
+            var saved = tx.completed(identity); if (saved != null) return publicAdvanceReceipt(saved);
             var current = requireLease(row, permit, now, ExecutionState.EVALUATING);
             pendingLease(tx, identity, current.original().token());
             if (pair.outputs.size() != Environment.values().length) throw SimulationFailure.unavailable();
@@ -274,7 +519,8 @@ public final class VirtualExperimentService {
             var finished = changed(row, "completedPairs", completed,
                     "status", completed == integer(row, "totalPairs") ? "COMPLETED" : "RUNNING", "activeClaim", null,
                     "caseOutputs", outputs, "exclusions", exclusions);
-            try { tx.complete(identity, original.token(), stepReceipt(original.action(), finished)); }
+            finished = appendMeasurements(row,finished,pair.measurements,original.action());
+            try { tx.complete(identity, original.token(), measurementCompletion(original.action(),finished,pair.measurements,original.pairIndex())); }
             catch (ActionJournal.ActionConflictException corrupt) { throw SimulationFailure.unavailable(); }
             tx.put(TABLE, original.experimentId().toString(), finished);
             return CanonicalJson.immutableObject(stepReceipt(original.action(), finished));
@@ -444,17 +690,18 @@ public final class VirtualExperimentService {
                 return new Claim(null, attempt);
             });
         } catch (ActionJournal.PendingActionException pending) { throw SimulationFailure.unavailable(); }
-        if (claim.receipt() != null) return claim.receipt();
+        if (claim.receipt() != null) return publicAdvanceReceipt(claim.receipt());
         Attempt attempt = claim.attempt();
+        var measurement = measurementContext(actor,attempt);
+        var measurements = new ArrayList<Map<String,Object>>();
         var outputs = new ArrayList<Map<String, Object>>(); boolean error = false;
         for (Environment environment : Environment.values()) {
-            if (!stillCurrent(actor, attempt)) return finish(actor, identity, attempt, List.of(), false);
+            if (!stillCurrent(actor, attempt)) return finish(actor, identity, attempt, List.of(), false, List.of());
             Observation observation;
             try {
-                if (!VirtualTransactionalStore.MODE.equals(evaluator.mode())) throw SimulationFailure.unavailable();
-                observation = Objects.requireNonNull(evaluator.evaluate(environment, attempt.caseId(), attempt.repeat(), attempt.proposal()));
-                if (!VirtualTransactionalStore.MODE.equals(evaluator.mode())) throw SimulationFailure.unavailable();
-                if (!attempt.proposalHash().equals(CanonicalJson.sha256(attempt.proposal()))) throw SimulationFailure.invalid();
+                var evaluated = evaluateArm(attempt,environment,measurement);
+                observation = evaluated.observation();
+                if (evaluated.measurement() != null) measurements.add(evaluated.measurement());
             } catch (RuntimeException unavailable) {
                 observation = new Observation(Outcome.ENVIRONMENT_ERROR, Reason.ENVIRONMENT_UNAVAILABLE);
             }
@@ -464,7 +711,7 @@ public final class VirtualExperimentService {
                     "outcome", observation.outcome().name(), "reasonCodes", List.of(observation.reason().name()),
                     "sharedProposalHash", attempt.proposalHash(), "resultsSource", "VIRTUAL_SIMULATION"));
         }
-        return finish(actor, identity, attempt, List.copyOf(outputs), error);
+        return finish(actor, identity, attempt, List.copyOf(outputs), error, measurements);
     }
 
     /** Logical cancellation fences late results; it does not terminate a provider or recover a process. */
@@ -498,12 +745,12 @@ public final class VirtualExperimentService {
     }
 
     private Map<String, Object> finish(ActorRef actor, ActionJournal.ActionIdentity identity, Attempt attempt,
-                                     List<Map<String, Object>> pairOutputs, boolean error) {
+                                     List<Map<String, Object>> pairOutputs, boolean error, List<Map<String,Object>> measurements) {
         access.require(actor, SimulationAccess.Operation.EXPERIMENT, null, null);
         return journal.reservedTransaction(tx -> {
             access.require(actor, SimulationAccess.Operation.EXPERIMENT, null, null);
             var row = require(tx, TABLE, attempt.experimentId()); requireOwner(actor, row);
-            var saved = tx.completed(identity); if (saved != null) return saved;
+            var saved = tx.completed(identity); if (saved != null) return publicAdvanceReceipt(saved);
             requireSameAttempt(row, attempt);
             if (pairOutputs.size() != Environment.values().length) throw SimulationFailure.unavailable();
             var outputs = new ArrayList<>(rows(row.get("caseOutputs"))); outputs.addAll(pairOutputs);
@@ -514,7 +761,8 @@ public final class VirtualExperimentService {
             var finished = changed(row, "completedPairs", completed,
                     "status", completed == integer(row, "totalPairs") ? "COMPLETED" : "RUNNING",
                     "activeClaim", null, "caseOutputs", outputs, "exclusions", exclusions);
-            try { tx.complete(identity, attempt.token(), stepReceipt(attempt.action(), finished)); }
+            finished = appendMeasurements(row,finished,measurements,attempt.action());
+            try { tx.complete(identity, attempt.token(), measurementCompletion(attempt.action(),finished,measurements,attempt.pairIndex())); }
             catch (ActionJournal.ActionConflictException corruptClaim) { throw SimulationFailure.unavailable(); }
             tx.put(TABLE, attempt.experimentId().toString(), finished);
             return stepReceipt(attempt.action(), finished);
@@ -594,6 +842,13 @@ public final class VirtualExperimentService {
             publicRow.put("metrics", object("completedPairs", row.get("completedPairs"), "excludedPairs", rows(row.get("exclusions")).size(),
                     "eligiblePairs", integer(row, "completedPairs") - rows(row.get("exclusions")).size(),
                     "syntheticModelOutputs", true, "liveRobustnessMeasured", false));
+            if (row.containsKey("measurementPlan")) {
+                try {
+                    var metrics = new LinkedHashMap<>(metricMap(publicRow.get("metrics")));
+                    metrics.putAll(measuredMetrics(tx,row)); publicRow.put("metrics",CanonicalJson.immutableObject(metrics));
+                } catch (RuntimeException invalidMeasurement) { throw SimulationFailure.unavailable(); }
+            }
+            publicRow.remove("measurementPlan");publicRow.remove("measurementCreateRequestId");publicRow.remove("measuredArms");
             publicRow.put("executionMode", VirtualTransactionalStore.MODE);
             return CanonicalJson.immutableObject(publicRow);
         });
