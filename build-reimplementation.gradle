@@ -75,6 +75,7 @@ tasks.named('test') {
     }
     filter {
         includeTestsMatching 'com.finsec.fuse.reimplementation.*Test'
+        includeTestsMatching 'com.finsec.fuse.FuseApplicationTest'
         failOnNoMatchingTests = true
     }
 }
