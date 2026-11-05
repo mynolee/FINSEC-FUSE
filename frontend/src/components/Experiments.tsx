@@ -743,7 +743,7 @@ function CreateExperiment({
                   setConsentApi(event.target.checked ? api : undefined);
                   setRegisteredConsent(isRegistered && event.target.checked && registeredFixture
                     ? { api, fixture: registeredFixture } : undefined);
-                }
+                }}
                 required
               />
               실험 전용 Mock 업무 실행을 요청합니다.
