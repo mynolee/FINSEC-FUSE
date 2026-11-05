@@ -40,14 +40,23 @@ public final class LocalVirtualAdmissionContext {
     private final Verifier verifier;
     private final Object credentialIssuer;
     private final ThreadLocal<Admission> local=new ThreadLocal<>();
+    private final ThreadLocal<DelegatedAdmission> delegated=new ThreadLocal<>();
     public LocalVirtualAdmissionContext(Verifier verifier,Object credentialIssuer){
         this.verifier=Objects.requireNonNull(verifier);this.credentialIssuer=Objects.requireNonNull(credentialIssuer);
     }
 
+    boolean boundToCredentialIssuer(Object expected){return credentialIssuer==expected;}
+    /** Delegation requires the actual concrete current graph, not a token-only or caller-attested wrapper. */
+    boolean boundToCurrentGraph(LocalVirtualTokenRegistry tokens,LocalVirtualPrincipalRegistry principals){
+        return credentialIssuer==tokens && verifier instanceof LocalVirtualCurrentVerifier current
+                && current.boundTo(tokens,principals);
+    }
+
+
     public Admission openRequest(CredentialEvidence evidence,Instant now){
         if(evidence==null||now==null||!evidence.issuedBy(credentialIssuer))throw fail(Code.UNAUTHENTICATED);
         var requested=evidence.reference();
-        if(local.get()!=null)throw fail(Code.UNAVAILABLE);
+        if(local.get()!=null||delegated.get()!=null)throw fail(Code.UNAVAILABLE);
         try{
             var snapshot=verifier.current(requested,now);
             if(snapshot==null||snapshot.state()==CredentialState.UNCONFIRMED)throw fail(Code.UNAVAILABLE);
@@ -62,6 +71,53 @@ public final class LocalVirtualAdmissionContext {
             local.set(admission);return admission;
         }catch(Failure fixed){throw fixed;}
         catch(RuntimeException unavailable){throw fail(Code.UNAVAILABLE);}
+    }
+    /** A fresh exact experiment phase; never a normal bearer admission or a role upgrade. */
+    public DelegatedAdmission openDelegated(LocalVirtualOwnerDelegationRegistry registry,CredentialEvidence executor,
+            LocalVirtualOwnerDelegationRegistry.DelegationEvidence proof,UUID experimentId,Instant now){
+        if(registry==null||now==null)throw fail(Code.UNAVAILABLE);
+        if(local.get()!=null||delegated.get()!=null)throw fail(Code.UNAVAILABLE);
+        try{
+            var checked=registry.checkedFor(this,executor,proof,experimentId,now);
+            if(checked==null||!checked.boundTo(this))throw fail(Code.UNAVAILABLE);
+            var admission=new DelegatedAdmission(checked,Thread.currentThread());
+            delegated.set(admission);return admission;
+        }catch(LocalVirtualOwnerDelegationRegistry.Failure fixed){
+            throw fail(switch(fixed.code()){
+                case UNAUTHENTICATED -> Code.UNAUTHENTICATED;
+                case FORBIDDEN -> Code.FORBIDDEN;
+                case UNAVAILABLE,CONFLICT -> Code.UNAVAILABLE;
+            });
+        }catch(Failure fixed){throw fixed;}
+        catch(RuntimeException unavailable){throw fail(Code.UNAVAILABLE);}
+    }
+    public DelegatedAdmission currentDelegated(){return delegated.get();}
+    public LocalVirtualAccessPolicy.Decision authorizeDelegatedExperiment(ActorRef actor,UUID experimentId){
+        var admission=currentDelegated();if(admission==null)throw fail(Code.UNAUTHENTICATED);
+        return admission.authorize(actor,Operation.EXPERIMENT,experimentId);
+    }
+    public final class DelegatedAdmission implements AutoCloseable {
+        private final LocalVirtualOwnerDelegationRegistry.CheckedDelegation checked;
+        private final Thread owner;
+        private boolean closed;
+        private DelegatedAdmission(LocalVirtualOwnerDelegationRegistry.CheckedDelegation checked,Thread owner){this.checked=checked;this.owner=owner;}
+        private void live(){if(Thread.currentThread()!=owner||closed||delegated.get()!=this)throw fail(Code.UNAVAILABLE);}
+        public ActorRef actor(){live();return new ActorRef(checked.owner().actorAlias());}
+        public UUID experimentId(){live();return checked.reference().experimentId();}
+        public LocalVirtualOwnerDelegationRegistry.Reference reference(){live();return checked.reference();}
+        public LocalVirtualPrincipal ownerPrincipal(){live();return checked.owner();}
+        public LocalVirtualPrincipal executorPrincipal(){live();return checked.executor();}
+        public LocalVirtualAccessPolicy.Decision authorize(ActorRef actor,Operation operation,UUID target){
+            live();return actor!=null&&checked.owner().actorAlias().equals(actor.actorId())&&operation==Operation.EXPERIMENT
+                    &&checked.reference().experimentId().equals(target)?LocalVirtualAccessPolicy.Decision.ALLOW:LocalVirtualAccessPolicy.Decision.FORBIDDEN;
+        }
+        @Override public void close(){
+            if(Thread.currentThread()!=owner)throw fail(Code.UNAVAILABLE);
+            if(closed)return;
+            if(delegated.get()!=this)throw fail(Code.UNAVAILABLE);
+            closed=true;delegated.remove();
+        }
+        @Override public String toString(){return "DelegatedExperimentAdmission[REDACTED]";}
     }
     /** null means no server admission exists on this thread. */
     public Admission current(){return local.get();}

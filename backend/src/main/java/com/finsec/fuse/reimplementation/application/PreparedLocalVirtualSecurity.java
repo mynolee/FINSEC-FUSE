@@ -35,6 +35,21 @@ public final class PreparedLocalVirtualSecurity {
         authority=actors.authority();
         filter=new LocalVirtualAuthenticationFilter(tokens,context,clock,new PublicHttpErrors());
     }
+    private PreparedLocalVirtualSecurity(LocalVirtualTokenRegistry tokens,
+            com.finsec.fuse.reimplementation.auth.LocalVirtualPrincipalRegistry principals,Clock clock){
+        if(tokens==null||principals==null||clock==null)throw missing();
+        this.clock=clock;
+        context=new LocalVirtualAdmissionContext(
+                new com.finsec.fuse.reimplementation.auth.LocalVirtualCurrentVerifier(tokens,principals),tokens);
+        actors=new LocalVirtualHttpActors(context);
+        authority=actors.authority();
+        filter=new LocalVirtualAuthenticationFilter(tokens,context,clock,new PublicHttpErrors());
+    }
+    /** Explicit concrete same-registry graph; no wrapper provenance assertion or default principals. */
+    public static PreparedLocalVirtualSecurity prepareCurrentRegistries(LocalVirtualTokenRegistry tokens,
+            com.finsec.fuse.reimplementation.auth.LocalVirtualPrincipalRegistry principals,Clock clock){
+        return new PreparedLocalVirtualSecurity(tokens,principals,clock);
+    }
     public static PreparedLocalVirtualSecurity prepare(LocalVirtualTokenRegistry tokens,
             LocalVirtualAdmissionContext.Verifier currentVerifier,Clock clock){
         return new PreparedLocalVirtualSecurity(tokens,currentVerifier,clock);

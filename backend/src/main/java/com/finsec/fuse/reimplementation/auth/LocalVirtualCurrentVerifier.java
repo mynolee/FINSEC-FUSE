@@ -11,6 +11,10 @@ public final class LocalVirtualCurrentVerifier implements LocalVirtualAdmissionC
     public LocalVirtualCurrentVerifier(LocalVirtualTokenRegistry credentials,LocalVirtualPrincipalRegistry principals){
         this.credentials=Objects.requireNonNull(credentials);this.principals=Objects.requireNonNull(principals);
     }
+    /** Exact prepared graph identity; values or equal snapshots cannot attest another registry. */
+    boolean boundTo(LocalVirtualTokenRegistry expectedCredentials,LocalVirtualPrincipalRegistry expectedPrincipals){
+        return credentials==expectedCredentials && principals==expectedPrincipals;
+    }
     @Override public VerifiedSnapshot current(CredentialReference requested,Instant now){
         if(requested==null || now==null)throw new IllegalArgumentException("INVALID_CURRENT_ADMISSION_INPUT",null);
         try {

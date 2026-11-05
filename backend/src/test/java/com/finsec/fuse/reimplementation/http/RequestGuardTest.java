@@ -182,4 +182,21 @@ class RequestGuardTest {
         assertFalse(Collections.list(cached.getHeaderNames()).stream().anyMatch(name -> name.equalsIgnoreCase("Transfer-Encoding")));
         assertEquals("2", cached.getHeader("Content-Length"));
     }
+    @Test void originalFramingFactSurvivesNormalizationButNeverTraversesUntrustedWrappers() throws Exception {
+        var raw = new MockHttpServletRequest(); raw.setMethod("GET");
+        assertEquals(BoundedRequestFilter.Framing.UNCONFIRMED, BoundedRequestFilter.originalTransferEncoding(raw));
+        raw.setAttribute("originalTransferEncodingPresent", false);
+        var absent = new RequestGuard(SYNTHETIC).inspect(raw);
+        assertEquals(BoundedRequestFilter.Framing.ABSENT, BoundedRequestFilter.originalTransferEncoding(absent));
+        raw.addHeader("Transfer-Encoding", "chunked");
+        var present = new RequestGuard(SYNTHETIC).inspect(raw);
+        assertNull(present.getHeader("Transfer-Encoding"));
+        assertEquals(BoundedRequestFilter.Framing.PRESENT, BoundedRequestFilter.originalTransferEncoding(present));
+        assertEquals(BoundedRequestFilter.Framing.UNCONFIRMED, BoundedRequestFilter.originalTransferEncoding(
+            new jakarta.servlet.http.HttpServletRequestWrapper(present)));
+        raw.removeHeader("Transfer-Encoding");
+        assertEquals(BoundedRequestFilter.Framing.PRESENT, BoundedRequestFilter.originalTransferEncoding(present));
+        assertEquals(BoundedRequestFilter.Framing.ABSENT, BoundedRequestFilter.originalTransferEncoding(absent));
+    }
+
 }

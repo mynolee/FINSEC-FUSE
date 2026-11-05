@@ -18,11 +18,15 @@ import java.util.LinkedHashSet;
 /** Immutable, repeatable, bounded UTF-8 body for the synchronous JSON controller contract. */
 public final class CachedBodyRequest extends HttpServletRequestWrapper {
     private final byte[] body;
+    private final boolean originalTransferEncodingPresent;
 
-    CachedBodyRequest(HttpServletRequest source, byte[] inspectedBody) {
+    CachedBodyRequest(HttpServletRequest source, byte[] inspectedBody, boolean originalTransferEncodingPresent) {
         super(source);
         this.body = inspectedBody.clone();
+        this.originalTransferEncodingPresent = originalTransferEncodingPresent;
     }
+
+    boolean originalTransferEncodingPresent() { return originalTransferEncodingPresent; }
 
     @Override public ServletInputStream getInputStream() {
         var input = new ByteArrayInputStream(body);

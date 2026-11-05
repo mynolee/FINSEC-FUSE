@@ -5,6 +5,9 @@ import com.finsec.fuse.reimplementation.persistence.ActionJournal;
 import com.finsec.fuse.reimplementation.persistence.CanonicalJson;
 import com.finsec.fuse.reimplementation.persistence.TransactionalStore;
 import com.finsec.fuse.reimplementation.persistence.VirtualTransactionalStore;
+import java.time.Instant;
+import com.finsec.fuse.reimplementation.auth.LocalVirtualAdmissionContext;
+import com.finsec.fuse.reimplementation.auth.LocalVirtualTargetRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -107,6 +110,7 @@ public final class VirtualExperimentService {
     private final Map<String, MeasuredFixture> measuredProfiles;
     private final Supplier<UUID> ids;
     private final VirtualDeliveryCoordinator.Notifications delivery;
+    private final LocalVirtualAdmissionContext creationContext;
 
     public VirtualExperimentService(TransactionalStore store, SimulationAccess access, List<FixtureSet> fixtures,
                                     PairEvaluator evaluator, Supplier<UUID> ids) {
@@ -114,6 +118,12 @@ public final class VirtualExperimentService {
     }
     public VirtualExperimentService(TransactionalStore store, SimulationAccess access, List<FixtureSet> fixtures,
             PairEvaluator evaluator, Supplier<UUID> ids, VirtualDeliveryCoordinator.Notifications delivery) {
+        this(store, access, fixtures, evaluator, ids, delivery, null);
+    }
+    public VirtualExperimentService(TransactionalStore store, SimulationAccess access, List<FixtureSet> fixtures,
+            PairEvaluator evaluator, Supplier<UUID> ids, VirtualDeliveryCoordinator.Notifications delivery,
+            LocalVirtualAdmissionContext creationContext) {
+        this.creationContext = creationContext;
         this.delivery = delivery;
         this.store = Objects.requireNonNull(store); this.journal = new ActionJournal(store); this.access = Objects.requireNonNull(access);
         this.evaluator = Objects.requireNonNull(evaluator); this.ids = Objects.requireNonNull(ids);
@@ -136,11 +146,15 @@ public final class VirtualExperimentService {
 
     public Map<String, Object> create(ActorRef actor, UUID action, Plan plan) {
         access.require(actor, SimulationAccess.Operation.EXPERIMENT, null, null);
+        return notifyCreated(actor, createCommitted(actor, action, plan, null));
+    }
+
+    private Map<String, Object> createCommitted(ActorRef actor, UUID action, Plan plan, CreationReference owner) {
         if (!"REPLAY".equals(plan.modelMode())) throw SimulationFailure.unavailable(); // No live fallback.
         FixtureSet set = fixtures.get(plan.fixtureSetId());
         if (set == null || !set.cases().stream().map(Case::caseId).toList().containsAll(plan.caseIds())) throw SimulationFailure.invalid();
         var measurement = measurementPlan(plan);
-        return notifyCreated(actor, journal.execute(actor.actorId(), action, "SIM_EXPERIMENT", CanonicalJson.sha256(creationPayload(plan.body(), measurement)), tx -> {
+        return journal.execute(actor.actorId(), action, "SIM_EXPERIMENT", CanonicalJson.sha256(creationPayload(plan.body(), measurement)), tx -> {
             UUID id = fresh(tx, TABLE, ids);
             tx.put(TABLE, id.toString(), object("experimentId", id.toString(), "actorId", actor.actorId(), "status", "PENDING",
                     "fixtureSetId", plan.fixtureSetId(), "caseIds", plan.caseIds(), "repeatCount", plan.repeatCount(),
@@ -148,6 +162,10 @@ public final class VirtualExperimentService {
                     "fence", 0L, "activeClaim", null,
                     "caseOutputs", List.of(), "exclusions", List.of(), "modelMode", "REPLAY",
                     "syntheticModelOutputs", true, "liveRobustnessMeasured", false, "resultsSource", "VIRTUAL_SIMULATION"));
+            if (owner != null) {
+                var row = require(tx, TABLE, id);
+                tx.put(TABLE, id.toString(), changed(row, "creationOwner", ownerMetadata(owner)));
+            }
             if (measurement != null) {
                 var row = require(tx, TABLE, id);
                 tx.put(TABLE, id.toString(), changed(row, "measurementPlan", measurement,
@@ -156,8 +174,112 @@ public final class VirtualExperimentService {
             return object("requestId", action.toString(), "workflowId", null, "generation", null, "state", "PENDING",
                     "decision", "ALLOW", "reasonCodes", List.of(), "message", "VIRTUAL_EXPERIMENT_ACCEPTED", "replayed", false,
                     "experimentId", id.toString(), "status", "PENDING", "totalRuns", Math.multiplyExact(2, Math.multiplyExact(plan.caseIds().size(), plan.repeatCount())));
-        }));
+        });
     }
+
+    /** Explicit collection admission; does not dispatch while the request admission is live. */
+    public CreationResult createForDelegation(ActorRef actor, UUID action, Plan plan,
+            LocalVirtualTargetRegistry.CollectionAdmission collection, Instant now) {
+        if (creationContext == null || collection == null || now == null) throw SimulationFailure.unavailable();
+        var admission = creationContext.current();
+        if (admission == null || actor == null || !admission.actor().equals(actor)) throw SimulationFailure.unavailable();
+        collection.requireOwner(creationContext);
+        collection.requireCreation(actor, plan.fixtureSetId(), now);
+        var identity = new ActionJournal.ActionIdentity(actor.actorId(), action, "SIM_EXPERIMENT",
+                CanonicalJson.sha256(creationPayload(plan.body(), measurementPlan(plan))));
+        var original = new CreationReference(this, null, identity, admission.credential(), actor.actorId());
+        var receipt = createCommitted(actor, action, plan, original);
+        CreationProof proof = null;
+        // Replays retain their known reply but never mint a new owner delegation.
+        if (Boolean.FALSE.equals(receipt.get("replayed"))) {
+            try {
+                collection.requireOwner(creationContext);
+                collection.requireCreation(actor, plan.fixtureSetId(), now);
+                if (creationContext.current() != admission) throw SimulationFailure.unavailable();
+                var reference = new CreationReference(this, UUID.fromString((String) receipt.get("experimentId")),
+                        identity, admission.credential(), actor.actorId());
+                requireCurrentCreation(reference);
+                proof = new CreationProof(reference, admission);
+            } catch (RuntimeException unavailable) { /* Creation remains committed; no automatic retry. */ }
+        }
+        return new CreationResult(receipt, proof);
+    }
+
+    public static final class CreationResult {
+        private final Map<String, Object> receipt;
+        private final CreationProof proof;
+        private CreationResult(Map<String, Object> receipt, CreationProof proof) {
+            this.receipt = CanonicalJson.immutableObject(receipt); this.proof = proof;
+        }
+        public Map<String, Object> receipt() { return receipt; }
+        public CreationProof proof() { return proof; }
+        @Override public String toString() { return "CreationResult[REDACTED]"; }
+    }
+    public static final class CreationProof {
+        private final CreationReference reference;
+        private final LocalVirtualAdmissionContext.Admission owner;
+        private CreationProof(CreationReference reference, LocalVirtualAdmissionContext.Admission owner) {
+            this.reference = reference; this.owner = owner;
+        }
+        public CreationReference reference() { return reference; }
+        public boolean createdBy(LocalVirtualAdmissionContext.Admission expected) { return owner == expected; }
+        @Override public String toString() { return "CreationProof[REDACTED]"; }
+    }
+    public static final class CreationReference {
+        private final VirtualExperimentService issuer;
+        private final UUID experimentId;
+        private final ActionJournal.ActionIdentity identity;
+        private final LocalVirtualAdmissionContext.CredentialReference credential;
+        private final String alias;
+        private CreationReference(VirtualExperimentService issuer, UUID experimentId, ActionJournal.ActionIdentity identity,
+                LocalVirtualAdmissionContext.CredentialReference credential, String alias) {
+            this.issuer = issuer; this.experimentId = experimentId; this.identity = identity; this.credential = credential; this.alias = alias;
+        }
+        public UUID experimentId() { return experimentId; }
+        public ActionJournal.ActionIdentity creationIdentity() { return identity; }
+        public LocalVirtualAdmissionContext.CredentialReference ownerCredential() { return credential; }
+        public String creationActorAlias() { return alias; }
+        public boolean issuedBy(Object expected) { return issuer == expected; }
+        @Override public String toString() { return "CreationReference[REDACTED]"; }
+    }
+    private static Map<String, Object> ownerMetadata(CreationReference ref) {
+        var c = ref.credential;
+        return object("tokenId", c.tokenId().toString(), "principalId", c.principalId().toString(),
+                "tokenRevision", c.tokenRevision(), "bindingRevision", c.bindingRevision(),
+                "issuedAt", c.issuedAt().toString(), "expiresAt", c.expiresAt().toString(),
+                "actorId", ref.alias, "requestId", ref.identity.requestId().toString(),
+                "operation", ref.identity.operation(), "canonicalBodyHash", ref.identity.canonicalBodyHash());
+    }
+    /** Rejoins one immutable committed snapshot; never publishes a read-only transaction. */
+    public void requireCurrentCreation(CreationReference reference) {
+        try {
+            if (reference == null || !reference.issuedBy(this) || reference.experimentId == null) throw SimulationFailure.unavailable();
+            var snapshot = store.snapshot();
+            var row = snapshot.getOrDefault(TABLE, Map.of()).get(reference.experimentId.toString());
+            var id = reference.identity;
+            var global = snapshot.getOrDefault(ActionJournal.TABLE, Map.of()).get(id.requestId().toString());
+            if (row == null || global == null || !reference.alias.equals(row.get("actorId"))
+                    || !reference.experimentId.toString().equals(row.get("experimentId"))
+                    || !ownerMetadata(reference).equals(row.get("creationOwner"))
+                    || !global.keySet().equals(Set.of("actorId", "requestId", "operation", "canonicalBodyHash", "reply", "persistenceMode", "durable"))
+                    || !id.actorId().equals(global.get("actorId")) || !id.requestId().toString().equals(global.get("requestId"))
+                    || !id.operation().equals(global.get("operation")) || !id.canonicalBodyHash().equals(global.get("canonicalBodyHash"))
+                    || !VirtualTransactionalStore.MODE.equals(global.get("persistenceMode")) || !Boolean.FALSE.equals(global.get("durable")))
+                throw SimulationFailure.unavailable();
+            if (!(global.get("reply") instanceof Map<?, ?> reply)
+                    || !reference.experimentId.toString().equals(reply.get("experimentId"))
+                    || !id.requestId().toString().equals(reply.get("requestId"))
+                    || !"PENDING".equals(reply.get("status")) || !"ALLOW".equals(reply.get("decision"))) throw SimulationFailure.unavailable();
+            var plan = storedPlan(row);
+            if (!Objects.equals(reply.get("totalRuns"), Math.multiplyExact(2, Math.multiplyExact(plan.caseIds().size(), plan.repeatCount())))
+                    || !"PENDING".equals(reply.get("state"))) throw SimulationFailure.unavailable();
+            if (!id.canonicalBodyHash().equals(CanonicalJson.sha256(creationPayload(plan.body(),
+                    row.get("measurementPlan") instanceof Map<?, ?> ? castMeasurementPlan(row.get("measurementPlan")) : null))))
+                throw SimulationFailure.unavailable();
+        } catch (RuntimeException unavailable) { throw SimulationFailure.unavailable(); }
+    }
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMeasurementPlan(Object value) { return (Map<String, Object>) value; }
 
     private Map<String, Object> notifyCreated(ActorRef actor, Map<String, Object> receipt) {
         if (delivery != null && "PENDING".equals(receipt.get("status"))) {
@@ -836,7 +958,7 @@ public final class VirtualExperimentService {
         access.require(actor, SimulationAccess.Operation.EXPERIMENT, null, null);
         return store.transaction(tx -> {
             var row = require(tx, TABLE, id); requireOwner(actor, row);
-            var publicRow = new LinkedHashMap<String, Object>(row); publicRow.remove("actorId");
+            var publicRow = new LinkedHashMap<String, Object>(row); publicRow.remove("actorId"); publicRow.remove("creationOwner");
             publicRow.remove("activeClaim"); publicRow.remove("fence");
             publicRow.put("progress", object("completedPairs", row.get("completedPairs"), "totalPairs", row.get("totalPairs")));
             publicRow.put("metrics", object("completedPairs", row.get("completedPairs"), "excludedPairs", rows(row.get("exclusions")).size(),

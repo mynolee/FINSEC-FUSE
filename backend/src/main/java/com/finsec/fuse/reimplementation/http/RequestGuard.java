@@ -39,7 +39,7 @@ public final class RequestGuard {
             if (media == null) throw rejected(PublicHttpErrors.Error.UNSUPPORTED_MEDIA_TYPE);
             StrictJsonInspector.verify(body, limits.maxJsonDepth());
         }
-        return new CachedBodyRequest(request, body);
+        return new CachedBodyRequest(request, body, transfer != null);
     }
 
     private void inspectHeaders(HttpServletRequest request) {

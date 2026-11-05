@@ -31,7 +31,7 @@ public final class LocalVirtualAuthenticationFilter implements Filter {
             var evidence=registry.admitCanonical(LocalVirtualBearerHeader.canonical(in),now);
             if(evidence==null)throw SimulationFailure.unauthenticated();
             try(var admission=context.openRequest(evidence,now)) {
-                chain.doFilter(new BoundRequest(in,context,admission),out);
+                chain.doFilter(new BoundRequest(in,context,admission,evidence,registry),out);
             }
         } catch(LocalVirtualAdmissionContext.Failure failure) {
             errors.write(out,switch(failure.code()) {
@@ -48,11 +48,30 @@ public final class LocalVirtualAuthenticationFilter implements Filter {
             throw SimulationFailure.unauthenticated();
         return bound.admission;
     }
+    /** No wrapper traversal: only this live private frame and its directly held upstream. */
+    static BoundedRequestFilter.Framing originalTransferEncoding(
+            HttpServletRequest request,LocalVirtualAdmissionContext expected) {
+        admission(request,expected);
+        return BoundedRequestFilter.originalTransferEncoding(((BoundRequest)request).upstream);
+    }
+    /** Opaque canonical-ingress evidence only; not a current C grant, serializable token or queued authority. */
+    public static LocalVirtualAdmissionContext.CredentialEvidence canonicalCredential(
+            HttpServletRequest request,LocalVirtualAdmissionContext expected) {
+        var current=admission(request,expected);
+        var bound=(BoundRequest)request;
+        if(bound.evidence==null||!bound.evidence.issuedBy(bound.issuer)
+                ||!bound.evidence.reference().equals(current.credential()))throw SimulationFailure.unauthenticated();
+        return bound.evidence;
+    }
     private static final class BoundRequest extends HttpServletRequestWrapper {
         private final LocalVirtualAdmissionContext context;
         private final LocalVirtualAdmissionContext.Admission admission;
-        private BoundRequest(HttpServletRequest request,LocalVirtualAdmissionContext context,LocalVirtualAdmissionContext.Admission admission) {
-            super(request);this.context=context;this.admission=admission;
+        private final LocalVirtualAdmissionContext.CredentialEvidence evidence;
+        private final LocalVirtualTokenRegistry issuer;
+        private final HttpServletRequest upstream;
+        private BoundRequest(HttpServletRequest request,LocalVirtualAdmissionContext context,LocalVirtualAdmissionContext.Admission admission,
+                LocalVirtualAdmissionContext.CredentialEvidence evidence,LocalVirtualTokenRegistry issuer) {
+            super(request);this.upstream=request;this.context=context;this.admission=admission;this.evidence=evidence;this.issuer=issuer;
         }
         @Override public boolean isAsyncSupported(){return false;}
         @Override public AsyncContext startAsync(){throw new IllegalStateException("ASYNCHRONOUS_REQUEST_UNSUPPORTED");}

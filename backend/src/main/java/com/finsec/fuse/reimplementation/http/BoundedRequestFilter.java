@@ -12,6 +12,14 @@ import java.util.Objects;
 
 /** Explicit manual registration before MVC; synchronous HTTP requests only. No authority decisions. */
 public final class BoundedRequestFilter implements Filter {
+    public enum Framing { PRESENT, ABSENT, UNCONFIRMED }
+
+    /** Only the exact inspected body carrier supplies the original validated framing fact. */
+    static Framing originalTransferEncoding(HttpServletRequest request) {
+        if (!(request instanceof CachedBodyRequest cached)) return Framing.UNCONFIRMED;
+        return cached.originalTransferEncodingPresent() ? Framing.PRESENT : Framing.ABSENT;
+    }
+
     private final RequestGuard guard;
     private final PublicHttpErrors errors;
 

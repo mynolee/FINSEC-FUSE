@@ -142,4 +142,70 @@ class LocalVirtualAuthenticationFilterTest {
         });
         assertEquals(1, f.verifications.get()); assertNull(f.context.current());
     }
+    @Test void canonicalEvidenceIsAvailableOnlyOnSameLivePrivateCarrierWithoutReadingHeaderAgain() throws Exception {
+        var f=new Fixture();var foreign=new Fixture();
+        class NoReparseRequest extends MockHttpServletRequest {
+            boolean admitted;
+            @Override public Enumeration<String> getHeaders(String name) {
+                if(admitted)throw new AssertionError("No header reparsing after canonical admission");
+                return super.getHeaders(name);
+            }
+        }
+        var original=new NoReparseRequest();original.setDispatcherType(DispatcherType.REQUEST);
+        original.addHeader("Authorization","Bearer "+f.material.bearer());
+        HttpServletRequest[] escaped=new HttpServletRequest[1];
+        var response=f.invoke(original,(request,out)->{
+            original.admitted=true;var bound=(HttpServletRequest)request;escaped[0]=bound;
+            var proof=LocalVirtualAuthenticationFilter.canonicalCredential(bound,f.context);
+            assertTrue(proof.issuedBy(f.registry));assertFalse(proof.issuedBy(foreign.registry));
+            assertEquals(f.context.current().credential(),proof.reference());
+            assertSame(proof,LocalVirtualAuthenticationFilter.canonicalCredential(bound,f.context));
+            assertEquals(401,assertThrows(SimulationFailure.class,
+                ()->LocalVirtualAuthenticationFilter.canonicalCredential(bound,foreign.context)).status());
+            assertEquals(401,assertThrows(SimulationFailure.class,
+                ()->LocalVirtualAuthenticationFilter.canonicalCredential(new jakarta.servlet.http.HttpServletRequestWrapper(bound),f.context)).status());
+            original.setAttribute("credentialEvidence",proof);
+            assertEquals(401,assertThrows(SimulationFailure.class,
+                ()->LocalVirtualAuthenticationFilter.canonicalCredential(original,f.context)).status());
+        });
+        assertEquals(200,response.getStatus());assertEquals(1,f.verifications.get());assertNull(f.context.current());
+        assertEquals(401,assertThrows(SimulationFailure.class,
+            ()->LocalVirtualAuthenticationFilter.canonicalCredential(escaped[0],f.context)).status());
+        var next=f.invoke(f.request(),(request,out)->{
+            assertEquals(401,assertThrows(SimulationFailure.class,
+                ()->LocalVirtualAuthenticationFilter.canonicalCredential(escaped[0],f.context)).status());
+            assertNotNull(LocalVirtualAuthenticationFilter.canonicalCredential((HttpServletRequest)request,f.context));
+        });
+        assertEquals(200,next.getStatus());assertNull(f.context.current());
+    }
+
+    @Test void framingUsesOnlyLivePrivateFrameAndDirectInspectedUpstream() throws Exception {
+        for (boolean chunked : new boolean[] {false, true}) {
+            var f = new Fixture(); var raw = f.request(); raw.setMethod("GET");
+            if (chunked) raw.addHeader("Transfer-Encoding", "chunked");
+            var response = new MockHttpServletResponse(); var calls = new AtomicInteger();
+            HttpServletRequest[] escaped = new HttpServletRequest[1];
+            var bounded = new BoundedRequestFilter(new RequestGuard(new HttpLimits(4096, 1024, 8)), new PublicHttpErrors());
+            bounded.doFilter(raw, response, (cached, out) -> f.filter.doFilter(cached, out, (bound, output) -> {
+                calls.incrementAndGet(); escaped[0] = (HttpServletRequest) bound;
+                assertNull(escaped[0].getHeader("Transfer-Encoding"));
+                assertEquals(chunked ? BoundedRequestFilter.Framing.PRESENT : BoundedRequestFilter.Framing.ABSENT,
+                    LocalVirtualAuthenticationFilter.originalTransferEncoding(escaped[0], f.context));
+                assertThrows(SimulationFailure.class, () -> LocalVirtualAuthenticationFilter.originalTransferEncoding(
+                    new jakarta.servlet.http.HttpServletRequestWrapper(escaped[0]), f.context));
+                assertThrows(SimulationFailure.class, () -> LocalVirtualAuthenticationFilter.originalTransferEncoding(
+                    escaped[0], new Fixture().context));
+            }));
+            assertEquals(200, response.getStatus()); assertEquals(1, calls.get()); assertNull(f.context.current());
+            assertThrows(SimulationFailure.class, () -> LocalVirtualAuthenticationFilter.originalTransferEncoding(escaped[0], f.context));
+        }
+        var direct = new Fixture(); var calls = new AtomicInteger();
+        assertEquals(200, direct.invoke(direct.request(), (request, out) -> {
+            calls.incrementAndGet();
+            assertEquals(BoundedRequestFilter.Framing.UNCONFIRMED,
+                LocalVirtualAuthenticationFilter.originalTransferEncoding((HttpServletRequest) request, direct.context));
+        }).getStatus());
+        assertEquals(1, calls.get());
+    }
+
 }
