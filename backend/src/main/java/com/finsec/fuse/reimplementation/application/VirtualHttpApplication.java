@@ -51,6 +51,7 @@ public final class VirtualHttpApplication {
     private final Config config;
     private final VirtualProductAssembly product;
     private final HttpServlet readiness;
+    private final PreparedLocalVirtualSecurity localAuthentication;
     private boolean registrationAttempted;
 
     public VirtualHttpApplication(Config config, VirtualProductAssembly.Inputs inputs,
@@ -69,6 +70,7 @@ public final class VirtualHttpApplication {
         Objects.requireNonNull(inputs);
         if (!config.httpLimits().equals(inputs.httpLimits()))
             throw new IllegalArgumentException("HTTP limits must match the explicit graph");
+        localAuthentication = inputs.localAuthentication();
         readiness = readinessServlet(authorization, dependenciesAvailable);
         product = !deliveryEnabled ? VirtualProductAssembly.compose(inputs)
                 : VirtualProductAssembly.composeWithDelivery(inputs, delivery);
@@ -76,6 +78,13 @@ public final class VirtualHttpApplication {
 
     public Config config() { return config; }
     public VirtualProductAssembly product() { return product; }
+
+    /** Mode header is outermost; bounded request admission precedes authentication immediately before MVC. */
+    public jakarta.servlet.Filter[] orderedFilters() {
+        var existing=product.http().orderedFilters();
+        if(localAuthentication==null)return existing;
+        return new jakarta.servlet.Filter[]{existing[0],existing[1],localAuthentication.authenticationFilter()};
+    }
 
     /** Caller owns an unstarted servlet container. On failure discard that context; no retry or widening. */
     public synchronized void register(ServletContext container, ContainerBinding binding) {
@@ -98,11 +107,13 @@ public final class VirtualHttpApplication {
         var dispatcher = Objects.requireNonNull(container.addServlet("fuseVirtualMvc", new DispatcherServlet(context)));
         if (!dispatcher.addMapping("/").isEmpty()) throw new IllegalStateException("MVC registration conflict");
         dispatcher.setLoadOnStartup(1);
-        var filters = bundle.orderedFilters();
+        var filters = orderedFilters();
         for (int index = 0; index < filters.length; index++) {
             var filter = Objects.requireNonNull(container.addFilter("fuseVirtualFilter" + index, filters[index]));
             filter.setAsyncSupported(false);
-            filter.addMappingForUrlPatterns(EnumSet.of(DispatcherType.REQUEST), true, "/*");
+            if(localAuthentication!=null&&filters[index]==localAuthentication.authenticationFilter())
+                filter.addMappingForServletNames(EnumSet.of(DispatcherType.REQUEST),true,"fuseVirtualMvc");
+            else filter.addMappingForUrlPatterns(EnumSet.of(DispatcherType.REQUEST), true, "/*");
         }
     }
 

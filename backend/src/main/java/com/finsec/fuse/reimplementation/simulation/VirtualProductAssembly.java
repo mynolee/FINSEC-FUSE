@@ -21,13 +21,23 @@ public final class VirtualProductAssembly {
                          List<VirtualExperimentService.FixtureSet> fixtureSets,
                          VirtualExperimentService.PairEvaluator pairEvaluator, Clock clock,
                          Supplier<UUID> ids, WorkflowHttpController.ActorPort startResumeActors,
-                         SimulationApiController.HttpActors otherActors, HttpLimits httpLimits) {
+                         SimulationApiController.HttpActors otherActors, HttpLimits httpLimits,
+                         com.finsec.fuse.reimplementation.application.PreparedLocalVirtualSecurity localAuthentication) {
+        public Inputs(VirtualTransactionalStore store, SimulationSpec.Catalog catalog, SimulationSpec.RiskTerms riskTerms,
+                SimulationAccess.Authority authority, VirtualQuarantineService.RemediationVerifier remediationVerifier,
+                List<VirtualExperimentService.FixtureSet> fixtureSets, VirtualExperimentService.PairEvaluator pairEvaluator,
+                Clock clock, Supplier<UUID> ids, WorkflowHttpController.ActorPort startResumeActors,
+                SimulationApiController.HttpActors otherActors, HttpLimits httpLimits) {
+            this(store,catalog,riskTerms,authority,remediationVerifier,fixtureSets,pairEvaluator,clock,ids,
+                    startResumeActors,otherActors,httpLimits,null);
+        }
         public Inputs {
             Objects.requireNonNull(store); Objects.requireNonNull(catalog); Objects.requireNonNull(riskTerms);
             Objects.requireNonNull(authority); Objects.requireNonNull(remediationVerifier);
             fixtureSets = List.copyOf(Objects.requireNonNull(fixtureSets));
             Objects.requireNonNull(pairEvaluator); Objects.requireNonNull(clock); Objects.requireNonNull(ids);
             Objects.requireNonNull(startResumeActors); Objects.requireNonNull(otherActors); Objects.requireNonNull(httpLimits);
+            if(localAuthentication!=null)localAuthentication.requireBindings(authority,startResumeActors,otherActors,clock);
         }
     }
     public record TypedInputs(
