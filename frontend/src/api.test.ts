@@ -116,7 +116,7 @@ describe('Spring-only API client', () => {
     const controller = new AbortController();
     const headers = deferred<Response>();
     const response = json({ workflowId: WORKFLOW_ID });
-    const decode = vi.spyOn(response, 'json');
+    const decode = vi.spyOn(response.body!, 'getReader');
     const fetcher = vi.fn().mockReturnValue(headers.promise);
     const request = new FuseApi('synthetic', fetcher).workflow(WORKFLOW_ID, controller.signal);
     controller.abort('SYNTHETIC_PRIVATE_ABORT_REASON');
@@ -128,14 +128,19 @@ describe('Spring-only API client', () => {
   it.each(['resolve', 'reject'] as const)('keeps read cancellation distinct when delayed JSON later %s', async completion => {
     const controller = new AbortController();
     const started = deferred<void>();
-    const body = deferred<unknown>();
-    const response = json({});
-    vi.spyOn(response, 'json').mockImplementation(() => { started.resolve(); return body.promise; });
+    const body = deferred<Uint8Array>();
+    const response = new Response(new ReadableStream<Uint8Array>({
+      async pull(stream) {
+        started.resolve();
+        try { stream.enqueue(await body.promise); stream.close(); }
+        catch (error) { stream.error(error); }
+      },
+    }));
     const fetcher = vi.fn().mockResolvedValue(response);
     const request = new FuseApi('synthetic', fetcher).workflow(WORKFLOW_ID, controller.signal);
     await started.promise;
     controller.abort('SYNTHETIC_PRIVATE_ABORT_REASON');
-    if (completion === 'resolve') body.resolve({ workflowId: WORKFLOW_ID, customerId: 'SYNTHETIC_PRIVATE_LATE_DATA' });
+    if (completion === 'resolve') body.resolve(new TextEncoder().encode(JSON.stringify({ workflowId: WORKFLOW_ID, customerId: 'SYNTHETIC_PRIVATE_LATE_DATA' })));
     else body.reject(new Error('SYNTHETIC_PRIVATE_JSON_ERROR'));
     const failure = await request.catch(error => error);
     expect(failure).toBeInstanceOf(DOMException);

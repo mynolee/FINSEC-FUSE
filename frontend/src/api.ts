@@ -1,3 +1,4 @@
+import { DEVELOPMENT_RESPONSE_LIMITS, readBoundedJson, responseLimits, type JsonResponseLimits } from './boundedJsonResponse';
 import { parseSimulationFixtureRegistry } from './simulationFixtures';
 import { REASON_LABELS } from './format';
 import { validReadEnvelope } from './responseContract';
@@ -226,6 +227,7 @@ interface PendingMutation {
 }
 
 export class FuseApi {
+  private readonly responseLimits: Readonly<JsonResponseLimits>;
   private readonly uncertainRequests = new Map<string, PendingMutation>();
   private readonly cancellationRequests = new Map<string, { actionId: string; inFlight?: Promise<ExperimentCancelReceipt> }>();
   unresolvedExperimentCancel(id: string) {
@@ -238,7 +240,11 @@ export class FuseApi {
   constructor(
     private readonly token: string,
     private readonly fetcher: typeof fetch = fetch,
-  ) {}
+    limits: JsonResponseLimits = DEVELOPMENT_RESPONSE_LIMITS,
+  ) {
+    try { this.responseLimits = responseLimits(limits); }
+    catch { throw new ApiError('응답 제한 설정이 올바르지 않아요.', 0, ['INVALID_REQUEST']); }
+  }
   async request<T>(
     path: string,
     options: { signal?: AbortSignal; body?: unknown; actionId?: string } = {},
@@ -292,7 +298,7 @@ export class FuseApi {
     checkReadCancellation();
     let data: unknown;
     try {
-      data = await response.json();
+      data = await readBoundedJson(response, this.responseLimits);
     } catch {
       checkReadCancellation();
       throw new ApiError(
