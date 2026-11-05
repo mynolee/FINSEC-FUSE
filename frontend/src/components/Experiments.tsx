@@ -532,17 +532,19 @@ function CreateExperiment({
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
-  const [source, setSource] = useState<'legacy' | 'registered'>('legacy');
+  const [source, setSource] = useState<'legacy' | 'registered' | 'registered-sixty'>('legacy');
   const [registeredFixtureId, setRegisteredFixtureId] = useState('');
   const registryLoad = useCallback(async (signal: AbortSignal) => ({
     owner: api,
     registry: await api.simulationFixtures(signal),
   }), [api]);
-  const registryQuery = useQuery(registryLoad, source === 'registered');
+  const registryQuery = useQuery(registryLoad, source !== 'legacy');
   const registry = registryQuery.data?.owner === api ? registryQuery.data.registry : undefined;
-  const registeredSets = !registryQuery.error ? registry?.fixtureSets ?? [] : [];
+  const requiresSixty = source === 'registered-sixty';
+  const registeredSets = !registryQuery.error ? (registry?.fixtureSets ?? []).filter(set =>
+    !requiresSixty || (set.caseIds.length === 60 && new Set(set.caseIds).size === 60)) : [];
   const registeredFixture = registeredSets.find((set) => set.fixtureSetId === registeredFixtureId);
-  const isRegistered = source === 'registered';
+  const isRegistered = source !== 'legacy';
   const registeredReady = !isRegistered || (!!registeredFixture && !registryQuery.loading && !registryQuery.error);
   const [fixture, setFixture] = useState('mvp-security-v1');
   const [modelMode, setModelMode] = useState<'REPLAY' | 'LIVE'>('REPLAY');
@@ -552,7 +554,7 @@ function CreateExperiment({
   const isLive = !isRegistered && modelMode === 'LIVE';
   const effectiveModelMode = isRegistered ? 'REPLAY' : modelMode;
   const repeatCount = isLive ? 3 : 1;
-  const caseCount = isRegistered ? registeredFixture?.caseIds.length ?? 0 : fixture === 'mvp-security-v1' ? MVP_CASES.length : 60;
+  const caseCount = isRegistered ? registeredFixture?.caseIds.length ?? 0 : MVP_CASES.length;
   const [checked, setChecked] = useState(false);
   const [consentApi, setConsentApi] = useState<FuseApi>();
   const [registeredConsent, setRegisteredConsent] = useState<{ api: FuseApi; fixture: RegisteredSimulationFixture }>();
@@ -571,7 +573,7 @@ function CreateExperiment({
     if (!requestConfirmed || !registeredReady || (isLive && !liveConfirmed) || command.pending || command.retryable || !event.currentTarget.checkValidity()) return;
     void command.run('/experiments', {
       fixtureSetId: isRegistered ? registeredFixture!.fixtureSetId : fixture,
-      caseIds: isRegistered ? [...registeredFixture!.caseIds] : fixture === 'mvp-security-v1' ? MVP_CASES : [],
+      caseIds: isRegistered ? [...registeredFixture!.caseIds] : MVP_CASES,
       mode: 'PAIRED',
       modelMode: effectiveModelMode,
       repeatCount,
@@ -592,7 +594,7 @@ function CreateExperiment({
               id="experiment-source"
               value={source}
               onChange={(event) => {
-                setSource(event.target.value === 'registered' ? 'registered' : 'legacy');
+                setSource(event.target.value === 'registered-sixty' ? 'registered-sixty' : event.target.value === 'registered' ? 'registered' : 'legacy');
                 setRegisteredFixtureId('');
                 setModelMode('REPLAY');
                 setChecked(false);
@@ -602,6 +604,7 @@ function CreateExperiment({
             >
               <option value="legacy">기존 제품 데이터셋</option>
               <option value="registered">등록된 합성 데이터</option>
+              <option value="registered-sixty">등록된 사례 60개 (직접 지정)</option>
             </select>
             <label htmlFor="fixture-set">등록된 사례 묶음</label>
             {isRegistered ? (
@@ -628,7 +631,7 @@ function CreateExperiment({
                   {registryQuery.loading && <Loading />}
                   <ErrorNotice error={registryQuery.error} />
                   {!registryQuery.loading && !registryQuery.error && registry && !registeredSets.length && (
-                    <p className="muted">현재 사용할 수 있는 등록된 합성 데이터가 없어요.</p>
+                    <p className="muted">{requiresSixty ? '현재 등록된 서로 다른 사례 60개 묶음이 없습니다. 원본 사례를 자동 복원하지 않습니다.' : '현재 사용할 수 있는 등록된 합성 데이터가 없어요.'}</p>
                   )}
                 </div>
                 <button
@@ -658,7 +661,6 @@ function CreateExperiment({
                 }}
               >
                 <option value="mvp-security-v1">핵심 6개 사례</option>
-                <option value="security-evaluation-v1">전체 평가 · 공격 40개 + 정상 20개</option>
               </select>
             )}
             <label htmlFor="experiment-model-mode">모델 모드</label>
