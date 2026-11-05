@@ -11,10 +11,16 @@ public interface PreparedVirtualApplicationFactory {
 
     record Prepared(VirtualLoopbackListener.Settings settings, VirtualProductAssembly.Inputs inputs,
             VirtualProductAssembly.DeliveryInputs delivery, VirtualHttpApplication.ReadinessAuthorization authorization,
-            BooleanSupplier dependenciesAvailable, ConfiguredVirtualApplicationHost.DeliveryOwnership ownership) {
+            BooleanSupplier dependenciesAvailable, ConfiguredVirtualApplicationHost.DeliveryOwnership ownership,PreparedTypedInputs typed) {
+        public Prepared(VirtualLoopbackListener.Settings settings,VirtualProductAssembly.Inputs inputs,
+                VirtualProductAssembly.DeliveryInputs delivery,VirtualHttpApplication.ReadinessAuthorization authorization,
+                BooleanSupplier dependenciesAvailable,ConfiguredVirtualApplicationHost.DeliveryOwnership ownership){
+            this(settings,inputs,delivery,authorization,dependenciesAvailable,ownership,null);
+        }
         public Prepared {
             Objects.requireNonNull(settings); Objects.requireNonNull(inputs); Objects.requireNonNull(delivery);
             Objects.requireNonNull(authorization); Objects.requireNonNull(dependenciesAvailable); Objects.requireNonNull(ownership);
+            if(typed!=null)typed.requireBindings(inputs);
         }
         @Override public String toString() { return "PreparedVirtualApplication[REDACTED]"; }
     }

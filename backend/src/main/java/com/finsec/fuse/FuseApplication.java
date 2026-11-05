@@ -54,7 +54,7 @@ public final class FuseApplication {
     }
     private static Host configuredHost(PreparedVirtualApplicationFactory.Prepared prepared) {
         var host = ConfiguredVirtualApplicationHost.prepare(prepared.settings(), prepared.inputs(), prepared.delivery(),
-                prepared.authorization(), prepared.dependenciesAvailable(), prepared.ownership());
+                prepared.authorization(), prepared.dependenciesAvailable(), prepared.ownership(),prepared.typed());
         return new Host() {
             @Override public VirtualLoopbackListener.StartResult start() { return host.start(); }
             @Override public ConfiguredVirtualApplicationHost.StopReport stop() { return host.stop(); }

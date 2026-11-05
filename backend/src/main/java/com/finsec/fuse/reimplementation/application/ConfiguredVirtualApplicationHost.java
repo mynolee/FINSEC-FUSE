@@ -40,12 +40,18 @@ public final class ConfiguredVirtualApplicationHost implements AutoCloseable {
             VirtualProductAssembly.Inputs inputs, VirtualProductAssembly.DeliveryInputs delivery,
             VirtualHttpApplication.ReadinessAuthorization authorization, BooleanSupplier available,
             DeliveryOwnership ownership) {
+        return prepare(settings,inputs,delivery,authorization,available,ownership,null);
+    }
+    public static ConfiguredVirtualApplicationHost prepare(VirtualLoopbackListener.Settings settings,
+            VirtualProductAssembly.Inputs inputs,VirtualProductAssembly.DeliveryInputs delivery,
+            VirtualHttpApplication.ReadinessAuthorization authorization,BooleanSupplier available,
+            DeliveryOwnership ownership,PreparedTypedInputs typed){
         Objects.requireNonNull(settings); Objects.requireNonNull(inputs); Objects.requireNonNull(delivery);
         Objects.requireNonNull(authorization); Objects.requireNonNull(available); Objects.requireNonNull(ownership);
         if (!settings.application().httpLimits().equals(inputs.httpLimits())) throw invalid();
         if (ownership instanceof OwnedExecutor owned && owned.executor() != delivery.executor()) throw invalid();
         return new ConfiguredVirtualApplicationHost(
-                VirtualLoopbackListener.prepare(settings, inputs, delivery, authorization, available), ownership);
+                VirtualLoopbackListener.prepare(settings, inputs, delivery, authorization, available,typed), ownership);
     }
     public synchronized State state() { return state; }
     /** Borrowed diagnostic handle; callers must not independently drive its lifecycle. */

@@ -135,6 +135,12 @@ public final class VirtualProductAssembly {
         return new VirtualProductAssembly(Objects.requireNonNull(input), Objects.requireNonNull(typed),
                 Objects.requireNonNull(continuation));
     }
+    /** One store and delivery coordinator shared by legacy and explicit typed services. */
+    public static VirtualProductAssembly composeTypedWithDelivery(Inputs input,TypedInputs typed,
+            ContinuationInputs continuation,DeliveryInputs delivery){
+        return new VirtualProductAssembly(Objects.requireNonNull(input),Objects.requireNonNull(typed),
+                Objects.requireNonNull(continuation),Objects.requireNonNull(delivery));
+    }
     public VirtualGrantWorkflowBridge grantWorkflows() {
         if (typedWorkflows == null) throw new IllegalStateException("TYPED_WORKFLOW_NOT_CONFIGURED");
         return typedWorkflows;

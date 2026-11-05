@@ -97,8 +97,14 @@ public final class VirtualLoopbackListener implements AutoCloseable {
     public static VirtualLoopbackListener prepare(Settings settings, VirtualProductAssembly.Inputs inputs,
             VirtualProductAssembly.DeliveryInputs delivery,
             VirtualHttpApplication.ReadinessAuthorization authorization, BooleanSupplier available) {
+        return prepare(settings,inputs,delivery,authorization,available,null);
+    }
+    public static VirtualLoopbackListener prepare(Settings settings,VirtualProductAssembly.Inputs inputs,
+            VirtualProductAssembly.DeliveryInputs delivery,VirtualHttpApplication.ReadinessAuthorization authorization,
+            BooleanSupplier available,PreparedTypedInputs typed){
         Objects.requireNonNull(delivery);
-        return new VirtualLoopbackListener(settings, inputs, authorization, available, () -> new TomcatRuntime(delivery));
+        if(typed!=null)typed.requireBindings(inputs);
+        return new VirtualLoopbackListener(settings, inputs, authorization, available, () -> new TomcatRuntime(delivery,typed));
     }
     static VirtualLoopbackListener forSyntheticProtocol(Settings settings, VirtualProductAssembly.Inputs inputs,
             VirtualHttpApplication.ReadinessAuthorization authorization, BooleanSupplier available, RuntimeFactory factory) {
@@ -197,7 +203,9 @@ public final class VirtualLoopbackListener implements AutoCloseable {
     private static final class TomcatRuntime implements Runtime {
         private final VirtualProductAssembly.DeliveryInputs delivery;
         private TomcatRuntime() { this(null); }
-        private TomcatRuntime(VirtualProductAssembly.DeliveryInputs delivery) { this.delivery = delivery; }
+        private final PreparedTypedInputs typed;
+        private TomcatRuntime(VirtualProductAssembly.DeliveryInputs delivery) { this(delivery,null); }
+        private TomcatRuntime(VirtualProductAssembly.DeliveryInputs delivery,PreparedTypedInputs typed) { this.delivery = delivery;this.typed=typed; }
         private Tomcat tomcat;
         private OwnedNioEndpoint endpoint;
         private Http11NioProtocol protocol;
@@ -250,7 +258,7 @@ public final class VirtualLoopbackListener implements AutoCloseable {
             context.getPipeline().addValve(new VirtualRequestAdmissionValve(settings.application().maxConcurrentRequests(), verified::get));
             VirtualHttpApplication application = delivery == null
                     ? new VirtualHttpApplication(settings.application(), inputs, auth, () -> verified.get() && available.getAsBoolean())
-                    : new VirtualHttpApplication(settings.application(), inputs, delivery, auth, () -> verified.get() && available.getAsBoolean());
+                    : new VirtualHttpApplication(settings.application(), inputs, delivery, auth, () -> verified.get() && available.getAsBoolean(),typed);
             context.addServletContainerInitializer((classes, servletContext) -> {
                 servletContext.setSessionTrackingModes(Set.of());
                 application.register(servletContext, required -> verifyConfigured(settings, required, workers));

@@ -52,6 +52,7 @@ public final class VirtualHttpApplication {
     private final VirtualProductAssembly product;
     private final HttpServlet readiness;
     private final PreparedLocalVirtualSecurity localAuthentication;
+    private final PreparedTypedInputs typed;
     private boolean registrationAttempted;
 
     public VirtualHttpApplication(Config config, VirtualProductAssembly.Inputs inputs,
@@ -66,13 +67,26 @@ public final class VirtualHttpApplication {
     private VirtualHttpApplication(Config config, VirtualProductAssembly.Inputs inputs,
             VirtualProductAssembly.DeliveryInputs delivery, ReadinessAuthorization authorization,
             BooleanSupplier dependenciesAvailable, boolean deliveryEnabled) {
+        this(config,inputs,delivery,authorization,dependenciesAvailable,deliveryEnabled,null);
+    }
+    public VirtualHttpApplication(Config config,VirtualProductAssembly.Inputs inputs,
+            VirtualProductAssembly.DeliveryInputs delivery,ReadinessAuthorization authorization,
+            BooleanSupplier dependenciesAvailable,PreparedTypedInputs typed){
+        this(config,inputs,Objects.requireNonNull(delivery),authorization,dependenciesAvailable,true,typed);
+    }
+    private VirtualHttpApplication(Config config,VirtualProductAssembly.Inputs inputs,
+            VirtualProductAssembly.DeliveryInputs delivery,ReadinessAuthorization authorization,
+            BooleanSupplier dependenciesAvailable,boolean deliveryEnabled,PreparedTypedInputs typed){
         this.config = Objects.requireNonNull(config);
         Objects.requireNonNull(inputs);
         if (!config.httpLimits().equals(inputs.httpLimits()))
             throw new IllegalArgumentException("HTTP limits must match the explicit graph");
+        this.typed=typed;
+        if(typed!=null){if(!deliveryEnabled)throw new IllegalStateException("CONFIGURATION_REQUIRED",null);typed.requireBindings(inputs);}
         localAuthentication = inputs.localAuthentication();
         readiness = readinessServlet(authorization, dependenciesAvailable);
-        product = !deliveryEnabled ? VirtualProductAssembly.compose(inputs)
+        product = typed!=null ? VirtualProductAssembly.composeTypedWithDelivery(inputs,typed.typed(),typed.continuation(),delivery)
+                : !deliveryEnabled ? VirtualProductAssembly.compose(inputs)
                 : VirtualProductAssembly.composeWithDelivery(inputs, delivery);
     }
 
@@ -101,6 +115,12 @@ public final class VirtualHttpApplication {
         context.registerBean("workflowController", WorkflowHttpController.class, bundle::workflowController);
         context.registerBean("simulationController", SimulationApiController.class, bundle::apiController);
         context.registerBean("publicHttpAdvice", PublicHttpAdvice.class, bundle::publicErrors);
+        if(typed!=null)context.registerBean("typedWorkflowMutationController",
+                com.finsec.fuse.reimplementation.http.TypedWorkflowMutationController.class,
+                ()->new com.finsec.fuse.reimplementation.http.TypedWorkflowMutationController(product.grantWorkflows(),
+                        typed.actions(),typed.security().context(),
+                        new com.finsec.fuse.reimplementation.http.TypedWorkflowRequestDecoder(config.httpLimits()),
+                        typed.currentCoordinates(),new PublicHttpErrors()));
         var ready = Objects.requireNonNull(container.addServlet("fuseVirtualReadiness", readiness));
         if (!ready.addMapping(config.readinessPath()).isEmpty())
             throw new IllegalStateException("Readiness registration conflict");
