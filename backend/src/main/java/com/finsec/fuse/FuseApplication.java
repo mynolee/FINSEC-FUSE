@@ -68,6 +68,8 @@ public final class FuseApplication {
         if (args == null || args.length != 0 || resolver == null || hooks == null || hostFactory == null)
             return result(Status.CONFIGURATION_REQUIRED, false, false, false, HookStatus.NOT_ATTEMPTED, null);
         Lifecycle lifecycle;
+        PreparedVirtualApplicationFactory.Prepared preparedWithoutHost = null;
+        Host preparedHost = null;
         try {
             var descriptors = Objects.requireNonNull(resolver.descriptors()).iterator();
             if (!descriptors.hasNext()) return result(Status.CONFIGURATION_REQUIRED, false, false, false, HookStatus.NOT_ATTEMPTED, null);
@@ -76,11 +78,13 @@ public final class FuseApplication {
             factoryAttempted = true;
             var factory = Objects.requireNonNull(only.get());
             var prepared = Objects.requireNonNull(factory.prepare());
+            preparedWithoutHost = prepared;
             preparationAttempted = true;
-            var host = Objects.requireNonNull(hostFactory.prepare(prepared));
-            lifecycle = new Lifecycle(host, prepared.ownership() instanceof ConfiguredVirtualApplicationHost.BorrowedDelivery);
+            preparedHost = Objects.requireNonNull(hostFactory.prepare(prepared));
+            lifecycle = new Lifecycle(preparedHost, prepared.ownership() instanceof ConfiguredVirtualApplicationHost.BorrowedDelivery);
         } catch (Throwable unavailable) {
             restoreInterrupt(unavailable);
+            if (preparedWithoutHost != null && preparedHost == null) closePreparedOwnedExecutor(preparedWithoutHost);
             return result(Status.CONFIGURATION_REQUIRED, factoryAttempted, preparationAttempted, false, HookStatus.NOT_ATTEMPTED, null);
         }
         try { hooks.register(lifecycle::stop); }
@@ -134,6 +138,16 @@ public final class FuseApplication {
             }
             return stopped;
         }
+    }
+    /** Prepared handoff failed before a Host handle existed. Only the explicit owned executor is known. */
+    private static void closePreparedOwnedExecutor(PreparedVirtualApplicationFactory.Prepared prepared) {
+        if (prepared.ownership() instanceof ConfiguredVirtualApplicationHost.OwnedExecutor owned) {
+            try {
+                owned.executor().shutdown();
+                owned.executor().awaitTermination(owned.shutdownWaitMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (Throwable unavailable) { restoreInterrupt(unavailable); }
+        }
+        // No aggregate cleanup acknowledgement: provider/store/native resources remain unknown.
     }
     private static void restoreInterrupt(Throwable failure) {
         if (failure instanceof InterruptedException) Thread.currentThread().interrupt();

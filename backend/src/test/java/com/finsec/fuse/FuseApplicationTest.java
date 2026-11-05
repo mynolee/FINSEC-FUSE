@@ -154,4 +154,92 @@ class FuseApplicationTest {
         assertEquals(1, host.starts); assertEquals(1, host.stops); assertSame(host.stopped, result.stopReport());
         hook[0].run(); assertEquals(1, host.stops); noAuthority(result);
     }
+    /** No threads, queued tasks or native resources: only explicit ownership call observations. */
+    private static final class FakeOwnedExecutor extends java.util.concurrent.AbstractExecutorService {
+        int shutdowns, awaits, shutdownNows, executions;
+        long waitedMillis;
+        int awaitMode;
+        public void shutdown() { shutdowns++; }
+        public List<Runnable> shutdownNow() { shutdownNows++; throw new AssertionError("No forced task interruption"); }
+        public boolean isShutdown() { return shutdowns != 0; }
+        public boolean isTerminated() { return shutdowns != 0 && awaitMode == 0; }
+        public boolean awaitTermination(long timeout, java.util.concurrent.TimeUnit unit) throws InterruptedException {
+            awaits++; waitedMillis = unit.toMillis(timeout);
+            if (awaitMode == 2) throw new IllegalStateException(CANARY);
+            if (awaitMode == 3) throw new InterruptedException(CANARY);
+            return awaitMode == 0;
+        }
+        public void execute(Runnable task) { executions++; throw new AssertionError("No executor task"); }
+    }
+    private PreparedVirtualApplicationFactory.Prepared preparedWith(FakeOwnedExecutor executor, boolean owned) {
+        var original = prepared();
+        var delivery = original.delivery();
+        var matching = new VirtualProductAssembly.DeliveryInputs(executor, delivery.workflowActor(), delivery.provider(),
+            delivery.actionIds(), delivery.maximumInFlight());
+        return new PreparedVirtualApplicationFactory.Prepared(original.settings(), original.inputs(), matching,
+            original.authorization(), original.dependenciesAvailable(),
+            owned ? new OwnedExecutor(executor, 37) : new BorrowedDelivery());
+    }
+    private LaunchResult failBeforeHost(PreparedVirtualApplicationFactory.Prepared supplied, boolean nullHost) {
+        var instances = new AtomicInteger(); var hostCalls = new AtomicInteger();
+        var result = launch(new String[0], one(supplied, instances), stop -> fail("No hook before Host"), actual -> {
+            hostCalls.incrementAndGet(); assertSame(supplied, actual);
+            if (nullHost) return null;
+            throw new IllegalStateException(CANARY);
+        });
+        assertEquals(1, instances.get()); assertEquals(1, hostCalls.get());
+        assertEquals(Status.CONFIGURATION_REQUIRED, result.status());
+        assertTrue(result.factoryInstantiationAttempted()); assertTrue(result.hostPreparationAttempted());
+        assertFalse(result.startAttempted()); assertEquals(HookStatus.NOT_ATTEMPTED, result.hookStatus());
+        assertEquals(CleanupKnowledge.UNCONFIRMED_WITHOUT_HANDLE, result.cleanupKnowledge());
+        assertNull(result.stopReport()); noAuthority(result);
+        return result;
+    }
+    @Test void ownedPreparedHostThrowOrNullClosesOnlyExactExecutorOnceWithoutAggregateAcknowledgement() {
+        for (boolean nullHost : new boolean[] {false, true}) {
+            var executor = new FakeOwnedExecutor();
+            var supplied = preparedWith(executor, true);
+            failBeforeHost(supplied, nullHost);
+            assertSame(executor, supplied.delivery().executor());
+            assertEquals(1, executor.shutdowns); assertEquals(1, executor.awaits);
+            assertEquals(37, executor.waitedMillis);
+            assertEquals(0, executor.shutdownNows); assertEquals(0, executor.executions);
+        }
+    }
+    @Test void borrowedPreparedHostFailureDoesNotShutdownOrAwaitBorrowedExecutor() {
+        for (boolean nullHost : new boolean[] {false, true}) {
+            var executor = new FakeOwnedExecutor();
+            failBeforeHost(preparedWith(executor, false), nullHost);
+            assertEquals(0, executor.shutdowns); assertEquals(0, executor.awaits);
+            assertEquals(0, executor.shutdownNows); assertEquals(0, executor.executions);
+        }
+    }
+    @Test void ownedAwaitFalseOrOrdinaryFailureNeverBecomesOverallCleanupSuccess() {
+        for (int mode : new int[] {1, 2}) {
+            for (boolean nullHost : new boolean[] {false, true}) {
+                var executor = new FakeOwnedExecutor(); executor.awaitMode = mode;
+                failBeforeHost(preparedWith(executor, true), nullHost);
+                assertEquals(1, executor.shutdowns); assertEquals(1, executor.awaits);
+                assertEquals(37, executor.waitedMillis); assertEquals(0, executor.shutdownNows);
+                assertEquals(0, executor.executions);
+            }
+        }
+    }
+    @Test void ownedAwaitInterruptIsRestoredWithoutRetryOrFalseStopReport() {
+        boolean priorInterrupt = Thread.currentThread().isInterrupted();
+        try {
+            // No thread is started; isolate and restore only this test thread's interrupt bit.
+            Thread.interrupted();
+            var executor = new FakeOwnedExecutor(); executor.awaitMode = 3;
+            failBeforeHost(preparedWith(executor, true), false);
+            assertTrue(Thread.currentThread().isInterrupted());
+            assertEquals(1, executor.shutdowns); assertEquals(1, executor.awaits);
+            assertEquals(37, executor.waitedMillis); assertEquals(0, executor.shutdownNows);
+            assertEquals(0, executor.executions);
+        } finally {
+            Thread.interrupted();
+            if (priorInterrupt) Thread.currentThread().interrupt();
+        }
+    }
+
 }
