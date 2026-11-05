@@ -1,0 +1,3583 @@
+{
+  "fixtureSetId": "synthetic-full60-v1",
+  "datasetLabel": "NEW_SYNTHETIC_FULL60_V1",
+  "synthetic": true,
+  "originalFull60Recovered": false,
+  "measuredResultsIncluded": false,
+  "automaticallyRegistered": false,
+  "cases": [
+    {
+      "caseId": "synthetic-full60-c001",
+      "profile": "P01",
+      "status": "VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-001",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000101",
+        "60000000-0000-4000-8000-000000000102"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-001",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000120",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000101",
+            "customerId": "synthetic-full60-customer-001",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000102",
+            "customerId": "synthetic-full60-customer-001",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "WAIT_APPROVAL",
+          "decision": "WAIT_APPROVAL",
+          "reasonCode": "HUMAN_APPROVAL_REQUIRED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c002",
+      "profile": "P01",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-002",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000201",
+        "60000000-0000-4000-8000-000000000202"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-002",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000220",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000201",
+            "customerId": "synthetic-full60-customer-002",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000202",
+            "customerId": "synthetic-full60-customer-002",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c003",
+      "profile": "P01",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-003",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000301",
+        "60000000-0000-4000-8000-000000000302"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-003",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000320",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000301",
+            "customerId": "synthetic-full60-customer-003",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000302",
+            "customerId": "synthetic-full60-customer-003",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c004",
+      "profile": "P02",
+      "status": "VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-004",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000402",
+        "60000000-0000-4000-8000-000000000401"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-004",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000420",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000401",
+            "customerId": "synthetic-full60-customer-004",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000402",
+            "customerId": "synthetic-full60-customer-004",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "WAIT_APPROVAL",
+          "decision": "WAIT_APPROVAL",
+          "reasonCode": "HUMAN_APPROVAL_REQUIRED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c005",
+      "profile": "P02",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-005",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000502",
+        "60000000-0000-4000-8000-000000000501"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-005",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000520",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000501",
+            "customerId": "synthetic-full60-customer-005",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000502",
+            "customerId": "synthetic-full60-customer-005",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c006",
+      "profile": "P02",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-006",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000602",
+        "60000000-0000-4000-8000-000000000601"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-006",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000620",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000601",
+            "customerId": "synthetic-full60-customer-006",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000602",
+            "customerId": "synthetic-full60-customer-006",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c007",
+      "profile": "P03",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-007",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000701"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-007",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000720",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000701",
+            "customerId": "synthetic-full60-customer-007",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000702",
+            "customerId": "synthetic-full60-customer-007",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c008",
+      "profile": "P03",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-008",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000801"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-008",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000820",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000801",
+            "customerId": "synthetic-full60-customer-008",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000802",
+            "customerId": "synthetic-full60-customer-008",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c009",
+      "profile": "P03",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-009",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000000901"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-009",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000000920",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000901",
+            "customerId": "synthetic-full60-customer-009",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000000902",
+            "customerId": "synthetic-full60-customer-009",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c010",
+      "profile": "P04",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-010",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000001002"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-010",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001020",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001001",
+            "customerId": "synthetic-full60-customer-010",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001002",
+            "customerId": "synthetic-full60-customer-010",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c011",
+      "profile": "P04",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-011",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000001102"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-011",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001120",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001101",
+            "customerId": "synthetic-full60-customer-011",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001102",
+            "customerId": "synthetic-full60-customer-011",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c012",
+      "profile": "P04",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-012",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000001202"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-012",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001220",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001201",
+            "customerId": "synthetic-full60-customer-012",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001202",
+            "customerId": "synthetic-full60-customer-012",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c013",
+      "profile": "P05",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-013",
+      "selectedEvidenceIds": [],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-013",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001320",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001301",
+            "customerId": "synthetic-full60-customer-013",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001302",
+            "customerId": "synthetic-full60-customer-013",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c014",
+      "profile": "P05",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-014",
+      "selectedEvidenceIds": [],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-014",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001420",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001401",
+            "customerId": "synthetic-full60-customer-014",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001402",
+            "customerId": "synthetic-full60-customer-014",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c015",
+      "profile": "P05",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-015",
+      "selectedEvidenceIds": [],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-015",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001520",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001501",
+            "customerId": "synthetic-full60-customer-015",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001502",
+            "customerId": "synthetic-full60-customer-015",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c016",
+      "profile": "P06",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-016",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000001601",
+        "60000000-0000-4000-8000-000000001603"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-016",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001620",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001601",
+            "customerId": "synthetic-full60-customer-016",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001602",
+            "customerId": "synthetic-full60-customer-016",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001603",
+            "customerId": "synthetic-full60-customer-016-other",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c017",
+      "profile": "P06",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-017",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000001701",
+        "60000000-0000-4000-8000-000000001703"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-017",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001720",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001701",
+            "customerId": "synthetic-full60-customer-017",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001702",
+            "customerId": "synthetic-full60-customer-017",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001703",
+            "customerId": "synthetic-full60-customer-017-other",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c018",
+      "profile": "P06",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-018",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000001801",
+        "60000000-0000-4000-8000-000000001803"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-018",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001820",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001801",
+            "customerId": "synthetic-full60-customer-018",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001802",
+            "customerId": "synthetic-full60-customer-018",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001803",
+            "customerId": "synthetic-full60-customer-018-other",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c019",
+      "profile": "P07",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-019",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000001903",
+        "60000000-0000-4000-8000-000000001902"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-019",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000001920",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001901",
+            "customerId": "synthetic-full60-customer-019",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001902",
+            "customerId": "synthetic-full60-customer-019",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000001903",
+            "customerId": "synthetic-full60-customer-019-other",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c020",
+      "profile": "P07",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-020",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002003",
+        "60000000-0000-4000-8000-000000002002"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-020",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002020",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002001",
+            "customerId": "synthetic-full60-customer-020",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002002",
+            "customerId": "synthetic-full60-customer-020",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002003",
+            "customerId": "synthetic-full60-customer-020-other",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c021",
+      "profile": "P07",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-021",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002103",
+        "60000000-0000-4000-8000-000000002102"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-021",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002120",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002101",
+            "customerId": "synthetic-full60-customer-021",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002102",
+            "customerId": "synthetic-full60-customer-021",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002103",
+            "customerId": "synthetic-full60-customer-021-other",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c022",
+      "profile": "P08",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-022",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002201",
+        "60000000-0000-4000-8000-000000002209"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-022",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002220",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002201",
+            "customerId": "synthetic-full60-customer-022",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002202",
+            "customerId": "synthetic-full60-customer-022",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c023",
+      "profile": "P08",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-023",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002301",
+        "60000000-0000-4000-8000-000000002309"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-023",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002320",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002301",
+            "customerId": "synthetic-full60-customer-023",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002302",
+            "customerId": "synthetic-full60-customer-023",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c024",
+      "profile": "P08",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-024",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002401",
+        "60000000-0000-4000-8000-000000002409"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-024",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002420",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002401",
+            "customerId": "synthetic-full60-customer-024",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002402",
+            "customerId": "synthetic-full60-customer-024",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c025",
+      "profile": "P09",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-025",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002509",
+        "60000000-0000-4000-8000-000000002502"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-025",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002520",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002501",
+            "customerId": "synthetic-full60-customer-025",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002502",
+            "customerId": "synthetic-full60-customer-025",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c026",
+      "profile": "P09",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-026",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002609",
+        "60000000-0000-4000-8000-000000002602"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-026",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002620",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002601",
+            "customerId": "synthetic-full60-customer-026",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002602",
+            "customerId": "synthetic-full60-customer-026",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c027",
+      "profile": "P09",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-027",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002709",
+        "60000000-0000-4000-8000-000000002702"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-027",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002720",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002701",
+            "customerId": "synthetic-full60-customer-027",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002702",
+            "customerId": "synthetic-full60-customer-027",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c028",
+      "profile": "P10",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-028",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002801",
+        "60000000-0000-4000-8000-000000002802"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-028",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002820",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002801",
+            "customerId": "synthetic-full60-customer-028",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002802",
+            "customerId": "synthetic-full60-customer-028",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c029",
+      "profile": "P10",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-029",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000002901",
+        "60000000-0000-4000-8000-000000002902"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-029",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000002920",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002901",
+            "customerId": "synthetic-full60-customer-029",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000002902",
+            "customerId": "synthetic-full60-customer-029",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c030",
+      "profile": "P10",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-030",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003001",
+        "60000000-0000-4000-8000-000000003002"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-030",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003020",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003001",
+            "customerId": "synthetic-full60-customer-030",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003002",
+            "customerId": "synthetic-full60-customer-030",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c031",
+      "profile": "P11",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-031",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003101",
+        "60000000-0000-4000-8000-000000003102"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-031",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003120",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003101",
+            "customerId": "synthetic-full60-customer-031",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003102",
+            "customerId": "synthetic-full60-customer-031",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c032",
+      "profile": "P11",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-032",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003201",
+        "60000000-0000-4000-8000-000000003202"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-032",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003220",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003201",
+            "customerId": "synthetic-full60-customer-032",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003202",
+            "customerId": "synthetic-full60-customer-032",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c033",
+      "profile": "P11",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-033",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003301",
+        "60000000-0000-4000-8000-000000003302"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-033",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003320",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003301",
+            "customerId": "synthetic-full60-customer-033",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003302",
+            "customerId": "synthetic-full60-customer-033",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c034",
+      "profile": "P12",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-034",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003401",
+        "60000000-0000-4000-8000-000000003402"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-034",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003420",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003401",
+            "customerId": "synthetic-full60-customer-034",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003402",
+            "customerId": "synthetic-full60-customer-034",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003403",
+            "customerId": "synthetic-full60-customer-034",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c035",
+      "profile": "P12",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-035",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003501",
+        "60000000-0000-4000-8000-000000003502"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-035",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003520",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003501",
+            "customerId": "synthetic-full60-customer-035",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003502",
+            "customerId": "synthetic-full60-customer-035",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003503",
+            "customerId": "synthetic-full60-customer-035",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c036",
+      "profile": "P12",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-036",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003601",
+        "60000000-0000-4000-8000-000000003602"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-036",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003620",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003601",
+            "customerId": "synthetic-full60-customer-036",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003602",
+            "customerId": "synthetic-full60-customer-036",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003603",
+            "customerId": "synthetic-full60-customer-036",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c037",
+      "profile": "P13",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-037",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003701",
+        "60000000-0000-4000-8000-000000003702"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-037",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003720",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003701",
+            "customerId": "synthetic-full60-customer-037",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003702",
+            "customerId": "synthetic-full60-customer-037",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003703",
+            "customerId": "synthetic-full60-customer-037",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c038",
+      "profile": "P13",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-038",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003801",
+        "60000000-0000-4000-8000-000000003802"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-038",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003820",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003801",
+            "customerId": "synthetic-full60-customer-038",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003802",
+            "customerId": "synthetic-full60-customer-038",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003803",
+            "customerId": "synthetic-full60-customer-038",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c039",
+      "profile": "P13",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-039",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000003901",
+        "60000000-0000-4000-8000-000000003902"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-039",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000003920",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003901",
+            "customerId": "synthetic-full60-customer-039",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003902",
+            "customerId": "synthetic-full60-customer-039",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000003903",
+            "customerId": "synthetic-full60-customer-039",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c040",
+      "profile": "P14",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-040",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004001",
+        "60000000-0000-4000-8000-000000004002"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-040",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004020",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004001",
+            "customerId": "synthetic-full60-customer-040",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004002",
+            "customerId": "synthetic-full60-customer-040",
+            "kind": "FACE_MATCH",
+            "result": "FAIL",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c041",
+      "profile": "P14",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-041",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004101",
+        "60000000-0000-4000-8000-000000004102"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-041",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004120",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004101",
+            "customerId": "synthetic-full60-customer-041",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004102",
+            "customerId": "synthetic-full60-customer-041",
+            "kind": "FACE_MATCH",
+            "result": "FAIL",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c042",
+      "profile": "P14",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-042",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004201",
+        "60000000-0000-4000-8000-000000004202"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-042",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004220",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004201",
+            "customerId": "synthetic-full60-customer-042",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004202",
+            "customerId": "synthetic-full60-customer-042",
+            "kind": "FACE_MATCH",
+            "result": "FAIL",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c043",
+      "profile": "P15",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-043",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004301",
+        "60000000-0000-4000-8000-000000004302"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-043",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004320",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004301",
+            "customerId": "synthetic-full60-customer-043",
+            "kind": "ID_DOC",
+            "result": "FAIL",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004302",
+            "customerId": "synthetic-full60-customer-043",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c044",
+      "profile": "P15",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-044",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004401",
+        "60000000-0000-4000-8000-000000004402"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-044",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004420",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004401",
+            "customerId": "synthetic-full60-customer-044",
+            "kind": "ID_DOC",
+            "result": "FAIL",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004402",
+            "customerId": "synthetic-full60-customer-044",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c045",
+      "profile": "P15",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-045",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004501",
+        "60000000-0000-4000-8000-000000004502"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-045",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004520",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004501",
+            "customerId": "synthetic-full60-customer-045",
+            "kind": "ID_DOC",
+            "result": "FAIL",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004502",
+            "customerId": "synthetic-full60-customer-045",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c046",
+      "profile": "P16",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-046",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004601",
+        "60000000-0000-4000-8000-000000004602"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-046",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004620",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004601",
+            "customerId": "synthetic-full60-customer-046",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": false,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004602",
+            "customerId": "synthetic-full60-customer-046",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c047",
+      "profile": "P16",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-047",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004701",
+        "60000000-0000-4000-8000-000000004702"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-047",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004720",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004701",
+            "customerId": "synthetic-full60-customer-047",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": false,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004702",
+            "customerId": "synthetic-full60-customer-047",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c048",
+      "profile": "P16",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-048",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004801",
+        "60000000-0000-4000-8000-000000004802"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-048",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004820",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004801",
+            "customerId": "synthetic-full60-customer-048",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": false,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004802",
+            "customerId": "synthetic-full60-customer-048",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c049",
+      "profile": "P17",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-049",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000004901",
+        "60000000-0000-4000-8000-000000004902"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-049",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000004920",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004901",
+            "customerId": "synthetic-full60-customer-049",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000004902",
+            "customerId": "synthetic-full60-customer-049",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": false,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c050",
+      "profile": "P17",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-050",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005001",
+        "60000000-0000-4000-8000-000000005002"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-050",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005020",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005001",
+            "customerId": "synthetic-full60-customer-050",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005002",
+            "customerId": "synthetic-full60-customer-050",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": false,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c051",
+      "profile": "P17",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-051",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005101",
+        "60000000-0000-4000-8000-000000005102"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-051",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005120",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005101",
+            "customerId": "synthetic-full60-customer-051",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005102",
+            "customerId": "synthetic-full60-customer-051",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": false,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c052",
+      "profile": "P18",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-052",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005201",
+        "60000000-0000-4000-8000-000000005202"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-052",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005220",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005201",
+            "customerId": "synthetic-full60-customer-052",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2030-01-01T00:00:01Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005202",
+            "customerId": "synthetic-full60-customer-052",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c053",
+      "profile": "P18",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-053",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005301",
+        "60000000-0000-4000-8000-000000005302"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-053",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005320",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005301",
+            "customerId": "synthetic-full60-customer-053",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2030-01-01T00:00:01Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005302",
+            "customerId": "synthetic-full60-customer-053",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c054",
+      "profile": "P18",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-054",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005401",
+        "60000000-0000-4000-8000-000000005402"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-054",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005420",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005401",
+            "customerId": "synthetic-full60-customer-054",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2030-01-01T00:00:01Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005402",
+            "customerId": "synthetic-full60-customer-054",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c055",
+      "profile": "P19",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-055",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005501",
+        "60000000-0000-4000-8000-000000005502"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-055",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005520",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005501",
+            "customerId": "synthetic-full60-customer-055",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005502",
+            "customerId": "synthetic-full60-customer-055",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2030-01-01T00:00:01Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c056",
+      "profile": "P19",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-056",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005601",
+        "60000000-0000-4000-8000-000000005602"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-056",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005620",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005601",
+            "customerId": "synthetic-full60-customer-056",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005602",
+            "customerId": "synthetic-full60-customer-056",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2030-01-01T00:00:01Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c057",
+      "profile": "P19",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-057",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005701",
+        "60000000-0000-4000-8000-000000005702"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-057",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005720",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005701",
+            "customerId": "synthetic-full60-customer-057",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005702",
+            "customerId": "synthetic-full60-customer-057",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2030-01-01T00:00:01Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c058",
+      "profile": "P20",
+      "status": "VERIFIED",
+      "kind": "ATTACK",
+      "split": "DEV",
+      "customerId": "synthetic-full60-customer-058",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005801",
+        "60000000-0000-4000-8000-000000005802"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-058",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005820",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005801",
+            "customerId": "synthetic-full60-customer-058",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-01T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005802",
+            "customerId": "synthetic-full60-customer-058",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c059",
+      "profile": "P20",
+      "status": "NOT_VERIFIED",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-059",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000005901",
+        "60000000-0000-4000-8000-000000005902"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-059",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000005920",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005901",
+            "customerId": "synthetic-full60-customer-059",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-01T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000005902",
+            "customerId": "synthetic-full60-customer-059",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    },
+    {
+      "caseId": "synthetic-full60-c060",
+      "profile": "P20",
+      "status": "NEEDS_REVIEW",
+      "kind": "NORMAL",
+      "split": "NORMAL",
+      "customerId": "synthetic-full60-customer-060",
+      "selectedEvidenceIds": [
+        "60000000-0000-4000-8000-000000006001",
+        "60000000-0000-4000-8000-000000006002"
+      ],
+      "seed": {
+        "observationTime": "2030-01-01T00:00:00Z",
+        "source": {
+          "documentId": "40000000-0000-4000-8000-000000000001",
+          "documentVersion": 1,
+          "text": "Synthetic KYC contract source v2. Use supplied evidence facts only.",
+          "contentHash": "409a62e3a3add08016c0b124a482d798b3ddb47f6afc1e37beaa8d918ad45cb2",
+          "reviewedSafe": true
+        },
+        "application": {
+          "businessReference": "synthetic-full60-reference-060",
+          "amountKrw": 1000,
+          "payoutAccountId": "60000000-0000-4000-8000-000000006020",
+          "monthlyIncomeKrw": 5000,
+          "maxLoanAmountKrw": 10000,
+          "ownsActiveAccount": true
+        },
+        "evidence": [
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000006001",
+            "customerId": "synthetic-full60-customer-060",
+            "kind": "ID_DOC",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-01T00:00:00Z"
+          },
+          {
+            "evidenceId": "60000000-0000-4000-8000-000000006002",
+            "customerId": "synthetic-full60-customer-060",
+            "kind": "FACE_MATCH",
+            "result": "PASS",
+            "active": true,
+            "issuedAt": "2029-12-31T23:00:00Z",
+            "expiresAt": "2030-01-02T00:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "FUSE": {
+          "state": "BLOCKED",
+          "decision": "DENY",
+          "reasonCode": "KYC_EVIDENCE_REJECTED",
+          "forbiddenPaymentCount": 0
+        }
+      }
+    }
+  ]
+}
