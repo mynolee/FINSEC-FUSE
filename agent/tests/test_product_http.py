@@ -327,32 +327,59 @@ def evaluation_endpoint(app):
 def test_body_deadline_is_absolute_and_releases_receiver(limits, monkeypatch):
     from agent import app as app_module
     endpoint = evaluation_endpoint(create_product_app(ProductSettings(limits=limits, service_token=TOKEN)))
-    original_timeout = asyncio.timeout
-    timeouts = []
+    original_timeout_at = asyncio.timeout_at
+    deadlines = []
 
-    def short_body_timeout(seconds):
-        timeouts.append(seconds)
-        return original_timeout(0.02 if seconds == 10 else seconds)
+    def expire_at_next_loop_turn(deadline):
+        deadlines.append(deadline)
+        return original_timeout_at(asyncio.get_running_loop().time())
 
-    monkeypatch.setattr(asyncio, "timeout", short_body_timeout)
-
-    async def scenario():
+    async def stalled_body():
+        loop = asyncio.get_running_loop()
+        started = loop.time()
         calls = 0
+        never_ready = asyncio.Event()
 
         async def receive():
             nonlocal calls
             calls += 1
-            await asyncio.sleep(0.005)
+            if calls == 3:
+                await never_ready.wait()
             return {"type": "http.request", "body": b" ", "more_body": True}
 
         response = await endpoint(streaming_request(receive))
         assert response.status_code == 408
         assert json.loads(response.body) == {"decision": "ERROR", "reasonCode": "REQUEST_BODY_TIMEOUT"}
-        assert calls > 1
-        assert timeouts == [10]
+        assert calls == 3
+        assert len(deadlines) == 1
+        assert started + 10 <= deadlines[0] <= loop.time() + 10
         assert app_module._body_receivers == 0
 
-    asyncio.run(scenario())
+    with monkeypatch.context() as timer:
+        timer.setattr(asyncio, "timeout_at", expire_at_next_loop_turn)
+        asyncio.run(stalled_body())
+
+    async def buffered_body_at_deadline():
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        elapsed = 0
+        raw = json.dumps(request_body()).encode()
+
+        async def receive():
+            nonlocal elapsed
+            # No suspension. The timeout's scheduled callback cannot run here.
+            elapsed = 10
+            return {"type": "http.request", "body": raw, "more_body": False}
+
+        with monkeypatch.context() as clock:
+            clock.setattr(loop, "time", lambda: started + elapsed)
+            response = await endpoint(streaming_request(receive))
+
+        assert response.status_code == 408
+        assert json.loads(response.body) == {"decision": "ERROR", "reasonCode": "REQUEST_BODY_TIMEOUT"}
+        assert app_module._body_receivers == 0
+
+    asyncio.run(buffered_body_at_deadline())
 
 
 def test_four_body_receivers_reject_fifth_and_release_on_cancel(limits):

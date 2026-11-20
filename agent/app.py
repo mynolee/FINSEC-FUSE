@@ -100,11 +100,18 @@ def create_app(settings: ProductSettings | None = None, adapter=None, *, prepare
                 return error("DEPENDENCY_UNAVAILABLE", 503)
             _body_receivers += 1
         try:
-            async with asyncio.timeout(10):
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + 10
+            async with asyncio.timeout_at(deadline):
                 async for chunk in request.stream():
+                    # A buffered receive can finish without yielding to the timer.
+                    if loop.time() >= deadline:
+                        raise TimeoutError
                     if len(raw) + len(chunk) > settings.max_request_bytes:
                         return error("REQUEST_TOO_LARGE", 413)
                     raw.extend(chunk)
+                if loop.time() >= deadline:
+                    raise TimeoutError
         except TimeoutError:
             return error("REQUEST_BODY_TIMEOUT", 408)
         finally:
