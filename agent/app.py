@@ -28,7 +28,7 @@ def create_app(settings: ProductSettings | None = None, adapter=None, *, prepare
     if prepared_prompt is not None and type(prepared_prompt) is not PreparedProductPrompt:
         raise TypeError("Prepared product prompt data is required")
     settings = Settings.from_env() if settings is None else settings
-    if not isinstance(settings, ProductSettings) or require_limits() is not settings.limits:
+    if type(settings) is not ProductSettings or require_limits() is not settings.limits:
         raise TypeError("The app requires its explicitly configured product settings")
     if settings.errors():
         raise RuntimeError("Internal service token is missing or invalid")

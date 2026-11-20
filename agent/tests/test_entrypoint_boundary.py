@@ -26,11 +26,19 @@ def test_invalid_settings_fail_before_global_provider_registration(limits, monke
     assert str(failure.value) == "Internal service token is missing or invalid"
 
 
-def test_wrong_explicit_settings_type_fails_before_registration(monkeypatch):
+def test_wrong_explicit_settings_type_fails_before_registration(limits, monkeypatch):
     calls = []
     monkeypatch.setattr(entrypoint, "configure_product_providers", lambda *args, **kwargs: calls.append("configure"))
-    with pytest.raises(TypeError, match="^An explicit ProductSettings object is required$"):
-        entrypoint.create_product_app({"service_token": "synthetic"})
+
+    class DerivedSettings(ProductSettings):
+        def errors(self):
+            calls.append("settings errors")
+            return super().errors()
+
+    derived = DerivedSettings(limits=limits, service_token="synthetic-service-token-" + "v" * 32)
+    for config in ({"service_token": "synthetic"}, derived):
+        with pytest.raises(TypeError, match="^An explicit ProductSettings object is required$"):
+            entrypoint.create_product_app(config)
     assert calls == []
 
 
@@ -47,6 +55,24 @@ def test_direct_app_rejects_bad_settings_before_factory_or_adapter_descriptors(l
     for adapter in (None, Adapter()):
         with pytest.raises(RuntimeError, match="^Internal service token is missing or invalid$"):
             app.create_app(settings=config, adapter=adapter)
+    assert calls == []
+
+    class DerivedSettings(ProductSettings):
+        def errors(self):
+            calls.append("settings errors")
+            return super().errors()
+
+    def require_configured_limits():
+        calls.append("limits")
+        return limits
+
+    derived = DerivedSettings(limits=limits, service_token="synthetic-service-token-" + "v" * 32)
+    monkeypatch.setattr(app, "require_limits", require_configured_limits)
+    monkeypatch.setattr(app.Settings, "from_env", classmethod(lambda cls: derived))
+    for provided_settings in (derived, None):
+        for adapter in (None, Adapter()):
+            with pytest.raises(TypeError, match="^The app requires its explicitly configured product settings$"):
+                app.create_app(settings=provided_settings, adapter=adapter)
     assert calls == []
 
 

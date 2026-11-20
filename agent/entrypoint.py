@@ -17,7 +17,7 @@ def create_product_app(
     """Return an app after installing explicit, already-created dependencies."""
     if prepared_prompt is not None and type(prepared_prompt) is not PreparedProductPrompt:
         raise TypeError("Prepared product prompt data is required")
-    if not isinstance(config, ProductSettings):
+    if type(config) is not ProductSettings:
         raise TypeError("An explicit ProductSettings object is required")
     if config.errors():
         raise RuntimeError("Internal service token is missing or invalid")
